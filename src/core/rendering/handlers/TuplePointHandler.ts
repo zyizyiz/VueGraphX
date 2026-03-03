@@ -8,6 +8,9 @@ export class TuplePointHandler implements RenderHandler {
   public priority = 20;
 
   public supports(ctx: RenderContext): boolean {
+    if (/^\s*[a-zA-Z_]\w*\s*\([^)]*\)\s*=/.test(ctx.processedExpr)) {
+      return false;
+    }
     if (InstructionParser.parseInvocation(ctx.processedExpr)) {
       return false;
     }

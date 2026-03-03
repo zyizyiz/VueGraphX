@@ -60,10 +60,17 @@ export class InstructionParser {
   }
 
   public static parseTuple(expr: string): TupleInstruction | null {
+    if (/^\s*[a-zA-Z_]\w*\s*\([^)]*\)\s*=/.test(expr)) {
+      return null;
+    }
+
     const match = expr.match(/^(?:([a-zA-Z_]\w*)\s*=?\s*)?\((.*)\)$/);
     if (!match) return null;
 
-    const values = this.splitTopLevelArgs(match[2] || '');
+    const tupleBody = match[2] || '';
+    if (!this.hasBalancedBrackets(tupleBody)) return null;
+
+    const values = this.splitTopLevelArgs(tupleBody);
     if (values.length < 2) return null;
 
     return {
