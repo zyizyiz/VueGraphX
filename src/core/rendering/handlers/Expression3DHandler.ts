@@ -1,0 +1,67 @@
+import * as math from 'mathjs';
+import { RenderContext, RenderHandler } from '../types';
+
+export class Expression3DHandler implements RenderHandler {
+  public name = 'expression-3d';
+  public priority = 100;
+
+  public supports(ctx: RenderContext): boolean {
+    return ctx.mode === '3d';
+  }
+
+  public handle(ctx: RenderContext) {
+    const view3d = ctx.boardMgr.view3d;
+    if (!view3d) throw new Error('3D 核心视图器未成功建构');
+
+    const els: any[] = [];
+
+    try {
+      const node = math.parse(ctx.processedExpr);
+
+      if ((node as any).isAssignmentNode) {
+        const varName = (node as any).object.name;
+        if (varName !== 'z' && varName !== 'Z') {
+          ctx.mathScope.evaluate(node);
+          return els;
+        }
+      } else if (node.type === 'FunctionAssignmentNode') {
+        ctx.mathScope.evaluate(node);
+        return els;
+      }
+
+      const plotNode = (node as any).isAssignmentNode ? (node as any).value : node;
+      const code = plotNode.compile();
+
+      code.evaluate(Object.assign({ x: 1, y: 1, e: Math.E, pi: Math.PI }, ctx.mathScope.data));
+
+      const baseAttrs: any = {
+        strokeWidth: 0.5,
+        strokeColor: ctx.color,
+        fillColor: ctx.color,
+        fillOpacity: 0.7,
+        stepsU: 30,
+        stepsV: 30
+      };
+      const attrs = Object.assign({}, baseAttrs, ctx.extraOptions);
+
+      const surface = view3d.create('parametricsurface3d', [
+        (u: number, _v: number) => u,
+        (_u: number, v: number) => v,
+        (u: number, v: number) => {
+          try {
+            return code.evaluate(Object.assign({ x: u, y: v, e: Math.E, pi: Math.PI }, ctx.mathScope.data));
+          } catch {
+            return NaN;
+          }
+        },
+        [-5, 5],
+        [-5, 5]
+      ], attrs);
+
+      els.push(surface);
+      return els;
+    } catch (e: any) {
+      throw new Error(`曲面表达式解析失败: ${e.message}`);
+    }
+  }
+}

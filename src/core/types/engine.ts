@@ -10,12 +10,10 @@ export interface GraphXOptions {
   showCopyright?: boolean;
 }
 
-// 补全 JSXGraph 中缺失的 View3D 扩展接口声明，彻底消灭 Any
 export interface JXGView3D extends JXG.GeometryElement {
   create: (type: string, parents: any[], attributes?: any) => JXG.GeometryElement;
 }
 
-// 基础绘图属性配置
 export interface BaseStyleOptions {
   name?: string;
   withLabel?: boolean;

@@ -131,7 +131,7 @@
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { GraphXEngine, EngineMode } from '../core/GraphXEngine';
+import { GraphXEngine, EngineMode } from '../core/engine/GraphXEngine';
 import { useFormulaStore, type CommandItem } from '../stores/formula';
 
 // 顶部工具栏模式列表

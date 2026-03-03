@@ -1,28 +1,14 @@
 import nerdamer from 'nerdamer';
 import 'nerdamer/all';
 
-/**
- * Parser: 文本指令加工与数学语法分析器
- * 职责：
- * 1. 提供 LaTeX 到 JS Expression 的无缝桥接 (Nerdamer + Regex Fallback)
- * 2. 处理复杂的括号剥离和数学转换规约
- * 纯逻辑函数类，没有任何对画板实例的高级依赖耦合。
- */
 export class Parser {
-  /**
-   * 完整 LaTeX 预处理器 (工业级)
-   * 第二优先：自家扩展的全覆盖正则回退路径
-   */
   public static preprocessLaTeX(expr: string): string {
-    // 剥离外围可能包裹的 LaTeX 渲染限定符 $ (如 $x=y$ 或者 $$x=y$$)
     let pureExpr = expr.replace(/^\$+(.*?)\$+$/, '$1').trim();
 
-    // 快速判断：如果输入不包含任何 LaTeX 特征标记，直接返回原始输入
     if (!pureExpr.includes('\\')) {
       return pureExpr;
     }
 
-    // 尝试使用 nerdamer 的 fromLatex 作为第一优先（工业级 LaTeX 转换）
     try {
       if ((nerdamer as any).fromLatex) {
         const parsed = (nerdamer as any).fromLatex(pureExpr);
@@ -31,22 +17,14 @@ export class Parser {
         }
       }
     } catch {
-      // nerdamer 解析失败，进入全量正则回退器
     }
 
     return this.latexFallbackPreprocessor(pureExpr);
   }
 
-  /**
-   * 全量正则回退预处理器（覆盖所有常见 LaTeX 数学语法）
-   * 对各种乱写的缩写格式予以包容纠正
-   */
   private static latexFallbackPreprocessor(expr: string): string {
     let res = expr;
 
-    // === 第一阶段：结构化变换（有嵌套大括号的宏） ===
-
-    // \frac{分子}{分母} → (分子)/(分母)，支持嵌套
     const extractBraces = (str: string, pos: number): [string, number] => {
       if (str[pos] !== '{') return ['', pos];
       let depth = 0;
@@ -86,22 +64,16 @@ export class Parser {
     };
     res = processFrac(res);
 
-    // \sqrt{x} → sqrt(x)
     res = res.replace(/\\sqrt\s*\{([^}]*)\}/g, 'sqrt($1)');
-    // \sqrt x → sqrt(x) for single token
     res = res.replace(/\\sqrt\s+([a-zA-Z0-9])/g, 'sqrt($1)');
 
-    // \abs{x}, \left|x\right| → abs(x)
     res = res.replace(/\\abs\s*\{([^}]*)\}/g, 'abs($1)');
     res = res.replace(/\\left\|([^|]*?)\\right\|/g, 'abs($1)');
 
-    // 指数: a^{bc} → a^(bc)
     res = res.replace(/\^\{([^}]*)\}/g, '^($1)');
-    // 下标去除（使用下标作为变量下标如 x_1 保留为 x1）
     res = res.replace(/_\{([^}]*)\}/g, '_$1');
     res = res.replace(/_([a-zA-Z0-9])/g, '_$1');
 
-    // === 第二阶段：单词层面的 token 替换 ===
     const trigMap: Record<string, string> = {
       '\\sin': 'sin', '\\cos': 'cos', '\\tan': 'tan',
       '\\sec': 'sec', '\\csc': 'csc', '\\cot': 'cot',
@@ -113,7 +85,7 @@ export class Parser {
       res = res.replaceAll(k, v);
     });
 
-    res = res.replace(/\\log_\{([^}]*)\}\s*/g, 'log($1, ');  // \log_{base} expr → log(expr, base)
+    res = res.replace(/\\log_\{([^}]*)\}\s*/g, 'log($1, ');
     res = res.replace(/\\log\b/g, 'log10');
     res = res.replace(/\\ln\b/g, 'log');
     res = res.replace(/\\exp\b/g, 'exp');
@@ -143,7 +115,6 @@ export class Parser {
       res = res.replaceAll(k, v);
     });
 
-    // === 第三阶段：运算符规范化 ===
     res = res.replace(/\\cdot\b/g, '*');
     res = res.replace(/\\times\b/g, '*');
     res = res.replace(/\\ast\b/g, '*');
@@ -155,7 +126,6 @@ export class Parser {
     res = res.replace(/\\neq?\b/g, '!=');
     res = res.replace(/\\approx\b/g, '~=');
 
-    // === 第四阶段：括号与空格清理 ===
     res = res.replace(/\\left\s*\(/g, '(');
     res = res.replace(/\\right\s*\)/g, ')');
     res = res.replace(/\\left\s*\[/g, '[');
@@ -167,7 +137,6 @@ export class Parser {
     res = res.replace(/\{/g, '(').replace(/\}/g, ')');
     res = res.replace(/\s+/g, ' ').trim();
 
-    // === 第五阶段：隐式乘法修复 ===
     res = res.replace(/(\d)([a-zA-Z])/g, '$1*$2');
     res = res.replace(/\)(?=[a-zA-Z(])/g, ')*');
     res = res.replace(/(\d)\(/g, '$1*(');
