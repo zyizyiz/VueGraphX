@@ -2,6 +2,7 @@ import JXG from 'jsxgraph';
 import { InstructionParser } from '../../parsing/InstructionParser';
 import { RenderContext, RenderHandler } from '../types';
 import { evaluateInvocationArg, normalizeAndRegister } from '../utils';
+import { resolve2DElementType, resolve3DElementType } from '../jsxgraphCommandCatalog';
 
 export class GenericInvocationHandler implements RenderHandler {
   public name = 'generic-invocation';
@@ -15,10 +16,10 @@ export class GenericInvocationHandler implements RenderHandler {
     if (type === 'surface') return false;
 
     if (ctx.mode === '2d' || ctx.mode === 'geometry') {
-      return !!(JXG as any).elements?.[type];
+      return !!resolve2DElementType(invocation.type);
     }
 
-    return ctx.mode === '3d';
+    return ctx.mode === '3d' && !!resolve3DElementType(invocation.type);
   }
 
   public handle(ctx: RenderContext): JXG.GeometryElement[] | null {
@@ -28,10 +29,12 @@ export class GenericInvocationHandler implements RenderHandler {
     const board = ctx.boardMgr.board;
     const view3d = ctx.boardMgr.view3d;
     const type = invocation.type.toLowerCase();
+    const resolved2DType = resolve2DElementType(invocation.type);
+    const resolved3DType = resolve3DElementType(invocation.type);
     const parsedArgs = invocation.args.map(arg => evaluateInvocationArg(arg, ctx.entityMgr, ctx.mathScope));
     const name = invocation.name;
 
-    const is2DCallable = !!(JXG as any).elements?.[type];
+    const is2DCallable = !!resolved2DType;
     if ((ctx.mode === '2d' || ctx.mode === 'geometry') && is2DCallable) {
       const isFilledShape = /circle|polygon|sector|ellipse|conic|inequality/i.test(type);
       const baseAttrs: any = {
@@ -45,14 +48,14 @@ export class GenericInvocationHandler implements RenderHandler {
       const attrs = Object.assign({}, baseAttrs, ctx.extraOptions);
 
       try {
-        const shape = board.create(type as any, parsedArgs, attrs);
+        const shape = board.create(resolved2DType as any, parsedArgs, attrs);
         return normalizeAndRegister(shape, name, ctx.entityMgr);
       } catch (e) {
         throw new Error(`二维指令创建失败(${invocation.type}): ${(e as any)?.message || '未知错误'}`);
       }
     }
 
-    if (ctx.mode === '3d' && view3d) {
+    if (ctx.mode === '3d' && view3d && resolved3DType) {
       const baseAttrs: any = {
         name,
         withLabel: !!name,
@@ -63,7 +66,7 @@ export class GenericInvocationHandler implements RenderHandler {
       };
       const attrs = Object.assign({}, baseAttrs, ctx.extraOptions);
 
-      const candidateTypes = [type, `${type}3d`];
+      const candidateTypes = [resolved3DType, type, `${type}3d`];
       for (const candidateType of candidateTypes) {
         try {
           const shape = view3d.create(candidateType, parsedArgs, attrs);

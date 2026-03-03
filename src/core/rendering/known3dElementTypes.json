@@ -1,0 +1,13 @@
+[
+    "circle3d",
+    "curve3d",
+    "functiongraph3d",
+    "intersectioncircle3d",
+    "intersectionline3d",
+    "line3d",
+    "parametricsurface3d",
+    "plane3d",
+    "point3d",
+    "polygon3d",
+    "sphere3d"
+]

@@ -31,6 +31,25 @@
 - `Expression2DHandler`：2D 表达式/函数图像
 - `Expression3DHandler`：3D 显式曲面（如 `z = f(x,y)`）
 
+其中 2D/Geometry 的调用式指令（如 `Circle(...)`、`Segment(...)`）由运行时 `JXG.elements` 动态驱动，
+不再手工维护固定列表，能自动与 JSXGraph 版本保持同步。
+
+3D 调用式指令由 `jsxgraphCommandCatalog` 统一映射，已补全并接入以下命令族：
+
+- `circle3d`
+- `curve3d`
+- `functiongraph3d`
+- `intersectioncircle3d`
+- `intersectionline3d`
+- `line3d`
+- `parametricsurface3d`
+- `plane3d`
+- `point3d`
+- `polygon3d`
+- `sphere3d`
+
+并支持常用别名自动归一化（例如 `Line(...) -> line3d`、`Plane(...) -> plane3d`、`Point(...) -> point3d`）。
+
 ## 如何新增指令（推荐）
 
 1. 在 `src/core/rendering/handlers` 新建一个 handler 类，实现 `RenderHandler` 接口。
@@ -55,6 +74,7 @@
 
 - `npm run test`：执行完整覆盖测试
 - `npm run test:watch`：开发时持续监听
+- `npm run check:jsxgraph-3d`：校验 JSXGraph 升级后 3D 指令目录是否漂移
 
 新增指令时，建议同时补充一条 `instructionCoverageCases`，确保“表达式 -> handler”分发关系可回归验证。
 
@@ -72,6 +92,7 @@
 | 场景 | 示例表达式 | 命中 Handler |
 |---|---|---|
 | 圆形构造指令 | `c1 = Circle((0,0), (2,0))` | `generic-invocation` |
+| 大小写混合指令 | `c2 = cIrClE((0,0), (3,0))` | `generic-invocation` |
 
 ### 3D
 
@@ -82,3 +103,21 @@
 | 显式点坐标 | `P = (1, 2, 3)` | `tuple-point` |
 
 > 该矩阵与 `instructionCoverageCases.ts` 保持一一对应，修改或新增指令时请同步更新测试样例与本节内容。
+
+## JSXGraph 升级检查（3D）
+
+项目提供了自动检查脚本：
+
+- `scripts/check-jsxgraph-3d-catalog.mjs`
+
+检查逻辑：
+
+1. 从 `node_modules/jsxgraph/src/index.d.ts` 的 `ElementType`（兼容旧版 `CreateElementType`）提取全部 3D 指令（排除 `view3d`）。
+2. 对比本地目录清单 `src/core/rendering/known3dElementTypes.json`。
+3. 若存在缺失或多余项，脚本会返回非 0 退出码。
+
+建议在升级 `jsxgraph` 版本后执行：
+
+- `npm run check:jsxgraph-3d`
+- `npm run test`
+- `npm run build`
