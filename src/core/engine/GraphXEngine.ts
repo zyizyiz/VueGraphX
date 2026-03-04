@@ -3,6 +3,7 @@ export type { EngineMode, GraphXOptions } from '../types/engine';
 import { BoardManager } from '../board/BoardManager';
 import { EntityManager } from '../entities/EntityManager';
 import { Renderer } from '../rendering/Renderer';
+import JXG from 'jsxgraph';
 
 export class GraphXEngine {
   private boardMgr: BoardManager;
@@ -68,5 +69,13 @@ export class GraphXEngine {
     if (this.boardMgr.board) {
       this.boardMgr.board.fullUpdate();
     }
+  }
+
+  public getBoard(): JXG.Board | null {
+    return this.boardMgr.board || null;
+  }
+
+  public getView3D(): any {
+    return this.boardMgr.view3d;
   }
 }

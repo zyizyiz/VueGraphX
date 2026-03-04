@@ -122,6 +122,7 @@
       <!-- 图形处理层 -->
       <main class="flex-1 relative bg-white flex items-center justify-center m-0 sm:m-4 shadow-sm border border-slate-200 overflow-hidden sm:rounded-xl z-0">
         <div id="vuegraphx-mount" class="w-full h-full jxgbox" ref="graphContainerRef"></div>
+        <ExternalCircleDesigner :engine="engineRef" :active-mode="store.activeMode" />
       </main>
     </div>
   </div>
@@ -133,6 +134,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { GraphXEngine, EngineMode } from '../core/engine/GraphXEngine';
 import { useFormulaStore, type CommandItem } from '../stores/formula';
+import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 
 // 顶部工具栏模式列表
 const availableModes: {id: EngineMode, label: string, icon: string}[] = [
@@ -290,7 +292,7 @@ const store = useFormulaStore();
 const graphContainerRef = ref<HTMLElement | null>(null);
 const activeDemo = ref<number>(-1);
 
-let __engineInstance: GraphXEngine | null = null;
+const engineRef = ref<GraphXEngine | null>(null);
 
 // 当前模式的 Demo 列表
 const currentDemos = computed(() => allDemos[store.activeMode] || []);
@@ -311,15 +313,15 @@ onMounted(() => {
       ? { axis: false, showNavigation: false }
       : { axis: true, showNavigation: true };
       
-    __engineInstance = new GraphXEngine('vuegraphx-mount', boardOptions);
+    engineRef.value = new GraphXEngine('vuegraphx-mount', boardOptions);
     syncAllToEngine();
   }
 });
 
 onUnmounted(() => {
-  if (__engineInstance) {
-    __engineInstance.destroy();
-    __engineInstance = null;
+  if (engineRef.value) {
+    engineRef.value.destroy();
+    engineRef.value = null;
   }
 });
 
@@ -328,13 +330,13 @@ const switchMode = async (mode: EngineMode) => {
   store.activeMode = mode;
   activeDemo.value = -1;
   
-  if (__engineInstance) {
+  if (engineRef.value) {
     // 外部控制特定模式的基础画板表现，彻底从引擎硬编码中剥离（例如几何区不需要坐标系）
     const boardOptions = mode === 'geometry' 
       ? { axis: false, showNavigation: false }
       : { axis: true, showNavigation: true };
       
-    __engineInstance.setMode(mode, boardOptions);
+    engineRef.value.setMode(mode, boardOptions);
     await nextTick();
     syncAllToEngine();
   }
@@ -349,17 +351,17 @@ const handleLineEnter = (_id: string, index: number) => {
 
 const executeSingle = (id: string) => {
   const cmd = store.commands.find(c => c.id === id) as CommandItem & { isFocused?: boolean } | undefined;
-  if (!cmd || !__engineInstance) return;
+  if (!cmd || !engineRef.value) return;
   
   if (!cmd.expression.trim()) {
-    __engineInstance.removeCommand(cmd.id);
+    engineRef.value.removeCommand(cmd.id);
     store.updateCommand(cmd.id, '');
     return;
   }
 
   try {
     store.setCommandError(id, '');
-    __engineInstance.executeCommand(cmd.id, cmd.expression, cmd.color, cmd.options);
+    engineRef.value.executeCommand(cmd.id, cmd.expression, cmd.color, cmd.options);
   } catch (err: any) {
     store.setCommandError(id, err.message);
   }
@@ -367,20 +369,20 @@ const executeSingle = (id: string) => {
 
 const removeLine = (id: string) => {
   store.removeCommand(id);
-  if (__engineInstance) __engineInstance.removeCommand(id);
+  if (engineRef.value) engineRef.value.removeCommand(id);
 };
 
 const clearAll = () => {
   store.clearCommands();
-  if (__engineInstance) __engineInstance.clearBoard();
+  if (engineRef.value) engineRef.value.clearBoard();
   activeDemo.value = -1;
 };
 
 const syncAllToEngine = () => {
-  if (__engineInstance) __engineInstance.clearVariables();
+  if (engineRef.value) engineRef.value.clearVariables();
   store.commands.forEach(cmd => executeSingle(cmd.id));
   // 批量创建图元后 JSXGraph 不会自动重绘，必须手动触发
-  if (__engineInstance) __engineInstance.forceUpdate();
+  if (engineRef.value) engineRef.value.forceUpdate();
 };
 
 /** 加载点击的 Demo 卡片 */
@@ -390,7 +392,7 @@ const loadSelectedDemo = (idx: number) => {
   activeDemo.value = idx;
   store.injectDemo(store.activeMode, demo.commands);
   // 使用 resetBoard 完全重置 JSXGraph 内部状态，避免 clearBoard/removeObject 的副作用
-  if (__engineInstance) __engineInstance.resetBoard();
+  if (engineRef.value) engineRef.value.resetBoard();
   nextTick(() => {
     syncAllToEngine();
   });
