@@ -22,8 +22,9 @@ export default defineConfig(({ command }) => {
       port: 5174,
       open: true,
     },
-    // Playground 构建：标准 SPA 打包
+    // Playground 构建
     // 库构建：lib 模式输出 ESM + UMD
+    ...(isPlayground ? { base: '/VueGraphX/' } : {}),
     build: isPlayground
       ? {
           outDir: 'dist-playground',
