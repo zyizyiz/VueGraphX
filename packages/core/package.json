@@ -13,6 +13,10 @@
             "types": "./dist/index.d.ts"
         }
     },
+    "files": [
+        "dist",
+        "src"
+    ],
     "scripts": {
         "build": "vite build"
     },
