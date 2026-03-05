@@ -152,7 +152,6 @@ export function useCircleDesigner(
     applyColorImmediately: (color: string) => safeCall((p) => p.applyColorImmediately(color)),
     cancelCut: () => safeCall((p) => p.cancelCut()),
     confirmCut: () => safeCall((p) => p.confirmCut()),
-    closeIntuitive: () => safeCall((p) => p.closeIntuitive()),
     
     // Model proxy
     radiusValue: computed({

@@ -22,7 +22,7 @@
         <template v-if="!selected.isPiece">
           <button class="toolbar-btn" :class="toolClass('size')" @click="toggleSizeMode">调节大小</button>
           <button class="toolbar-btn" :class="toolClass('assist')" @click="startAssistMode">作辅助线</button>
-          <button class="toolbar-btn" @click="toggleIntuitive">直观图</button>
+          <button class="toolbar-btn" :class="selected?.intuitive ? 'bg-sky-100 text-sky-700' : ''" @click="toggleIntuitive">直观图</button>
           <button class="toolbar-btn" @click="toggleMarking">标注</button>
           <button class="toolbar-btn" :class="toolClass('crop')" @click="startCropMode">裁切</button>
         </template>
@@ -52,9 +52,7 @@
         <button class="mini-btn !bg-sky-100 !text-sky-700 !border-sky-300" @click="confirmCut">确定</button>
       </div>
 
-      <div v-if="selected?.intuitive" class="mt-2 border-t border-slate-200 pt-2">
-        <button class="mini-btn" @click="closeIntuitive">关闭直观图</button>
-      </div>
+
     </div>
 
     <div
@@ -121,7 +119,6 @@ const {
   applyColorImmediately,
   cancelCut,
   confirmCut,
-  closeIntuitive,
   radiusValue
 } = useCircleDesigner(
   () => props.engine,

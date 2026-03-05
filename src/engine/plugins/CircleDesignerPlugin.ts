@@ -125,6 +125,20 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
     this.notifyFastChange();
   }
 
+  protected setState(partial: Partial<CircleDesignerState>): void {
+    const oldTool = this.state?.activeTool;
+    super.setState(partial);
+    
+    if (partial.activeTool !== undefined && partial.activeTool !== 'size' && oldTool === 'size') {
+      this.state.circles.forEach(c => {
+        if (c.radiusPoint) c.radiusPoint.setAttribute({ visible: false });
+        if (c.radiusLine) c.radiusLine.setAttribute({ visible: false });
+        if (c.bbox?.borders) c.bbox.borders.forEach((b: any) => b.setAttribute({ visible: false }));
+      });
+      this.updateToolbarPosition();
+    }
+  }
+
   public onBoardUpdate(): void {
     this.updateToolbarPosition();
   }
@@ -287,25 +301,25 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
     model.circle.on('down', () => {
       if (!this.applyColorIfNeeded(model.circle, 'both')) {
         if (model.isPiece && model.radiusLine && this.applyColorIfNeeded(model.radiusLine, 'stroke')) return;
-        this.selectCircle(model.id);
+        Promise.resolve().then(() => this.selectCircle(model.id));
       }
     });
 
     if (model.radiusLine && model.isPiece) {
       model.radiusLine.on('down', () => {
         if (!this.applyColorIfNeeded(model.radiusLine, 'stroke')) {
-          this.selectCircle(model.id);
+          Promise.resolve().then(() => this.selectCircle(model.id));
         }
       });
     }
 
     model.center.on('down', () => {
-      this.selectCircle(model.id);
+      Promise.resolve().then(() => this.selectCircle(model.id));
     });
 
     if (model.radiusPoint) {
       model.radiusPoint.on('down', () => {
-        this.selectCircle(model.id);
+        Promise.resolve().then(() => this.selectCircle(model.id));
         this.setState({ isRadiusDragging: true });
       });
 
@@ -470,6 +484,10 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
     const sel = this.selected;
     if (!sel || !this.board) return;
 
+    if (this.state.activeTool === 'size') {
+      this.setState({ activeTool: 'none' });
+    }
+
     if (sel.intuitive) {
       this.closeIntuitiveTarget(sel);
       this.board.update();
@@ -500,7 +518,7 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
 
     (curve as any).on('down', () => {
       if (!this.applyColorIfNeeded(curve, 'both')) {
-        this.selectCircle(sel.id);
+        Promise.resolve().then(() => this.selectCircle(sel.id));
       }
     });
 
@@ -530,7 +548,13 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
     if (!sel || !this.board) return;
 
     if (sel.marks.length > 0) {
-      sel.marks.forEach(m => this.removeObjectSafe(m));
+      sel.marks.forEach(m => {
+        if (m === sel.center) {
+          m.setAttribute({ name: '', withLabel: false, visible: false });
+        } else {
+          this.removeObjectSafe(m);
+        }
+      });
       sel.marks = [];
       this.board.update();
       return;
@@ -538,15 +562,15 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
 
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
-    const origin = this.board.create('point', [0, 0], {
-      name: '0',
+    sel.center.setAttribute({
+      name: 'O',
       withLabel: true,
+      visible: true,
       size: 2,
       strokeColor: '#0f172a',
-      fillColor: '#0f172a',
-      fixed: true
+      fillColor: '#0f172a'
     });
-    sel.marks.push(origin);
+    sel.marks.push(sel.center);
 
     sel.helpers.forEach((helper) => {
       [0, 1].forEach((idx) => {
@@ -599,7 +623,10 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
     this.removeObjectSafe(cut.p1);
     this.removeObjectSafe(cut.p2);
     this.removeObjectSafe(cut.line);
-    this.removeObjectSafe(cut.icon);
+    if (cut.icon) {
+      cut.icon.setAttribute({ visible: false });
+      this.removeObjectSafe(cut.icon);
+    }
     sel.cutDraft = null;
     
     this.setState({ activeTool: 'none' });
@@ -625,7 +652,10 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
     this.removeObjectSafe(cut.p1);
     this.removeObjectSafe(cut.p2);
     this.removeObjectSafe(cut.line);
-    this.removeObjectSafe(cut.icon);
+    if (cut.icon) {
+      cut.icon.setAttribute({ visible: false });
+      this.removeObjectSafe(cut.icon);
+    }
     sel.cutDraft = null;
 
     const offsetX = 0.5;
@@ -714,7 +744,11 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
       this.removeObjectSafe(h.line);
     });
 
-    sel.marks.forEach(m => this.removeObjectSafe(m));
+    sel.marks.forEach(m => {
+      if (m !== sel.center) {
+        this.removeObjectSafe(m);
+      }
+    });
 
     if (sel.intuitive) {
       if (sel.intuitive.left) this.removeObjectSafe(sel.intuitive.left);
@@ -798,15 +832,17 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
         const helper: HelperLine = { id: this.uid('assist'), p1: this.assistCache.p1, p2, line };
         helper.line.on('down', () => {
           if (this.applyColorIfNeeded(helper.line, 'stroke')) return;
-          this.removeObjectSafe(helper.p1);
-          this.removeObjectSafe(helper.p2);
-          this.removeObjectSafe(helper.line);
-          sel.helpers = sel.helpers.filter(h => h.id !== helper.id);
-          this.board?.update();
+          Promise.resolve().then(() => {
+            this.removeObjectSafe(helper.p1);
+            this.removeObjectSafe(helper.p2);
+            this.removeObjectSafe(helper.line);
+            sel.helpers = sel.helpers.filter(h => h.id !== helper.id);
+            this.board?.update();
+          });
         });
 
-        helper.p1.on('down', () => this.selectCircle(sel.id));
-        helper.p2.on('down', () => this.selectCircle(sel.id));
+        helper.p1.on('down', () => Promise.resolve().then(() => this.selectCircle(sel.id)));
+        helper.p2.on('down', () => Promise.resolve().then(() => this.selectCircle(sel.id)));
 
         sel.helpers.push(helper);
         this.assistCache = null;
@@ -826,8 +862,9 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
         const p1 = this.board!.create('glider', [usr[0], usr[1], sel.circle], { name: '', size: 4, strokeColor: '#ef4444', fillColor: '#white', strokeWidth: 2 });
         this.cropCache = { p1 };
       } else {
+        const cropP1 = this.cropCache.p1;
         const p2 = this.board!.create('glider', [usr[0], usr[1], sel.circle], { name: '', size: 4, strokeColor: '#ef4444', fillColor: '#white', strokeWidth: 2 });
-        const line = this.board!.create('line', [this.cropCache.p1, p2], {
+        const line = this.board!.create('line', [cropP1, p2], {
           straightFirst: false,
           straightLast: false,
           dash: 0,
@@ -835,8 +872,8 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
           strokeColor: '#ef4444'
         });
         const icon = this.board!.create('text', [
-          () => (this.cropCache.p1.X() + p2.X()) / 2,
-          () => (this.cropCache.p1.Y() + p2.Y()) / 2,
+          () => (cropP1.X() + p2.X()) / 2,
+          () => (cropP1.Y() + p2.Y()) / 2,
           '✂️'
         ], {
           anchorX: 'middle',
@@ -844,12 +881,12 @@ export class CircleDesignerPlugin extends BaseDesignerPlugin<CircleDesignerState
           fixed: true
         });
 
-        sel.cutDraft = { p1: this.cropCache.p1, p2, line, icon };
+        sel.cutDraft = { p1: cropP1, p2, line, icon };
         this.cropCache = null;
       }
 
       this.board?.update();
-      this.notifyStateChange();
+      this.setState({ circles: [...this.state.circles] });
       return;
     }
   }
