@@ -1,123 +1,117 @@
-# VueGraphX
+<div align="center">
+  <h1>🌌 VueGraphX</h1>
+  <p><strong>基于 Vue 3 + JSXGraph 的下一代互动数学与几何可视化引擎</strong></p>
 
-基于 Vue + JSXGraph 的数学可视化项目，支持二维函数、几何构造和三维曲面。
+  <p>
+    <a href="https://www.npmjs.com/package/vuegraphx"><img src="https://img.shields.io/npm/v/vuegraphx?color=42b883&style=for-the-badge" alt="NPM Version" /></a>
+    <a href="https://zyizyiz.github.io/VueGraphX/"><img src="https://img.shields.io/badge/Demo-Online-blueviolet?style=for-the-badge" alt="Live Demo" /></a>
+    <a href="https://github.com/vuejs/vue"><img src="https://img.shields.io/badge/Vue.js-3.4+-4fc08d?style=for-the-badge&logo=vuedotjs" alt="Vue 3" /></a>
+    <a href="https://github.com/jsxgraph/jsxgraph"><img src="https://img.shields.io/badge/JSXGraph-1.8.0+-f49c00?style=for-the-badge" alt="JSXGraph" /></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge" alt="License" /></a>
+  </p>
+</div>
 
-## Core 架构分层
+[English](./README_en.md) | **简体中文**
 
-`src/core` 现已按职责拆分：
+## 🌟 简介 (Introduction)
 
-- `board/`：画布与 3D 视图生命周期管理
-- `entities/`：图元引用注册与回收
-- `math/`：数学作用域（变量/函数上下文）
-- `parsing/`：LaTeX 预处理与指令结构化解析
-- `rendering/`：渲染调度与指令处理器
-- `engine/`：对外门面 `GraphXEngine`
-- `types/`：核心类型定义
+**VueGraphX** 是一个专为前端和教育领域打造的现代化数学引擎，深度集成了 Vue 的响应式系统与 JSXGraph 的底层渲染能力。它提供了一套完整的 2D/3D 几何图形构造、数学表达式解析（支持 LaTeX 预处理）和交互式可视化解决方案。
 
-## 指令处理机制（统一 2D / 3D）
+🌐 **在线演示:** [https://zyizyiz.github.io/VueGraphX/](https://zyizyiz.github.io/VueGraphX/)
 
-渲染入口是 `Renderer.render(mode, expr, color, options)`，其内部流程为：
+## ✨ 核心特性 (Features)
 
-1. 预处理表达式（LaTeX → 可执行表达式）
-2. 组装 `RenderContext`
-3. 交给 `RenderRegistry` 按优先级顺序执行 handlers
-4. 首个成功处理的 handler 返回图元，结束本次指令
+- 🚀 **响应式集成：** 原生支持 Vue 3 响应式系统（基于 `shallowRef` 优化），实现数据驱动的图元更新。
+- 📐 **全自动 2D/3D 渲染：** 支持从二维函数图像到复杂三维参数曲面的统一指令分发机制（Unified Handler System）。
+- 📝 **开箱即用的 LaTeX 解析：** 自动处理 LaTeX 格式输入到可执行数学表达式的转换。
+- 🧩 **高可扩展性：** 通过 `RenderRegistry` 灵活注册自定义渲染器（Handlers），不修改核心代码即可扩展新的数学指令。
+- 🛡️ **类型安全：** 全面基于 TypeScript 编写，提供完善的类型推导与自动提示。
 
-默认 handlers 在 `src/core/rendering/handlers`：
+## 📦 安装 (Installation)
 
-- `GenericInvocationHandler`：通用调用式指令（如 `Circle(...)`）
-- `TuplePointHandler`：坐标点（2D/3D）
-- `Surface3DHandler`：`Surface(...)` 参数曲面
-- `Expression2DHandler`：2D 表达式/函数图像
-- `Expression3DHandler`：3D 显式曲面（如 `z = f(x,y)`）
+推荐使用 npm、pnpm 或 yarn 安装：
 
-其中 2D/Geometry 的调用式指令（如 `Circle(...)`、`Segment(...)`）由运行时 `JXG.elements` 动态驱动，
-不再手工维护固定列表，能自动与 JSXGraph 版本保持同步。
+```bash
+npm install vuegraphx
+```
 
-3D 调用式指令由 `jsxgraphCommandCatalog` 统一映射，已补全并接入以下命令族：
+*你还需要确保安装了 `vue` 和 `jsxgraph` 作为对等依赖（Peer Dependencies）。*
 
-- `circle3d`
-- `curve3d`
-- `functiongraph3d`
-- `intersectioncircle3d`
-- `intersectionline3d`
-- `line3d`
-- `parametricsurface3d`
-- `plane3d`
-- `point3d`
-- `polygon3d`
-- `sphere3d`
+## 🔨 快速上手 (Quick Start)
 
-并支持常用别名自动归一化（例如 `Line(...) -> line3d`、`Plane(...) -> plane3d`、`Point(...) -> point3d`）。
+### 1. 初始化引擎
 
-## 如何新增指令（推荐）
+```typescript
+import { GraphXEngine } from 'vuegraphx';
+// 如果未全局导入，需引入 JSXGraph 样式
+import 'jsxgraph/distrib/jsxgraph.css'; 
 
-1. 在 `src/core/rendering/handlers` 新建一个 handler 类，实现 `RenderHandler` 接口。
-2. 在 `supports(ctx)` 中精确判断是否处理该指令。
-3. 在 `handle(ctx)` 中只做本指令的解析和绘制，返回 `JXG.GeometryElement[] | null`。
-4. 在 `createDefaultRegistry.ts` 注册 handler，并设置合理 `priority`。
+// 绑定到一个具有确定高宽的 DOM 元素上
+const engine = new GraphXEngine('box', {
+  boundingbox: [-5, 5, 5, -5],
+  axis: true,
+  showNavigation: false,
+});
+```
 
-这样可以保证：
+### 2. 绘制 2D 函数图像
 
-- 不改动渲染主流程
-- 2D / 3D 指令扩展一致
-- 回归风险最小，便于测试与维护
+```typescript
+// 直接通过表达式绘制 2D 函数图像
+engine.renderer.render('2d', 'y = sin(x) + 0.5*cos(2*x)', '#ff0000');
 
-## 指令覆盖校验
+// 绘制几何图形（如：经过两点的圆）
+engine.renderer.render('2d', 'c1 = Circle((0,0), (2,0))', '#0000ff');
+```
 
-项目内置了基于 handler 分发的覆盖样例，位于：
+### 3. 三维空间作图
 
-- `src/core/rendering/coverage/instructionCases.ts`
-- `src/core/rendering/coverage/__tests__/instructionCoverage.test.ts`
+```typescript
+// 初始化 3D 视图（内部会自动挂载 view3d）
+const view3d = engine.board.get3DView();
 
-运行方式：
+// 绘制显式 3D 曲面
+engine.renderer.render('3d', 'z = sin(x)*cos(y)', '#42b883');
 
-- `npm run test`：执行完整覆盖测试
-- `npm run test:watch`：开发时持续监听
-- `npm run check:jsxgraph-3d`：校验 JSXGraph 升级后 3D 指令目录是否漂移
+// 绘制 3D 空间直线
+engine.renderer.render('3d', 'Line((0,0,0), (1,1,1))', '#e74c3c');
+```
 
-新增指令时，建议同时补充一条 `instructionCoverageCases`，确保“表达式 -> handler”分发关系可回归验证。
+## 📚 开发图谱与进阶使用
 
-## 指令能力矩阵（当前基线）
+详细的架构说明和二次开发指南，请参阅：
 
-### 2D
+- 📖 [架构设计文档 (ARCHITECTURE.md)](./docs/ARCHITECTURE.md)
+- 🛠 [开发贡献指南 (DEVELOPMENT.md)](./docs/DEVELOPMENT.md)
 
-| 场景 | 示例表达式 | 命中 Handler |
-|---|---|---|
-| 显式点坐标 | `A = (1, 2)` | `tuple-point` |
-| 函数图像表达式 | `y = sin(x) + 0.5*cos(2*x)` | `expression-2d` |
+## 🏗️ Core 架构分层
 
-### Geometry
+`src/core` 职责清晰，支持模块化按需调用：
 
-| 场景 | 示例表达式 | 命中 Handler |
-|---|---|---|
-| 圆形构造指令 | `c1 = Circle((0,0), (2,0))` | `generic-invocation` |
-| 大小写混合指令 | `c2 = cIrClE((0,0), (3,0))` | `generic-invocation` |
+- `board/`：画布与 3D 视图生命周期管理。
+- `entities/`：图元引用池（注册、更新与垃圾回收）。
+- `math/`：数学域环境，处理变量和函数的上下文。
+- `parsing/`：LaTeX 预处理及 AST 文本解析。
+- `rendering/`：核心模块，渲染调度机制与指令处理器列表。
+- `engine/`：对外门面（Facade），封装核心 API：`GraphXEngine`。
 
-### 3D
+## 🧪 测试与校验 (Testing & Coverage)
 
-| 场景 | 示例表达式 | 命中 Handler |
-|---|---|---|
-| 参数曲面指令 | `Surface((3 + cos(v))*cos(u), (3 + cos(v))*sin(u), sin(v))` | `surface-3d` |
-| 显式曲面表达式 | `z = sin(x)*cos(y)` | `expression-3d` |
-| 显式点坐标 | `P = (1, 2, 3)` | `tuple-point` |
+项目内建完善的单元测试与指令集漂移校验：
 
-> 该矩阵与 `instructionCoverageCases.ts` 保持一一对应，修改或新增指令时请同步更新测试样例与本节内容。
+```bash
+# 运行完整覆盖测试
+npm run test
 
-## JSXGraph 升级检查（3D）
+# 校验 JSXGraph 升级引发的 3D 指令目录漂移
+npm run check:jsxgraph-3d
+```
 
-项目提供了自动检查脚本：
+## 📝 贡献说明 (Contributing)
 
-- `scripts/check-jsxgraph-3d-catalog.mjs`
+欢迎提交 PR 与 Issue！具体规范请参考 [DEVELOPMENT.md](./docs/DEVELOPMENT.md)。
+我们在新增指令时推荐：**不要直接修改渲染主流程**，而是继承 `RenderHandler` 并注册进 `RenderRegistry`。
 
-检查逻辑：
+## 📄 许可证 (License)
 
-1. 从 `node_modules/jsxgraph/src/index.d.ts` 的 `ElementType`（兼容旧版 `CreateElementType`）提取全部 3D 指令（排除 `view3d`）。
-2. 对比本地目录清单 `src/core/rendering/known3dElementTypes.json`。
-3. 若存在缺失或多余项，脚本会返回非 0 退出码。
-
-建议在升级 `jsxgraph` 版本后执行：
-
-- `npm run check:jsxgraph-3d`
-- `npm run test`
-- `npm run build`
+本项目采用 [Apache License 2.0](./LICENSE) 许可证。
