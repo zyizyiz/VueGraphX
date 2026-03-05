@@ -1,34 +1,52 @@
 {
   "name": "vuegraphx",
-  "private": true,
   "version": "1.0.0",
   "type": "module",
-  "workspaces": [
-    "packages/*"
+  "description": "The math and graphics engine core for VueGraphX",
+  "main": "./dist/vuegraphx.umd.cjs",
+  "module": "./dist/vuegraphx.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/vuegraphx.js",
+      "require": "./dist/vuegraphx.umd.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
   ],
   "scripts": {
     "dev": "vite",
-    "build": "npm run build --workspaces --if-present && vue-tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "check:jsxgraph-3d": "node scripts/check-jsxgraph-3d-catalog.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@vuegraphx/core": "*",
-    "pinia": "^2.1.7",
-    "vue": "^3.4.21"
+    "jsxgraph": "^1.8.0",
+    "katex": "^0.16.33",
+    "mathjs": "^15.1.1",
+    "nerdamer": "^1.1.13"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",
     "@vitejs/plugin-vue": "^5.0.4",
     "autoprefixer": "^10.4.19",
     "jsdom": "^25.0.1",
+    "pinia": "^2.1.7",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.4.5",
     "vite": "^5.2.8",
+    "vite-plugin-dts": "^3.8.3",
     "vitest": "^2.1.8",
+    "vue": "^3.4.21",
     "vue-tsc": "^2.0.11"
+  },
+  "peerDependencies": {
+    "vue": "^3.4.0"
   }
 }

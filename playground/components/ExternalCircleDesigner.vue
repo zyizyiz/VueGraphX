@@ -93,8 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import type { EngineMode } from '../../core/engine/GraphXEngine';
-import type { GraphXEngine } from '../../core/engine/GraphXEngine';
+import type { EngineMode, GraphXEngine } from 'vuegraphx';
 import { useCircleDesigner } from '../composables/useCircleDesigner';
 
 const props = defineProps<{

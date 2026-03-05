@@ -1,6 +1,6 @@
 import { shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import type { GraphXEngine } from '@vuegraphx/core';
-import { CircleDesignerPlugin, CircleDesignerState, CircleDesignerFastState, ActiveToolType, CircleModel } from '@vuegraphx/core';
+import type { GraphXEngine } from 'vuegraphx';
+import { CircleDesignerPlugin, CircleDesignerState, CircleDesignerFastState, ActiveToolType, CircleModel } from 'vuegraphx';
 
 export function useCircleDesigner(
   getEngine: () => GraphXEngine | null,

@@ -133,8 +133,8 @@
 import { shallowRef, ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { GraphXEngine, type EngineMode } from '@vuegraphx/core';
-import { useFormulaStore, type CommandItem } from '../stores/formula';
+import { GraphXEngine, type EngineMode } from 'vuegraphx';
+import { useFormulaStore, type CommandItem } from './stores/formula';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 
