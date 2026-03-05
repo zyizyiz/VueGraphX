@@ -20,6 +20,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:playground": "BUILD_MODE=playground vite build",
     "preview": "vite preview",
     "check:jsxgraph-3d": "node scripts/check-jsxgraph-3d-catalog.mjs",
     "test": "vitest run",
