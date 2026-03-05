@@ -175,11 +175,11 @@ const allDemos: Record<EngineMode, DemoItem[]> = {
     {
       emoji: '❤️',
       title: '心形曲线',
-      desc: 'LaTeX 分段心形方程 r=1-sinθ',
+      desc: '经典心形曲线，上下两段拼合',
       commands: [
-        'h(x) = abs(x) - 1',
+        { expr: 'h(x) = abs(x) - 1', options: { plot: false } },
         'y = sqrt(1 - h(x)^2)',
-        'k(x) = (x/2)^(2/3)',
+        { expr: 'k(x) = (abs(x)/2)^(2/3)', options: { plot: false } },
         'y = -3*sqrt(1-k(x))'
       ]
     },
@@ -191,11 +191,11 @@ const allDemos: Record<EngineMode, DemoItem[]> = {
     },
     {
       emoji: '🌀',
-      title: '复杂幂函数',
-      desc: '含 LaTeX 分数的幂函数示例',
+      title: '有理函数',
+      desc: '分子三次、分母二次的有理函数',
       commands: [
-        'num(x) = x^3 - 3*x',
-        'den(x) = x^2 + 1',
+        { expr: 'num(x) = x^3 - 3*x', options: { plot: false } },
+        { expr: 'den(x) = x^2 + 1', options: { plot: false } },
         'y = num(x)/den(x)'
       ]
     },
@@ -206,9 +206,7 @@ const allDemos: Record<EngineMode, DemoItem[]> = {
       title: '波浪曲面',
       desc: '二元函数 sin(x)cos(y) 的曲面',
       commands: [
-        'fx(x) = sin(x)',
-        'fy(y) = cos(y)',
-        'z = fx(x)*fy(y)'
+        'z = sin(x)*cos(y)'
       ]
     },
     {
@@ -216,8 +214,7 @@ const allDemos: Record<EngineMode, DemoItem[]> = {
       title: '高斯曲面',
       desc: '二维高斯正态分布钟形曲面',
       commands: [
-        'd2(x, y) = x^2 + y^2',
-        'z = exp(-d2(x, y)/4)'
+        'z = exp(-(x^2 + y^2)/4)'
       ]
     },
     {
@@ -225,9 +222,7 @@ const allDemos: Record<EngineMode, DemoItem[]> = {
       title: '马鞍面',
       desc: '经典双曲抛物面 z = x²-y²',
       commands: [
-        'zx(x) = x^2',
-        'zy(y) = y^2',
-        'z = zx(x) - zy(y)'
+        'z = x^2 - y^2'
       ]
     },
     {
@@ -235,8 +230,7 @@ const allDemos: Record<EngineMode, DemoItem[]> = {
       title: '涟漪曲面',
       desc: '以原点为中心的衰减波',
       commands: [
-        'r(x, y) = sqrt(x^2 + y^2)',
-        'z = sin(r(x, y)) / (r(x, y) + 0.01)'
+        'z = sin(sqrt(x^2 + y^2)) / (sqrt(x^2 + y^2) + 0.01)'
       ]
     },
     {

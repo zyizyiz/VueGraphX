@@ -29,11 +29,15 @@ export class Expression3DHandler implements RenderHandler {
         return els;
       }
 
-      const plotNode = (node as any).isAssignmentNode ? (node as any).value : node;
+      const plotNode = (node as any).isAssignmentNode
+        ? (node as any).value
+        : node.type === 'FunctionAssignmentNode'
+          ? (node as any).expr
+          : node;
       const code = plotNode.compile();
 
       // 用临时 scope 做合法性预检，不污染主 mathScope.data 的状态
-      code.evaluate({ x: 1, y: 1, e: Math.E, pi: Math.PI });
+      code.evaluate({ ...ctx.mathScope.data, x: 1, y: 1, e: Math.E, pi: Math.PI });
 
       const baseAttrs: any = {
         strokeWidth: 0.5,
