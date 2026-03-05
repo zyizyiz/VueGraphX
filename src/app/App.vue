@@ -123,18 +123,20 @@
       <main class="flex-1 relative bg-white flex items-center justify-center m-0 sm:m-4 shadow-sm border border-slate-200 overflow-hidden sm:rounded-xl z-0">
         <div id="vuegraphx-mount" class="w-full h-full jxgbox" ref="graphContainerRef"></div>
         <ExternalCircleDesigner :engine="engineRef" :active-mode="store.activeMode" />
+        <ExternalCubeDesigner :engine="engineRef" :active-mode="store.activeMode" />
       </main>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
+import { shallowRef, ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { GraphXEngine, EngineMode } from '../core/engine/GraphXEngine';
 import { useFormulaStore, type CommandItem } from '../stores/formula';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
+import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 
 // 顶部工具栏模式列表
 const availableModes: {id: EngineMode, label: string, icon: string}[] = [
@@ -292,7 +294,7 @@ const store = useFormulaStore();
 const graphContainerRef = ref<HTMLElement | null>(null);
 const activeDemo = ref<number>(-1);
 
-const engineRef = ref<GraphXEngine | null>(null);
+const engineRef = shallowRef<GraphXEngine | null>(null);
 
 // 当前模式的 Demo 列表
 const currentDemos = computed(() => allDemos[store.activeMode] || []);
