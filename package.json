@@ -3,19 +3,19 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build",
+    "build": "npm run build --workspaces --if-present && vue-tsc && vite build",
     "preview": "vite preview",
     "check:jsxgraph-3d": "node scripts/check-jsxgraph-3d-catalog.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "jsxgraph": "^1.8.0",
-    "katex": "^0.16.33",
-    "mathjs": "^15.1.1",
-    "nerdamer": "^1.1.13",
+    "@vuegraphx/core": "*",
     "pinia": "^2.1.7",
     "vue": "^3.4.21"
   },

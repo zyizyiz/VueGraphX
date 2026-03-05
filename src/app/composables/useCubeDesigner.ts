@@ -1,6 +1,6 @@
 import { shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
-import type { GraphXEngine } from '../../core/engine/GraphXEngine';
-import { CubeDesignerPlugin, CubeDesignerState, CubeDesignerFastState } from '../../core/engine/plugins/CubeDesignerPlugin';
+import type { GraphXEngine } from '@vuegraphx/core';
+import { CubeDesignerPlugin, CubeDesignerState, CubeDesignerFastState } from '@vuegraphx/core';
 
 export function useCubeDesigner(
   getEngine: () => GraphXEngine | null,
