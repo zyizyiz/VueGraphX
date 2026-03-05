@@ -32,7 +32,8 @@ export class Expression3DHandler implements RenderHandler {
       const plotNode = (node as any).isAssignmentNode ? (node as any).value : node;
       const code = plotNode.compile();
 
-      code.evaluate(Object.assign({ x: 1, y: 1, e: Math.E, pi: Math.PI }, ctx.mathScope.data));
+      // 用临时 scope 做合法性预检，不污染主 mathScope.data 的状态
+      code.evaluate({ x: 1, y: 1, e: Math.E, pi: Math.PI });
 
       const baseAttrs: any = {
         strokeWidth: 0.5,
@@ -49,7 +50,7 @@ export class Expression3DHandler implements RenderHandler {
         (_u: number, v: number) => v,
         (u: number, v: number) => {
           try {
-            return code.evaluate(Object.assign({ x: u, y: v, e: Math.E, pi: Math.PI }, ctx.mathScope.data));
+            return code.evaluate({ ...ctx.mathScope.data, x: u, y: v, e: Math.E, pi: Math.PI });
           } catch {
             return NaN;
           }
