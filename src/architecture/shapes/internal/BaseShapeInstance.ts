@@ -4,6 +4,8 @@ import type {
   GraphAnimationEasing,
   GraphAnimationTrack,
   GraphAnimationTrackConfig,
+  GraphShapeDragOptions,
+  GraphShapeGroupDragOptions,
   GraphPointAnnotationOptions,
   GraphPointAnnotationSpec,
   GraphShapeContext,
@@ -35,6 +37,7 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
   private readonly ownedObjects = new Set<any>();
   private readonly ownedGroups = new Map<string, GraphShapeGroup>();
   private readonly animationTracks = new Map<string, GraphAnimationTrack>();
+  private scheduledUiFrameId: number | null = null;
   private readonly pointAnnotations: ManagedPointAnnotations = {
     marks: [],
     labelMap: new Map(),
@@ -59,6 +62,11 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
   public abstract getCapabilityTarget(): ShapeCapabilityTarget | null;
 
   public destroy(): void {
+    if (this.scheduledUiFrameId !== null) {
+      cancelAnimationFrame(this.scheduledUiFrameId);
+      this.scheduledUiFrameId = null;
+    }
+
     Array.from(this.animationTracks.keys()).forEach((trackId) => this.removeAnimationTrack(trackId));
     this.clearPointAnnotations(false);
 
@@ -96,11 +104,56 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
     this.context.notifyChange();
   }
 
+  protected scheduleUiChange(): void {
+    if (this.scheduledUiFrameId !== null) {
+      cancelAnimationFrame(this.scheduledUiFrameId);
+    }
+
+    this.scheduledUiFrameId = requestAnimationFrame(() => {
+      this.scheduledUiFrameId = null;
+      this.notifyStateChange();
+    });
+  }
+
   protected trackObject<T>(objectRef: T): T {
     if (objectRef) {
       this.ownedObjects.add(objectRef);
     }
     return objectRef;
+  }
+
+  protected bindDrag(target: any, options?: GraphShapeDragOptions): () => void {
+    if (!target || typeof target.on !== 'function') {
+      return () => undefined;
+    }
+
+    const disposers: Array<() => void> = [];
+    const bind = (eventName: 'down' | 'drag' | 'up', handler?: (...args: any[]) => void) => {
+      if (!handler) return;
+      target.on(eventName, handler);
+      disposers.push(
+        typeof target.off === 'function'
+          ? () => target.off(eventName, handler)
+          : () => undefined
+      );
+    };
+
+    bind('down', (...args: any[]) => {
+      if (options?.selectOnStart) {
+        Promise.resolve().then(() => this.selectSelf());
+      }
+      options?.onStart?.(...args);
+    });
+    bind('drag', (...args: any[]) => {
+      options?.onMove?.(...args);
+    });
+    bind('up', (...args: any[]) => {
+      options?.onEnd?.(...args);
+    });
+
+    return () => {
+      disposers.forEach((dispose) => dispose());
+    };
   }
 
   protected createGroup(groupInput: GraphShapeGroupInput, options?: { id?: string; createNativeGroup?: boolean }): GraphShapeGroup {
@@ -664,6 +717,28 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
           },
           options
         );
+      },
+      bindDrag: (options?: GraphShapeGroupDragOptions) => {
+        const targetMembers = resolveMembers(options?.keys);
+        const disposers = targetMembers.map((member) => this.bindDrag(member.object, {
+          selectOnStart: options?.selectOnStart,
+          onStart: (...args: any[]) => {
+            if (options?.filter && !options.filter(member, ...args)) return;
+            options?.onStart?.(member, ...args);
+          },
+          onMove: (...args: any[]) => {
+            if (options?.filter && !options.filter(member, ...args)) return;
+            options?.onMove?.(member, ...args);
+          },
+          onEnd: (...args: any[]) => {
+            if (options?.filter && !options.filter(member, ...args)) return;
+            options?.onEnd?.(member, ...args);
+          }
+        }));
+
+        return () => {
+          disposers.forEach((dispose) => dispose());
+        };
       },
       off: (eventName?: string, keys?: string | string[]) => {
         const targetKeys = new Set(resolveMembers(keys).map((member) => member.key));

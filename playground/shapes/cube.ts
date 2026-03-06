@@ -3,19 +3,8 @@ import type { ShapeCapabilityTarget } from 'vuegraphx';
 
 interface CubeState {
   toolbarStyle: Record<string, string>;
-  rafId: number | null;
   halfEdge: number;
 }
-
-const notifyFastChange = (api: GraphShapeApi<CubeState>) => {
-  if (api.state.rafId !== null) cancelAnimationFrame(api.state.rafId);
-  api.setState({
-    rafId: requestAnimationFrame(() => {
-      api.notifyChange();
-      api.setState({ rafId: null });
-    })
-  });
-};
 
 const getUnfoldProgress = (api: GraphShapeApi<CubeState>) => api.getAnimationTrack('unfold')?.progress ?? 0;
 const getRotateProgress = (api: GraphShapeApi<CubeState>) => api.getAnimationTrack('rotate')?.progress ?? 0;
@@ -94,7 +83,7 @@ const updateToolbarPosition = (api: GraphShapeApi<CubeState>) => {
 
   if (api.state.toolbarStyle.left !== toolbarStyle.left || api.state.toolbarStyle.top !== toolbarStyle.top) {
     api.setState({ toolbarStyle });
-    notifyFastChange(api);
+    api.scheduleUiChange();
   }
 };
 
@@ -110,7 +99,6 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
       entityType: 'cube',
       initialState: {
         toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' },
-        rafId: null,
         halfEdge: 1
       },
       setup(api) {
@@ -174,7 +162,6 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
       onDestroy(api) {
         api.removeAnimationTrack('unfold');
         api.removeAnimationTrack('rotate');
-        if (api.state.rafId !== null) cancelAnimationFrame(api.state.rafId);
       },
       getCapabilityTarget(api): ShapeCapabilityTarget | null {
         if (!api.selected) return null;

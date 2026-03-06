@@ -59,7 +59,6 @@ interface CircleState {
   radiusValue: number;
   toolbarStyle: Record<string, string>;
   sizeInputStyle: Record<string, string>;
-  rafId: number | null;
   refs: CircleVisualRefs | null;
 }
 
@@ -95,19 +94,8 @@ const createBaseState = (isPiece: boolean): CircleState => ({
   radiusValue: 2,
   toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' },
   sizeInputStyle: { left: '50%', top: '50%' },
-  rafId: null,
   refs: null
 });
-
-const notifyFastChange = (api: GraphShapeApi<CircleState>) => {
-  if (api.state.rafId !== null) cancelAnimationFrame(api.state.rafId);
-  api.setState({
-    rafId: requestAnimationFrame(() => {
-      api.notifyChange();
-      api.setState({ rafId: null });
-    })
-  });
-};
 
 const getRefs = (api: GraphShapeApi<CircleState>): CircleVisualRefs => {
   if (!api.state.refs) {
@@ -174,7 +162,7 @@ const updateToolbarPosition = (api: GraphShapeApi<CircleState>) => {
       api.setState({
         toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' }
       });
-      notifyFastChange(api);
+      api.scheduleUiChange();
     }
     return;
   }
@@ -223,7 +211,7 @@ const updateToolbarPosition = (api: GraphShapeApi<CircleState>) => {
   }
 
   api.setState({ toolbarStyle, sizeInputStyle });
-  notifyFastChange(api);
+  api.scheduleUiChange();
 };
 
 const attachInteractiveHandlers = (api: GraphShapeApi<CircleState>) => {
@@ -249,20 +237,20 @@ const attachInteractiveHandlers = (api: GraphShapeApi<CircleState>) => {
   });
 
   if (radiusPoint) {
-    radiusPoint.on('down', () => {
-      Promise.resolve().then(() => api.select());
-      api.setState({ isRadiusDragging: true });
-    });
-
-    radiusPoint.on('drag', () => {
-      api.setState({ radiusValue: parseFloat(center.Dist(radiusPoint).toFixed(2)) });
-      notifyFastChange(api);
-    });
-
-    radiusPoint.on('up', () => {
-      api.setState({ radiusValue: center.Dist(radiusPoint) });
-      notifyFastChange(api);
-      setTimeout(() => api.setState({ isRadiusDragging: false }), 0);
+    api.bindDrag(radiusPoint, {
+      selectOnStart: true,
+      onStart: () => {
+        api.setState({ isRadiusDragging: true });
+      },
+      onMove: () => {
+        api.setState({ radiusValue: parseFloat(center.Dist(radiusPoint).toFixed(2)) });
+        api.scheduleUiChange();
+      },
+      onEnd: () => {
+        api.setState({ radiusValue: center.Dist(radiusPoint) });
+        api.scheduleUiChange();
+        setTimeout(() => api.setState({ isRadiusDragging: false }), 0);
+      }
     });
   }
 };
@@ -521,7 +509,6 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
   },
   onDestroy(api) {
     api.removeAnimationTrack('pulse');
-    if (api.state.rafId !== null) cancelAnimationFrame(api.state.rafId);
   },
   getCapabilityTarget(api): ShapeCapabilityTarget | null {
     if (!api.selected) return null;
@@ -558,7 +545,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       refs.bbox?.borders.forEach((border: any) => border.setAttribute({ visible: isSizeTool }));
       if (isSizeTool) {
         api.setState({ radiusValue: parseFloat(refs.center.Dist(refs.radiusPoint).toFixed(2)) });
-        notifyFastChange(api);
+        api.scheduleUiChange();
       }
       api.setState({ showColorPanel: false, activeTool: isSizeTool ? 'size' : 'none' });
       updateToolbarPosition(api);
@@ -568,7 +555,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     const applyRadiusInput = (value: number) => {
       if (!refs.radiusPoint || api.state.activeTool !== 'size') return;
       api.setState({ radiusValue: value });
-      notifyFastChange(api);
+      api.scheduleUiChange();
 
       const centerX = refs.center.X();
       const centerY = refs.center.Y();
@@ -836,9 +823,7 @@ const createCirclePieceComposition = (payload: CirclePiecePayload): GraphShapeCo
   onBoardUpdate(api) {
     if (api.selected) updateToolbarPosition(api);
   },
-  onDestroy(api) {
-    if (api.state.rafId !== null) cancelAnimationFrame(api.state.rafId);
-  },
+  onDestroy() {},
   getCapabilityTarget(api) {
     if (!api.selected) return null;
     return createCircleComposition({ x: 0, y: 0 }).getCapabilityTarget(api);

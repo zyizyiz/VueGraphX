@@ -6,6 +6,7 @@ import type {
 import type {
   GraphAnimationTrack,
   GraphAnimationTrackConfig,
+  GraphShapeDragOptions,
   GraphPointAnnotationOptions,
   GraphPointAnnotationSpec,
   GraphScreenAnchor,
@@ -43,9 +44,11 @@ export interface GraphShapeApi<StateType> {
   togglePointAnnotations(specs: GraphPointAnnotationSpec[], options?: GraphPointAnnotationOptions): boolean;
   clearPointAnnotations(): void;
   clampScreenPoint(point: GraphScreenPoint, padding?: GraphViewportPadding): GraphScreenPoint;
+  scheduleUiChange(): void;
   setState(partialState: Partial<StateType>): void;
   notifyChange(): void;
   trackObject<T>(objectRef: T): T;
+  bindDrag(target: any, options?: GraphShapeDragOptions): () => void;
   createGroup(groupInput: GraphShapeGroupInput, options?: { id?: string; createNativeGroup?: boolean }): GraphShapeGroup;
   removeGroup(group: GraphShapeGroup): void;
   select(): void;
@@ -192,6 +195,9 @@ class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
       clampScreenPoint(point, padding) {
         return thisRef.context.clampScreenPoint(point, padding);
       },
+      scheduleUiChange() {
+        thisRef.scheduleUiChange();
+      },
       setState(partialState) {
         thisRef.setState(partialState);
       },
@@ -200,6 +206,9 @@ class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
       },
       trackObject(objectRef) {
         return thisRef.trackObject(objectRef);
+      },
+      bindDrag(target, options) {
+        return thisRef.bindDrag(target, options);
       },
       createGroup(objectRefs, options) {
         return thisRef.createGroup(objectRefs, options);

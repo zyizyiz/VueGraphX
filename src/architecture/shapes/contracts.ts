@@ -19,6 +19,22 @@ export interface GraphShapeGroupMember {
   object: any;
 }
 
+export interface GraphShapeDragOptions {
+  selectOnStart?: boolean;
+  onStart?: (...args: any[]) => void;
+  onMove?: (...args: any[]) => void;
+  onEnd?: (...args: any[]) => void;
+}
+
+export interface GraphShapeGroupDragOptions {
+  keys?: string | string[];
+  filter?: (member: GraphShapeGroupMember, ...args: any[]) => boolean;
+  selectOnStart?: boolean;
+  onStart?: (member: GraphShapeGroupMember, ...args: any[]) => void;
+  onMove?: (member: GraphShapeGroupMember, ...args: any[]) => void;
+  onEnd?: (member: GraphShapeGroupMember, ...args: any[]) => void;
+}
+
 export interface GraphScreenPoint {
   x: number;
   y: number;
@@ -158,6 +174,7 @@ export interface GraphShapeGroup {
   on(eventName: string, handler: (member: GraphShapeGroupMember, ...args: any[]) => void, keys?: string | string[]): () => void;
   onHit(handler: (member: GraphShapeGroupMember, ...args: any[]) => void, options?: GraphShapeGroupHitOptions): () => void;
   bindSelectOnHit(options?: GraphShapeGroupHitOptions): () => void;
+  bindDrag(options?: GraphShapeGroupDragOptions): () => void;
   off(eventName?: string, keys?: string | string[]): void;
 }
 
