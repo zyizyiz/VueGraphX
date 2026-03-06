@@ -2,93 +2,150 @@
 
 **English** | [简体中文](./ARCHITECTURE.md)
 
-This document intends to elaborate on the core architectural design principles of `VueGraphX`, the responsibilities of various modules, and the internal logical mechanisms of the system.
+This document describes the VueGraphX architecture. The project is organized around two parallel workflows:
+
+- Expression rendering for turning string expressions into JSXGraph elements.
+- Shape runtime authoring for shape definitions, instance lifecycle, capability snapshots, and capability execution.
 
 ## 1. Core Design Principles
 
-- **Inversion of Control and Separation of Concerns**: Managing rendering logic through a centralized `Registry`, avoiding the accumulation of massive `if-else` branches in the main program.
-- **Facade Pattern for External Interface**: Developers interact only with `GraphXEngine`. The underlying engine functionalities such as parsing (`parsing`), board environments (`board`), and memory/entity recovery (`entities`) remain completely transparent to the user.
-- **Seamless Vue Integration**: Built-in support for Vue 3's `shallowRef` to manage the geometric object state, perfectly enabling graph element interaction within the Vue component tree.
+- Facade first: `GraphXEngine` is the public entry point for board lifecycle, rendering, shape registration, and capability execution.
+- Capability-first interaction: external UI should react to generic capability descriptors instead of calling shape-specific APIs.
+- Decoupled shape authoring: the library exposes reusable authoring primitives, while concrete shapes should usually live in consumer code or the playground.
+- Shared 2D / 3D infrastructure: projection helpers, screen bounds, anchors, animation scheduling, and point annotations are reusable across shapes and modes.
+- Rendering and runtime coexist: command rendering is ideal for expressions, while shape runtime is ideal for complex interactive objects.
 
-## 2. Directory Hierarchy
+## 2. Current Directory Layout
 
-The core codebase is centralized within the `src/core` directory:
+Core code lives under `src/`:
 
 ```text
-src/core/
- ├── board/       # Board management (JXG.Board and View3D instance wrappers)
- ├── engine/      # Global Facade (GraphXEngine)
- ├── entities/    # Entity pool and lifecycle management for updating and destroying
- ├── math/        # Mathematical context domain containing variables and user functions
- ├── parsing/     # Parsing pipeline, handling LaTeX escapes and AST normalization
- ├── rendering/   # ★ Core Rendering Engine (dispatch logic and Handlers execution)
- └── types/       # Global type definitions and interface declarations
+src/
+ ├── architecture/
+ │   ├── capabilities/   # generic capability contracts, handlers, and registry
+ │   └── shapes/         # shape definitions, runtime, and composable authoring API
+ ├── board/              # JSXGraph board / view3d lifecycle
+ ├── engine/             # public facade GraphXEngine
+ ├── entities/           # registration and cleanup of rendered command elements
+ ├── math/               # shared math scope
+ ├── parsing/            # expression parsing and normalization
+ ├── rendering/          # Renderer, command catalog, and render handlers
+ └── types/              # public engine and capability types
 ```
 
-## 3. Rendering Pipeline Lifecycle
+The public entry point is `src/index.ts`. The main exports are now:
 
-Whenever `VueGraphX` receives a string inputted by the user, its lifecycle goes through the following four steps:
+- `GraphXEngine`
+- `createComposedShapeDefinition()`
+- shape contracts and capability contracts
+- `BoardManager`, `MathScope`, and public engine types
 
-### 3.1 Parsing Phase
-Input: e.g., user's LaTeX formula `y = \sin(x)` or pure text `Circle((0,0), (2,2))`.
-The `parsing` module performs escape transitions to normalize it, stripping away redundant characters, and translates the string into standard AST text expressions recognized by both `mathjs` and `jsxgraph`.
+## 3. Dual Runtime Model
 
-### 3.2 Context Assembly
-The system assembles a `RenderContext`, which includes not only the parsed expression but also the current `Board` instance, variable scopes from the `math` domain, specified Color, and the render mode (`2d` or `3d`).
+### 3.1 Expression Rendering Flow
 
-### 3.3 Handler Dispatch
-Through the registration center (`RenderRegistry`), the engine distributes the context sequentially to all registered `RenderHandler`s based on their pre-configured priorities.
-Each Handler must implement a method: `supports(ctx: RenderContext): boolean`. The first handler that returns `true` will take over the execution of this instruction.
+The rendering flow targets use cases such as:
 
-### 3.4 Entity Registration and Execution
-When a strategy hits (such as the `Expression2DHandler` evaluating an explicit 2D function), the Handler produces an array of `JXG.GeometryElement[]`. The engine subsequently sends these generated elements into the lifecycle pool inside `entities`, facilitating rapid styling changes, removal, or garbage collection in the future.
+- function expressions like `y = sin(x)`
+- geometry commands like `Circle((0,0), (2,0))`
+- 3D formulas and surfaces
 
-## 4. Differentiated Processing of 2D / 3D
+The typical entry point is `GraphXEngine.executeCommand()`, and the flow is:
 
-`VueGraphX` employs a unified rendering entry point, but it performs the following intelligent adaptations for 3D rendering specifically:
+1. `GraphXEngine` receives a command id, expression, color, and optional extra options.
+2. `Renderer` assembles a `RenderContext` with mode, board, entity manager, and math scope.
+3. `parsing` preprocesses and normalizes the expression.
+4. `RenderRegistry` dispatches the context through registered `RenderHandler`s by priority.
+5. The winning handler returns `JXG.GeometryElement[]`.
+6. `EntityManager` stores those elements under the command id for later replacement or cleanup.
 
-- **Automated 3D View Initialization**: If the render mode is detected as `3d` and the context hasn't initialized a 3D canvas yet, the engine automatically generates the `view3d` underlying structure.
-- **JSXGraph Command Mapping**: Underlying 3D commands (e.g., `curve3d`, `surface3d`) are uniformly registered in a mapping table (e.g., `jsxgraphCommandCatalog`). Users only need to input the generic `Surface(...)`, and the system automatically normalizes the command execution.
+The handler mechanism still matters, but it is only one extension layer in the modern architecture.
 
-## 5. Highly Extensible System
+### 3.2 Shape Runtime Flow
 
-If you wish to expand an instruction suite, for example, a "Parabola Focal Point Detection Instruction", you only need to:
-1. Implement the `RenderHandler` interface.
-2. Override `supports` to match specific identifiers.
-3. Override `handle` to utilize `ctx.board.create` to draw elements.
-4. Mount your handler into `RenderRegistry` to elevate its execution priority.
+The shape runtime targets use cases such as:
 
-## 6. Capability Layer
+- shapes with their own selection state, drag logic, animation, and helper UI
+- external toolbars driven by a shared capability model
+- shape authors reusing annotations, animation tracks, projection helpers, and groups
 
-In the previous design, interaction features were attached directly to shape-specific plugins. For example, the circle plugin simultaneously owned circle state, helper lines, marking, cutting, and color tools. That implementation was fast to ship, but it forced consumers to learn a different API surface for each shape.
+The main participants are:
 
-The new design fully separates shape implementation from shape capability:
+- `GraphShapeDefinition`
+- `GraphShapeContext`
+- `GraphShapeComposition`
+- `GraphShapeApi`
+- `GraphShapeInstance`
 
-- Internal shape runtimes own shape state, selection state, and low-level JSXGraph objects.
-- Each shape runtime exposes generic capability contracts through `getCapabilityTarget()` instead of assembling capability lists directly.
-- The engine uses a fully generic capability handler layer to turn those contracts into descriptors and executable actions.
-- External integrations subscribe through `GraphXEngine.subscribeCapabilities()`.
-- External integrations trigger behavior through `GraphXEngine.executeCapability()`, while shape creation goes through `GraphXEngine.createShape()`.
+Typical flow:
 
-Core interface:
+1. Consumer code builds a definition with `createComposedShapeDefinition()`.
+2. The definition is registered via `GraphXEngine.registerShape()`.
+3. An instance is created through `createShape()` or a drag-and-drop entry.
+4. The engine creates a runtime instance from the definition and `GraphShapeContext`.
+5. `setup()` creates JSXGraph objects, groups, event bindings, animation tracks, and annotations.
+6. When selected, the instance exposes shared capability contracts through `getCapabilityTarget()`.
 
-```typescript
-interface GraphCapabilityDescriptor {
-	id: string;
-	feature: string;
-	label: string;
-	entityType: string;
-	kind: 'action' | 'toggle' | 'input' | 'panel';
-	group: 'create' | 'inspect' | 'edit' | 'annotate' | 'style' | 'animation' | 'danger';
-	active?: boolean;
-	enabled?: boolean;
-	meta?: Record<string, unknown>;
-}
-```
+### 3.3 Capability Flow
 
-Benefits of this layer:
+The capability layer translates shape-private implementation into a generic UI contract:
 
-- New shapes only declare which generic capability contracts they support instead of inventing a brand new public API.
-- The UI can render toolbars by capability group rather than hard-coding `if shape === circle` branches.
-- Shared semantics such as `resize`, `style`, and `delete` become stable extension points for wrappers, low-code builders, and extension ecosystems.
-- The engine still preserves shape-private implementation details while exposing a much friendlier external contract.
+1. The selected instance returns a `ShapeCapabilityTarget`.
+2. Built-in handlers in `capabilityRegistry` decide whether they support that target.
+3. Each handler builds a `GraphCapabilityDescriptor`.
+4. External UI receives `{ selection, capabilities }` snapshots from `subscribeCapabilities()`.
+5. External UI triggers shared behavior through `executeCapability(id, payload)`.
+
+This is valuable because:
+
+- UI can group controls by `group` and `kind`.
+- delete, style, resize, split, annotation, and animation behavior can be reused across shapes.
+- shapes keep their private implementation details while still exposing a stable public interaction model.
+
+## 4. Shared Infrastructure for Shape Authors
+
+The current runtime provides several reusable authoring primitives:
+
+- Animation tracks via `createAnimationTrack()` and multi-track animation contracts.
+- Point annotations via `togglePointAnnotations()` and point / intersection / midpoint / computed sources.
+- Projection helpers such as `projectUserPoint()`, `projectPoint3D()`, `projectUserBounds()`, `project3DBounds()`, and `getBoundsAnchor()`.
+- Managed groups via `createGroup()` for hit detection, bulk drag behavior, and shared attribute updates.
+- UI synchronization utilities like `notifyChange()` and `scheduleUiChange()`.
+
+This keeps shape authors focused on geometry and capability exposure instead of rebuilding frame scheduling, hit batching, or screen projection logic.
+
+## 5. Recommended Integration Modes
+
+### 5.1 If your use case is expression-driven
+
+Prefer:
+
+- `executeCommand()` to render or replace an expression result
+- `removeCommand()` to clean up a specific command
+- `setMode()` to switch between `2d`, `3d`, and `geometry`
+
+### 5.2 If your use case is an interactive shape editor
+
+Prefer:
+
+- `registerShape()` to register shape definitions
+- `createShape()` to create instances
+- `subscribeCapabilities()` to drive UI state
+- `executeCapability()` to trigger shared behavior
+
+### 5.3 If you are extending the library itself
+
+Choose the layer first:
+
+- new math syntax or expression semantics: work in `rendering/`
+- new generic shape authoring infrastructure: work in `architecture/shapes/`
+- new generic external interaction capability: work in `architecture/capabilities/`
+- concrete business shapes: keep them in consumer code or the playground rather than exporting them from the library
+
+## 6. Architectural Focus
+
+- `src/` is organized by capabilities, shapes, rendering, engine, and shared types.
+- the public interaction API follows a capability-first model.
+- shape definition and composition are the primary model for complex interactive shapes.
+- animation, annotation, projection, hit handling, and grouping are shared runtime infrastructure.
+- the public surface emphasizes generic runtime and authoring APIs.

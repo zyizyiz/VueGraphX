@@ -1,6 +1,9 @@
 import JXG from 'jsxgraph';
 import { EngineMode, GraphXOptions, JXGView3D } from '../types/engine';
 
+/**
+ * 供公共引擎门面调用的底层画板生命周期管理器。
+ */
 export class BoardManager {
   public board!: JXG.Board;
   public view3d: JXGView3D | null = null;
@@ -9,6 +12,9 @@ export class BoardManager {
   private containerId: string;
   private globalOptions?: GraphXOptions;
 
+  /**
+   * 创建一个绑定到指定 DOM 容器 id 的画板管理器。
+   */
   constructor(containerId: string, options?: GraphXOptions) {
     this.containerId = containerId;
     this.globalOptions = options;
@@ -28,6 +34,9 @@ export class BoardManager {
     document.head.appendChild(styleEl);
   }
 
+  /**
+   * 使用当前模式与配置初始化或重建 JSXGraph 画板。
+   */
   public initBoard(): void {
     if (this.board) {
       JXG.JSXGraph.freeBoard(this.board);
@@ -65,6 +74,9 @@ export class BoardManager {
     }
   }
 
+  /**
+   * 切换画板模式，并可选地替换全局画板配置。
+   */
   public setMode(mode: EngineMode, options?: GraphXOptions): boolean {
     if (this.mode === mode && !options) return false;
     this.mode = mode;
@@ -75,6 +87,9 @@ export class BoardManager {
     return true;
   }
 
+  /**
+   * 在保留当前模式的前提下重建画板。
+   */
   public resetBoard(options?: GraphXOptions): void {
     if (options !== undefined) {
       this.globalOptions = options;
@@ -82,6 +97,9 @@ export class BoardManager {
     this.initBoard();
   }
 
+  /**
+   * 释放底层 JSXGraph 画板资源。
+   */
   public destroy(): void {
     if (this.board) {
       JXG.JSXGraph.freeBoard(this.board);

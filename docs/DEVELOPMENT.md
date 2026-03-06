@@ -1,13 +1,13 @@
-# 🛠 开发与贡献指南 (Development Guide)
+# 🛠 开发与贡献指南
 
 [English](./DEVELOPMENT_en.md) | **简体中文**
 
-感谢您对 VueGraphX 本开源项目的关注与贡献。为保持项目的高质和稳定，请想要参与核心代码贡献或二次开发的开发者，能够参考本文档。
+本文档描述 VueGraphX 的开发方式。工程同时包含表达式渲染扩展和 shape runtime 扩展两条主线。
 
-## 前置环境准备
+## 前置环境
 
-1. **Node.js**: 请使用 v18 或更高版本。
-2. **包管理器**: 本项目使用 `npm` 管理依赖树。建议全局安装最新版。
+1. Node.js 18 或更高版本。
+2. 使用 `npm` 安装依赖。
 
 ```bash
 git clone https://github.com/zyizyiz/VueGraphX.git
@@ -15,87 +15,149 @@ cd VueGraphX
 npm install
 ```
 
-## 项目可用脚本命令 (Scripts)
+## 常用脚本
 
-在 `package.json` 中，定义了完善的测试及构建指令：
+- `npm run dev`：启动 Vite 开发服务器，调试 playground。
+- `npm run build`：构建库产物到 `dist/`。
+- `npm run build:playground`：构建 playground，用于演示站点发布。
+- `npm run test`：运行全部 vitest 测试。
+- `npm run test:watch`：监听模式测试。
+- `npm run check:jsxgraph-3d`：校验 JSXGraph 3D 指令目录是否漂移。
+- `npm run docs:api`：基于 TypeDoc 重新生成 API 文档到 `docs/api/`。
 
-- `npm run dev`：启动包裹 `playground` 组件的本地开发服务器页面（基于 Vite），用于直观预览和调试图形变化。
-- `npm run build`：执行核心类库（Core Engine）的生产环境打包，生成至 `dist/` 目录。
-- `npm run build:playground`：打包 Playground 用于 Github Pages 在线 Demo 部署。
-- `npm run test`：运行 `vitest` 执行全量单元测试。
-- `npm run test:watch`：针对开发过程中的实时测试。
-- `npm run check:jsxgraph-3d`：针对性校验 JSXGraph 升级带来的底层 3D API 漂移问题。
+## 先判断你在扩展哪一层
 
-## 🚀 核心渲染处理器（Handlers）开发规范
+在当前架构里，先分清自己改的是哪一类能力：
 
-如果您计划**增加对新数学指令的支持**，请遵循以下规范：
+### 1. 扩展表达式渲染
 
-### 1. 杜绝硬编码和 `if-else` 堆砌
-核心渲染主方法 `Renderer.render` 不允许被直接修改增加特定逻辑。所有指令请使用 Handler 机制扩展。
+适用场景：
 
-### 2. 创建自定义的 Handler
-在 `src/core/rendering/handlers` 下创建您的类文件：
+- 新增一类数学指令
+- 修正某类表达式的识别逻辑
+- 增补 2D / 3D 指令到 JSXGraph 的映射
+
+主要文件：
+
+- `src/rendering/handlers/`
+- `src/rendering/handlers/createDefaultRegistry.ts`
+- `src/rendering/coverage/instructionCases.ts`
+- `src/rendering/coverage/__tests__/`
+
+建议流程：
+
+1. 在 `src/rendering/handlers/` 新增或修改 `RenderHandler`。
+2. 在 `createDefaultRegistry.ts` 中注册它，并确认优先级顺序正确。
+3. 如果涉及通用命令映射，同时检查 `jsxgraphCommandCatalog` 和相关测试。
+4. 补充覆盖案例，确保命中正确的 handler。
+
+### 2. 扩展通用 shape runtime / authoring API
+
+适用场景：
+
+- 新增图形作者可复用的运行时能力
+- 改进 `GraphShapeApi`、`GraphShapeContext`、分组、标注或动画轨道工具
+- 增加通用 capability contract 或 capability handler
+
+主要文件：
+
+- `src/architecture/shapes/`
+- `src/architecture/capabilities/`
+- `src/engine/GraphXEngine.ts`
+- `src/types/`
+
+建议流程：
+
+1. 先确认这项能力是否应该是“通用基础设施”，而不是某个业务图形的私有逻辑。
+2. 尽量把能力落在 shape contracts、composition helpers 或 capability contracts 上。
+3. 如果改动属于公共 API，需要同步更新 `src/index.ts` 导出面。
+4. 如果能力会影响外部使用方式，记得同时更新 README、架构文档和 API 注释。
+
+### 3. 编写具体图形定义
+
+适用场景：
+
+- 业务方自己的圆、立方体、构造辅助图形
+- playground 演示用图形
+- 不适合抽象进库公共导出面的具体实现
+
+建议位置：
+
+- 业务项目自身代码
+- 当前仓库中的 `playground/`
+
+原则：
+
+- 库优先提供通用 authoring API，不优先内置具体图形。
+- 具体图形通过 `createComposedShapeDefinition()` 在消费侧组合。
+- 图形交互尽量通过 capability-first 模式暴露给外部 UI。
+
+## 当前推荐的图形扩展方式
+
+下面是当前更推荐的 shape authoring 方式：
 
 ```typescript
-import type { RenderContext, RenderHandler } from '../types';
+import { createComposedShapeDefinition } from 'vuegraphx';
 
-export class CustomFeatureHandler implements RenderHandler {
-  // 定义高优先级，确保在通配拦截器之前被触发
-  priority = 100;
+const shape = createComposedShapeDefinition<{ x: number; y: number }>({
+  type: 'example-shape',
+  supportedModes: ['2d', 'geometry'],
+  create(_context, payload) {
+    if (!payload) return null;
 
-  supports(ctx: RenderContext): boolean {
-    // 根据 ctx.expression 或 ctx.mode 判定是否匹配
-    return ctx.expression.startsWith('MyFeature');
+    return {
+      entityType: 'example-shape',
+      initialState: { highlighted: false },
+      setup(api) {
+        const point = api.trackObject(api.board.create('point', [payload.x, payload.y]));
+        point.on('down', () => Promise.resolve().then(() => api.select()));
+      },
+      getCapabilityTarget(api) {
+        if (!api.selected) return null;
+        return {
+          entityType: 'example-shape',
+          entityId: api.id,
+          entity: { id: api.id },
+          remove: () => api.remove()
+        };
+      }
+    };
   }
-
-  handle(ctx: RenderContext) {
-    // 1. 进行特定的参数提取
-    // 2. 调用 ctx.board.create 创建图元
-    // 3. 始终返回 JSXGraph 图元数组，或由于参数错误返回 null
-    return [ /* JSXGraph Elements */ ];
-  }
-}
+});
 ```
 
-### 3. 注册处理器
-在 `src/core/rendering/createDefaultRegistry.ts` 文件中，引入并添加您的类：
+如果图形需要更复杂的行为，优先复用这些基础设施：
 
-```typescript
-import { CustomFeatureHandler } from './handlers/CustomFeatureHandler';
+- `createAnimationTrack()` 管理动画播放。
+- `togglePointAnnotations()` 管理点标注。
+- `createGroup()` 管理命中区域和批量拖拽。
+- `projectUserBounds()` / `project3DBounds()` 定位悬浮 UI。
+- `notifyChange()` / `scheduleUiChange()` 同步外部能力 UI。
 
-export function createDefaultRegistry(): RenderRegistry {
-  const registry = new RenderRegistry();
-  // 按照优先级顺序依次注册
-  registry.register(new CustomFeatureHandler());
-  // ... 其他 handlers
-  return registry;
-}
+## 测试与文档要求
+
+只要改动影响公共行为，至少检查下面几项：
+
+```bash
+npm run build
+npm run test
+npm run docs:api
 ```
 
-## 🧪 覆盖测试补充要求 (Coverage Testing)
+以下情况需要同步更新手写文档：
 
-每一次新增指令渲染支持，必须配套提供覆盖率保证测试案例。
+- README 中的公开示例代码发生变化
+- 架构目录或扩展入口发生变化
+- 对外能力模型、shape authoring 模型发生变化
 
-请前往 `src/core/rendering/coverage/instructionCases.ts` 文件，添加您的指令对应的执行校验：
+## 提交建议
 
-```typescript
-{
-  name: "自定义特色功能演示",
-  mode: "2d", // 或 "3d"
-  expression: "MyFeature((1,2), (3,4))",
-  expectedHandler: CustomFeatureHandler.name, // 确保它命中了你的 Handler
-  expectedElementName: "MyFeature" 
-}
-```
-运行 `npm run test`，若通过，则证明指令能够被系统准确分发和执行并且具备回归测试保障。
+建议使用常见的提交前缀：
 
-## 代码提交规范
+- `feat:` 新功能
+- `fix:` 修复问题
+- `docs:` 文档更新
+- `refactor:` 重构
+- `test:` 测试补充
 
-本项目支持常规的开源代码提交规范，建议使用标准的 Git Commit Message：
-- `feat:` 新增功能
-- `fix:` 修复 Bug
-- `docs:` 编写或完善文档
-- `refactor:` 代码重构（不改变现有逻辑）
-- `test:` 补充单元测试
-
-期待您的合并请求 (Pull Request)！
+如果你修改了公共导出面、能力模型或 shape authoring API，请优先保证文档与代码一起演进。

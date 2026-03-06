@@ -1,13 +1,13 @@
-# 🛠 Development and Contribution Guide
+# 🛠 Development Guide
 
 **English** | [简体中文](./DEVELOPMENT.md)
 
-Thank you for your interest and contributions to the open-source project VueGraphX. To maintain high quality and stability of the project, developers attempting to participate in core code contribution or secondary feature development are highly encouraged to consult this document.
+This document describes how the VueGraphX codebase should be extended. The project includes both an expression rendering path and a shape runtime path.
 
-## Prerequisite Environment Setup
+## Prerequisites
 
-1. **Node.js**: Please use version 18.x or higher.
-2. **Package Manager**: This project uses `npm` to manage the dependency tree.
+1. Node.js 18 or newer.
+2. Use `npm` to install dependencies.
 
 ```bash
 git clone https://github.com/zyizyiz/VueGraphX.git
@@ -15,87 +15,147 @@ cd VueGraphX
 npm install
 ```
 
-## Available Source Scripts
+## Common Scripts
 
-Comprehensive testing and build instructions are defined within `package.json`:
+- `npm run dev`: start the Vite dev server and debug the playground.
+- `npm run build`: build the library output into `dist/`.
+- `npm run build:playground`: build the playground for demo deployment.
+- `npm run test`: run all vitest tests.
+- `npm run test:watch`: run tests in watch mode.
+- `npm run check:jsxgraph-3d`: validate that the JSXGraph 3D command catalog has not drifted.
+- `npm run docs:api`: regenerate the API reference into `docs/api/` with TypeDoc.
 
-- `npm run dev`: Starts the local development server referencing the `playground` components (based on Vite) for intuitive preview and debug.
-- `npm run build`: Executes production packaging for the core classes (Core Engine), outputting to the `dist/` compilation directory.
-- `npm run build:playground`: Packages the Playground specifically for Github Pages live demo deployment.
-- `npm run test`: Runs全 full unit tests via `vitest`.
-- `npm run test:watch`: Listens and triggers tasks for real-time testing during development phases.
-- `npm run check:jsxgraph-3d`: Targetingly validates underlying 3D API drifts caused by upstream `jsxgraph` updates.
+## First Decide Which Layer You Are Extending
 
-## 🚀 Core Rendering Handler Specifications
+### 1. Extending expression rendering
 
-If you plan to **add support for a new mathematical instruction command**, please abide by the following standards:
+Use this path when you are:
 
-### 1. Refuse Hardcoding in Main Logic
-The core rendering main method `Renderer.render` is not permitted to be directly appended with specific instruction logic. All custom rendering tasks MUST be extended utilizing the Handler pattern.
+- adding new math syntax
+- fixing how an expression type is detected
+- extending 2D / 3D command mapping to JSXGraph
 
-### 2. Creating Custom Handlers
-Establish your class file under `src/core/rendering/handlers`:
+Main files:
+
+- `src/rendering/handlers/`
+- `src/rendering/handlers/createDefaultRegistry.ts`
+- `src/rendering/coverage/instructionCases.ts`
+- `src/rendering/coverage/__tests__/`
+
+Suggested workflow:
+
+1. Add or modify a `RenderHandler` under `src/rendering/handlers/`.
+2. Register it in `createDefaultRegistry.ts` with the correct priority order.
+3. If command normalization changes, also review `jsxgraphCommandCatalog` and related tests.
+4. Add coverage cases to prove the intended handler is selected.
+
+### 2. Extending shared shape runtime / authoring APIs
+
+Use this path when you are:
+
+- adding reusable runtime infrastructure for shape authors
+- improving `GraphShapeApi`, `GraphShapeContext`, groups, annotations, or animation tracks
+- adding generic capability contracts or capability handlers
+
+Main files:
+
+- `src/architecture/shapes/`
+- `src/architecture/capabilities/`
+- `src/engine/GraphXEngine.ts`
+- `src/types/`
+
+Suggested workflow:
+
+1. Confirm that the behavior is truly generic infrastructure, not private logic for one business shape.
+2. Prefer to place the feature in shape contracts, composition helpers, or capability contracts.
+3. If the change affects public API, update exports in `src/index.ts`.
+4. If downstream usage changes, update README, architecture docs, and API comments together.
+
+### 3. Building concrete shapes
+
+Use this path when you are creating:
+
+- business-specific shapes
+- playground demo shapes
+- implementations that should not become part of the library's public export surface
+
+Preferred location:
+
+- consumer code
+- the local `playground/` in this repository
+
+Principles:
+
+- the library should primarily expose generic authoring APIs, not a growing list of concrete shapes
+- concrete shapes should be composed with `createComposedShapeDefinition()`
+- external UI should integrate through the capability-first model whenever possible
+
+## Recommended Shape Authoring Pattern
+
+The current recommended pattern looks like this:
 
 ```typescript
-import type { RenderContext, RenderHandler } from '../types';
+import { createComposedShapeDefinition } from 'vuegraphx';
 
-export class CustomFeatureHandler implements RenderHandler {
-  // Define high priority to ensure it triggers before wildcards handlers
-  priority = 100;
+const shape = createComposedShapeDefinition<{ x: number; y: number }>({
+  type: 'example-shape',
+  supportedModes: ['2d', 'geometry'],
+  create(_context, payload) {
+    if (!payload) return null;
 
-  supports(ctx: RenderContext): boolean {
-    // Determine a match according to ctx.expression or ctx.mode
-    return ctx.expression.startsWith('MyFeature');
+    return {
+      entityType: 'example-shape',
+      initialState: { highlighted: false },
+      setup(api) {
+        const point = api.trackObject(api.board.create('point', [payload.x, payload.y]));
+        point.on('down', () => Promise.resolve().then(() => api.select()));
+      },
+      getCapabilityTarget(api) {
+        if (!api.selected) return null;
+        return {
+          entityType: 'example-shape',
+          entityId: api.id,
+          entity: { id: api.id },
+          remove: () => api.remove()
+        };
+      }
+    };
   }
-
-  handle(ctx: RenderContext) {
-    // 1. Perform parameter extraction specifically
-    // 2. Extensively utilize ctx.board.create to instantiate graphical elements
-    // 3. Always return an array of JSXGraph elements, or null in case of parameter misconducts
-    return [ /* JSXGraph Elements */ ];
-  }
-}
+});
 ```
 
-### 3. Handler Registering
-Inside `src/core/rendering/createDefaultRegistry.ts`, import and register your newly introduced handler securely:
+For more advanced shape behavior, prefer the shared primitives:
 
-```typescript
-import { CustomFeatureHandler } from './handlers/CustomFeatureHandler';
+- `createAnimationTrack()` for playback
+- `togglePointAnnotations()` for point labels
+- `createGroup()` for hit areas and bulk drag behavior
+- `projectUserBounds()` / `project3DBounds()` for floating UI placement
+- `notifyChange()` / `scheduleUiChange()` for syncing external capability UI
 
-export function createDefaultRegistry(): RenderRegistry {
-  const registry = new RenderRegistry();
-  // Remember to register sequentially matching the priority execution stream
-  registry.register(new CustomFeatureHandler());
-  // ... other core handlers
-  return registry;
-}
+## Testing and Documentation Expectations
+
+If your change affects public behavior, at minimum check:
+
+```bash
+npm run build
+npm run test
+npm run docs:api
 ```
 
-## 🧪 Coverage Testing Requirement
+Update handwritten docs whenever:
 
-Every time new rendering support functionality is added, comprehensive fallback tests matching its case must be provided alongside it.
+- public README examples change
+- architecture directories or extension entry points change
+- the public capability model or shape authoring model changes
 
-Please browse to `src/core/rendering/coverage/instructionCases.ts` and attach the respective mock verification execution:
+## Commit Guidance
 
-```typescript
-{
-  name: "Custom Featured Showcase",
-  mode: "2d", // or "3d"
-  expression: "MyFeature((1,2), (3,4))",
-  expectedHandler: CustomFeatureHandler.name, // To ensure it is correctly resolved by your Handler
-  expectedElementName: "MyFeature" 
-}
-```
-If passing by executing `npm run test`, it proves the instruction can now be accurately distributed with sufficient regression coverage guarantees.
+These conventional prefixes work well:
 
-## Commit Message Guidelines
+- `feat:` new feature
+- `fix:` bug fix
+- `docs:` documentation change
+- `refactor:` refactor
+- `test:` test change
 
-This project conforms to standard open-source branch operations. Using the following conventional Git Commit Prefix Message configurations are strongly advocated:
-- `feat:` Adds a new feature
-- `fix:` Patches a bug
-- `docs:` Documentation additions or modifications
-- `refactor:` Code refactoring (doesn't alter API logic rules)
-- `test:` Appends unit testing procedures
-
-We await eagerly for your Pull Requests!
+If you modify public exports, the capability model, or shape authoring APIs, keep docs and code evolving together.

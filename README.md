@@ -1,6 +1,6 @@
 <div align="center">
   <h1>🌌 VueGraphX</h1>
-  <p><strong>基于 Vue 3 + JSXGraph 的下一代互动数学与几何可视化引擎</strong></p>
+  <p><strong>基于 Vue 3 + JSXGraph 的互动数学与几何可视化引擎</strong></p>
 
   <p>
     <a href="https://www.npmjs.com/package/vuegraphx"><img src="https://img.shields.io/npm/v/vuegraphx?color=42b883&style=for-the-badge" alt="NPM Version" /></a>
@@ -13,40 +13,44 @@
 
 [English](./README_en.md) | **简体中文**
 
-## 🌟 简介 (Introduction)
+## 🌟 简介
 
-**VueGraphX** 是一个专为前端和教育领域打造的现代化数学引擎，深度集成了 Vue 的响应式系统与 JSXGraph 的底层渲染能力。它提供了一套完整的 2D/3D 几何图形构造、数学表达式解析（支持 LaTeX 预处理）和交互式可视化解决方案。
+VueGraphX 提供两条互补的能力主线：
 
-🌐 **在线演示:** [https://zyizyiz.github.io/VueGraphX/](https://zyizyiz.github.io/VueGraphX/)
+- 表达式渲染：把 2D/3D 数学表达式、几何指令交给统一渲染管线执行。
+- 图形运行时：把具体图形实现收敛为 shape definition，再通过统一 capability API 暴露交互能力。
 
-## ✨ 核心特性 (Features)
+它适合两类场景：
 
-- 🚀 **响应式集成：** 原生支持 Vue 3 响应式系统（基于 `shallowRef` 优化），实现数据驱动的图元更新。
-- 📐 **全自动 2D/3D 渲染：** 支持从二维函数图像到复杂三维参数曲面的统一指令分发机制（Unified Handler System）。
-- 📝 **开箱即用的 LaTeX 解析：** 自动处理 LaTeX 格式输入到可执行数学表达式的转换。
-- 🧩 **高可扩展性：** 通过 `RenderRegistry` 灵活注册自定义渲染器（Handlers），不修改核心代码即可扩展新的数学指令。
-- 🛡️ **类型安全：** 全面基于 TypeScript 编写，提供完善的类型推导与自动提示。
+- 直接作为数学表达式渲染引擎使用。
+- 作为业务侧几何编辑器、教学工具或交互式画板的底层运行时使用。
 
-## 📦 安装 (Installation)
+🌐 在线演示: [https://zyizyiz.github.io/VueGraphX/](https://zyizyiz.github.io/VueGraphX/)
 
-推荐使用 npm、pnpm 或 yarn 安装：
+## ✨ 核心特性
+
+- 🚀 能力优先交互：外部通过 `subscribeCapabilities()` 订阅状态，通过 `executeCapability()` 触发行为，不必记忆每种图形的专用 API。
+- 🧩 组合式图形定义：使用 `createComposedShapeDefinition()`、`GraphShapeApi` 和 `GraphShapeContext` 在业务侧组合自己的图形。
+- 🎬 共享动画与标注能力：动画轨道、点标注、命中分组、拖拽与悬浮 UI 投影工具都是通用基础设施。
+- 📐 统一 2D / 3D 渲染入口：表达式渲染和 view3d 生命周期都通过同一个引擎门面管理。
+- 🛡️ 类型安全：公共类型、能力契约和 shape authoring API 都完整导出，适合二次封装和 IDE 自动提示。
+
+## 📦 安装
 
 ```bash
 npm install vuegraphx
 ```
 
-*你还需要确保安装了 `vue` 和 `jsxgraph` 作为对等依赖（Peer Dependencies）。*
+你还需要在项目中安装 `vue`。如果需要沿用 JSXGraph 默认样式，可额外引入其 CSS。
 
-## 🔨 快速上手 (Quick Start)
+## 🔨 快速上手
 
 ### 1. 初始化引擎
 
 ```typescript
 import { GraphXEngine, createComposedShapeDefinition } from 'vuegraphx';
-// 如果未全局导入，需引入 JSXGraph 样式
-import 'jsxgraph/distrib/jsxgraph.css'; 
+import 'jsxgraph/distrib/jsxgraph.css';
 
-// 绑定到一个具有确定高宽的 DOM 元素上
 const engine = new GraphXEngine('box', {
   boundingbox: [-5, 5, 5, -5],
   axis: true,
@@ -58,6 +62,7 @@ const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
   supportedModes: ['2d', 'geometry'],
   create(_context, payload) {
     if (!payload) return null;
+
     return {
       entityType: 'circle',
       initialState: {},
@@ -69,6 +74,7 @@ const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
       },
       getCapabilityTarget(api) {
         if (!api.selected) return null;
+
         return {
           entityType: 'circle',
           entityId: api.id,
@@ -81,34 +87,10 @@ const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
 });
 
 engine.registerShape(customCircle);
+engine.createShape('circle', { x: 0, y: 0 });
 ```
 
-### 2. 绘制 2D 函数图像
-
-```typescript
-// 直接通过表达式绘制 2D 函数图像
-engine.renderer.render('2d', 'y = sin(x) + 0.5*cos(2*x)', '#ff0000');
-
-// 绘制几何图形（如：经过两点的圆）
-engine.renderer.render('2d', 'c1 = Circle((0,0), (2,0))', '#0000ff');
-```
-
-### 3. 三维空间作图
-
-```typescript
-// 初始化 3D 视图（内部会自动挂载 view3d）
-const view3d = engine.board.get3DView();
-
-// 绘制显式 3D 曲面
-engine.renderer.render('3d', 'z = sin(x)*cos(y)', '#42b883');
-
-// 绘制 3D 空间直线
-engine.renderer.render('3d', 'Line((0,0,0), (1,1,1))', '#e74c3c');
-```
-
-### 4. 统一图形能力接口
-
-从当前版本开始，推荐外部使用者面向“能力”和“图形组合协议”编程。业务方新增图形时，不需要修改引擎内部，也不需要向库里增加某个特定图形类；只需要在自己的业务代码里组合出一个 shape definition，然后注册到引擎。
+### 2. 订阅能力并驱动交互
 
 ```typescript
 import type { GraphCapabilitySnapshot } from 'vuegraphx';
@@ -118,16 +100,41 @@ const unsubscribe = engine.subscribeCapabilities((snapshot: GraphCapabilitySnaps
   console.log('当前可用能力:', snapshot.capabilities);
 });
 
-// 图形创建与能力执行分离
-engine.createShape('circle', { x: 0, y: 0 });
-
-// 所有图形共用同一套能力 ID
-engine.executeCapability('animation.play');
 engine.executeCapability('style.stroke', { color: '#ef4444' });
 engine.executeCapability('resize.value', { value: 3.5 });
+engine.executeCapability('animation.play');
 
 unsubscribe();
 ```
+
+### 3. 执行表达式渲染
+
+```typescript
+engine.executeCommand('function-demo', 'y = sin(x) + 0.5*cos(2*x)', '#ff0000');
+engine.executeCommand('geometry-demo', 'c1 = Circle((0,0), (2,0))', '#0000ff');
+```
+
+### 4. 切换到 3D 模式
+
+```typescript
+engine.setMode('3d');
+
+const view3d = engine.getView3D();
+console.log('当前 3D 视图是否可用:', !!view3d);
+
+engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
+engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
+```
+
+## 🧠 推荐使用方式
+
+当前版本建议按下面的心智模型接入：
+
+1. 用 `registerShape()` 注册业务自己的图形定义。
+2. 用 `createShape()` 或拖拽入口创建实例。
+3. 用 `subscribeCapabilities()` 驱动工具栏、属性面板和动画控制 UI。
+4. 用 `executeCapability()` 执行删除、样式、缩放、动画、拆分等通用行为。
+5. 用 `executeCommand()` 处理表达式渲染类需求。
 
 能力描述统一包含：
 
@@ -136,43 +143,51 @@ unsubscribe();
 - `group`：能力分组，例如 `edit`、`style`、`animation`。
 - `active` / `enabled` / `meta`：当前状态、可用性和附加参数。
 
-只要某个图形声明自己支持这些契约，外部就不需要再关心它是圆、矩形、多边形还是圆柱。
+这意味着 UI 层可以围绕“能力”而不是“图形种类”来写。
 
-## 📚 开发图谱与进阶使用
-
-详细的架构说明和二次开发指南，请参阅：
+## 📚 文档入口
 
 - 📖 [架构设计文档 (ARCHITECTURE.md)](./docs/ARCHITECTURE.md)
 - 🛠 [开发贡献指南 (DEVELOPMENT.md)](./docs/DEVELOPMENT.md)
+- 📘 [API 参考文档 (自动生成)](./docs/api/README.md)
 
-## 🏗️ Core 架构分层
-
-`src/core` 职责清晰，支持模块化按需调用：
-
-- `board/`：画布与 3D 视图生命周期管理。
-- `entities/`：图元引用池（注册、更新与垃圾回收）。
-- `math/`：数学域环境，处理变量和函数的上下文。
-- `parsing/`：LaTeX 预处理及 AST 文本解析。
-- `rendering/`：核心模块，渲染调度机制与指令处理器列表。
-- `engine/`：对外门面（Facade），封装核心 API：`GraphXEngine`。
-
-## 🧪 测试与校验 (Testing & Coverage)
-
-项目内建完善的单元测试与指令集漂移校验：
+更新 API 文档：
 
 ```bash
-# 运行完整覆盖测试
-npm run test
+npm run docs:api
+```
 
-# 校验 JSXGraph 升级引发的 3D 指令目录漂移
+## 🏗️ 当前目录分层
+
+库代码集中在 `src/` 下：
+
+- `architecture/capabilities/`: 通用能力契约、能力处理器和能力注册表。
+- `architecture/shapes/`: shape definition、shape runtime、组合式 authoring API。
+- `board/`: JSXGraph board / view3d 生命周期管理。
+- `engine/`: 对外门面 `GraphXEngine`。
+- `entities/`: 表达式渲染结果的注册、替换与清理。
+- `math/`: 共享数学作用域。
+- `parsing/`: 文本与表达式解析。
+- `rendering/`: 表达式渲染器、指令目录和处理器。
+- `types/`: 对外基础类型与引擎配置。
+
+## 🧪 测试与校验
+
+```bash
+npm run build
+npm run test
 npm run check:jsxgraph-3d
 ```
 
-## 📝 贡献说明 (Contributing)
+## 📝 贡献说明
 
-欢迎提交 PR 与 Issue！具体规范请参考 [DEVELOPMENT.md](./docs/DEVELOPMENT.md)。
-我们在新增指令时推荐：**不要直接修改渲染主流程**，而是继承 `RenderHandler` 并注册进 `RenderRegistry`。
+欢迎提交 PR 与 Issue。当前版本有两类主要扩展方式：
 
-## 📄 许可证 (License)
+- 扩展表达式渲染：在 `src/rendering/handlers/` 中新增或调整处理器，并补覆盖测试。
+- 扩展图形运行时：优先通过 `createComposedShapeDefinition()`、能力契约和通用 shape API 完成，而不是把具体图形硬编码进库内。
+
+更详细的贡献约束见 [DEVELOPMENT.md](./docs/DEVELOPMENT.md)。
+
+## 📄 许可证
 
 本项目采用 [Apache License 2.0](./LICENSE) 许可证。

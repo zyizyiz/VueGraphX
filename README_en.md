@@ -1,6 +1,6 @@
 <div align="center">
   <h1>🌌 VueGraphX</h1>
-  <p><strong>Next-generation interactive math & geometry visualization engine based on Vue 3 + JSXGraph</strong></p>
+  <p><strong>Interactive math and geometry engine built on Vue 3 + JSXGraph</strong></p>
 
   <p>
     <a href="https://www.npmjs.com/package/vuegraphx"><img src="https://img.shields.io/npm/v/vuegraphx?color=42b883&style=for-the-badge" alt="NPM Version" /></a>
@@ -15,38 +15,39 @@
 
 ## 🌟 Introduction
 
-**VueGraphX** is a modern mathematics engine built for frontend development and education. It deeply integrates Vue's reactivity system with JSXGraph's underlying rendering capabilities. It provides a comprehensive solution for 2D/3D geometric construction, mathematical expression parsing (with LaTeX preprocessing support), and interactive visualization.
+VueGraphX exposes two complementary workflows:
 
-🌐 **Live Demo:** [https://zyizyiz.github.io/VueGraphX/](https://zyizyiz.github.io/VueGraphX/)
+- Expression rendering for 2D/3D math expressions and geometry commands.
+- Shape runtime authoring built around shape definitions plus a capability-first interaction model.
+
+That makes it suitable both as a standalone rendering engine and as the runtime layer of an interactive geometry editor, education tool, or custom whiteboard.
+
+🌐 Live Demo: [https://zyizyiz.github.io/VueGraphX/](https://zyizyiz.github.io/VueGraphX/)
 
 ## ✨ Features
 
-- 🚀 **Reactive Integration:** Natively supports Vue 3's reactivity system (optimized based on `shallowRef`), enabling data-driven updates of graphical elements.
-- 📐 **Fully Automated 2D/3D Rendering:** Unified command distribution mechanism (Unified Handler System) supporting everything from 2D function graphs to complex 3D parametric surfaces.
-- 📝 **Out-of-the-box LaTeX Parsing:** Automatically handles the conversion of LaTeX format input into executable mathematical expressions.
-- 🧩 **High Extensibility:** Register custom renderers (Handlers) seamlessly through `RenderRegistry` to expand new math instructions without altering the core codebase.
-- 🛡️ **Type Safety:** Written completely in TypeScript, providing superb type inference and auto-completion.
+- 🚀 Capability-first interaction: external UI subscribes with `subscribeCapabilities()` and triggers behavior with `executeCapability()` instead of learning one API per shape.
+- 🧩 Composable shape authoring: build local shapes with `createComposedShapeDefinition()`, `GraphShapeApi`, and `GraphShapeContext`.
+- 🎬 Shared runtime utilities: animation tracks, point annotations, hit groups, drag helpers, and screen projection helpers are reusable across shapes.
+- 📐 Unified 2D / 3D entry point: expression rendering and `view3d` lifecycle are managed through the same engine facade.
+- 🛡️ Type-safe public surface: engine options, capability contracts, and shape authoring interfaces are exported for downstream integrations.
 
 ## 📦 Installation
-
-It is recommended to install using npm, pnpm or yarn:
 
 ```bash
 npm install vuegraphx
 ```
 
-*You also need to ensure that `vue` and `jsxgraph` are installed as peer dependencies.*
+You also need `vue` in your project. If you want the default JSXGraph visual styles, import its CSS as well.
 
 ## 🔨 Quick Start
 
-### 1. Engine Initialization
+### 1. Initialize the engine
 
 ```typescript
 import { GraphXEngine, createComposedShapeDefinition } from 'vuegraphx';
-// Import JSXGraph style if not imported globally
-import 'jsxgraph/distrib/jsxgraph.css'; 
+import 'jsxgraph/distrib/jsxgraph.css';
 
-// Bind to a DOM element with defined width and height
 const engine = new GraphXEngine('box', {
   boundingbox: [-5, 5, 5, -5],
   axis: true,
@@ -58,6 +59,7 @@ const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
   supportedModes: ['2d', 'geometry'],
   create(_context, payload) {
     if (!payload) return null;
+
     return {
       entityType: 'circle',
       initialState: {},
@@ -69,6 +71,7 @@ const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
       },
       getCapabilityTarget(api) {
         if (!api.selected) return null;
+
         return {
           entityType: 'circle',
           entityId: api.id,
@@ -81,34 +84,10 @@ const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
 });
 
 engine.registerShape(customCircle);
+engine.createShape('circle', { x: 0, y: 0 });
 ```
 
-### 2. Draw 2D Function Graphs
-
-```typescript
-// Draw a 2D function directly through expressions
-engine.renderer.render('2d', 'y = sin(x) + 0.5*cos(2*x)', '#ff0000');
-
-// Draw geometric primitives (e.g. circle passing through two points)
-engine.renderer.render('2d', 'c1 = Circle((0,0), (2,0))', '#0000ff');
-```
-
-### 3. Draw in 3D Space
-
-```typescript
-// Initialize 3D view (view3d will be mounted automatically inside)
-const view3d = engine.board.get3DView();
-
-// Draw explicit 3D surface
-engine.renderer.render('3d', 'z = sin(x)*cos(y)', '#42b883');
-
-// Draw a 3D spatial line
-engine.renderer.render('3d', 'Line((0,0,0), (1,1,1))', '#e74c3c');
-```
-
-### 4. Unified Graph Capability API
-
-Starting from the current version, external consumers should program against capabilities and a shape composition protocol instead of any shape-specific implementation. When business code adds a new shape, it should not modify the engine internals or add a special class into the library; it should compose a shape definition locally and register it.
+### 2. Subscribe to capabilities and drive UI
 
 ```typescript
 import type { GraphCapabilitySnapshot } from 'vuegraphx';
@@ -118,58 +97,93 @@ const unsubscribe = engine.subscribeCapabilities((snapshot: GraphCapabilitySnaps
   console.log('Available capabilities:', snapshot.capabilities);
 });
 
-engine.createShape('circle', { x: 0, y: 0 });
-
-engine.executeCapability('animation.play');
 engine.executeCapability('style.stroke', { color: '#ef4444' });
 engine.executeCapability('resize.value', { value: 3.5 });
+engine.executeCapability('animation.play');
 
 unsubscribe();
 ```
 
-Each capability descriptor provides:
+### 3. Render expressions
+
+```typescript
+engine.executeCommand('function-demo', 'y = sin(x) + 0.5*cos(2*x)', '#ff0000');
+engine.executeCommand('geometry-demo', 'c1 = Circle((0,0), (2,0))', '#0000ff');
+```
+
+### 4. Switch to 3D mode
+
+```typescript
+engine.setMode('3d');
+
+const view3d = engine.getView3D();
+console.log('3D view is ready:', !!view3d);
+
+engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
+engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
+```
+
+## 🧠 Recommended Mental Model
+
+The current public API is easiest to use if you think about it in this order:
+
+1. Register your own shape definitions with `registerShape()`.
+2. Create instances through `createShape()` or a drag-and-drop entry.
+3. Drive toolbars and inspectors from `subscribeCapabilities()`.
+4. Execute shared behavior through `executeCapability()`.
+5. Use `executeCommand()` for expression-driven rendering.
+
+Each capability descriptor exposes:
 
 - `feature`: semantic meaning such as `resize`, `style`, or `delete`.
 - `kind`: interaction model such as `action`, `toggle`, `input`, or `panel`.
 - `group`: category such as `edit`, `style`, or `animation`.
 - `active` / `enabled` / `meta`: runtime state, availability, and extra payload.
 
-As long as a shape declares that it supports these contracts, external code no longer needs to care whether it is a circle, rectangle, polygon, cylinder, or any other shape.
+This lets the UI layer reason about capabilities instead of shape-specific implementation details.
 
-## 📚 Advanced Documentation
-
-For detailed architectural instructions and secondary development guidelines, please consult:
+## 📚 Documentation
 
 - 📖 [Architecture Design (ARCHITECTURE_en.md)](./docs/ARCHITECTURE_en.md)
-- 🛠 [Development Guideline (DEVELOPMENT_en.md)](./docs/DEVELOPMENT_en.md)
+- 🛠 [Development Guide (DEVELOPMENT_en.md)](./docs/DEVELOPMENT_en.md)
+- 📘 [API Reference (generated)](./docs/api/README.md)
 
-## 🏗️ Core Architecture Layering
-
-The responsibilities of `src/core` are clearly defined to support modular invocation:
-
-- `board/`: Lifecycle management for canvas and 3D views.
-- `entities/`: Graphical elements reference pool (registration, update, and garbage collection).
-- `math/`: Math domain environments, handling variables and function contexts.
-- `parsing/`: LaTeX preprocessing and AST text parsing.
-- `rendering/`: The core rendering dispatch mechanism and command handler list.
-- `engine/`: The external Facade encapsulating the core API: `GraphXEngine`.
-
-## 🧪 Testing & Coverage
-
-The project is built with comprehensive unit testing and command coverage validation:
+To regenerate the API reference:
 
 ```bash
-# Run full coverage tests
-npm run test
+npm run docs:api
+```
 
-# Validate whether the 3D API directory drifts after upgrading JSXGraph 
+## 🏗️ Current Directory Layout
+
+The library is organized under `src/`:
+
+- `architecture/capabilities/`: generic capability contracts, handlers, and registry.
+- `architecture/shapes/`: shape definitions, runtime infrastructure, and composable authoring helpers.
+- `board/`: JSXGraph board / `view3d` lifecycle.
+- `engine/`: public facade `GraphXEngine`.
+- `entities/`: registration and cleanup of rendered command elements.
+- `math/`: shared math scope.
+- `parsing/`: text and expression parsing.
+- `rendering/`: renderer, command catalog, and render handlers.
+- `types/`: public engine and capability types.
+
+## 🧪 Testing & Validation
+
+```bash
+npm run build
+npm run test
 npm run check:jsxgraph-3d
 ```
 
 ## 📝 Contributing
 
-PRs and Issues are welcome! Please refer to [DEVELOPMENT_en.md](./docs/DEVELOPMENT_en.md) for specific guidelines. 
-When adding new instructions, it's recommended: **Do not modify the main rendering process directly**, but inherit `RenderHandler` and register it into `RenderRegistry` instead.
+The current codebase has two primary extension paths:
+
+- Extend expression rendering by adding or adjusting handlers under `src/rendering/handlers/` and adding coverage tests.
+- Extend shape runtime behavior through `createComposedShapeDefinition()`, capability contracts, and shared shape APIs instead of hard-coding concrete shapes into the library.
+
+See [DEVELOPMENT_en.md](./docs/DEVELOPMENT_en.md) for details.
 
 ## 📄 License
 

@@ -2,93 +2,150 @@
 
 [English](./ARCHITECTURE_en.md) | **简体中文**
 
-本文档旨在详述 `VueGraphX` 的核心架构设计思想、模块职责划分与系统内部流转机制。
+本文档描述 VueGraphX 的架构。工程围绕两条并行主线组织：
 
-## 1. 核心设计原则 (Core Design Principles)
+- 表达式渲染主线：负责把字符串表达式转换为 JSXGraph 图元。
+- 图形运行时主线：负责 shape definition、实例生命周期、能力快照与能力执行。
 
-- **控制反转与职责分离**：通过注册中心 (`Registry`) 管理渲染逻辑，避免在主程序中堆砌大量 `if-else`。
-- **外观模式（Facade）对外暴露**：开发者只与 `GraphXEngine` 进行交互，底层引擎如解析(`parsing`)、画板环境(`board`)、内存/实体回收(`entities`) 完全对用户透明。
-- **无缝集成 Vue**：内置基于 Vue 3 的 `shallowRef` 管理几何对象状态，完美支持在 Vue 组件树中实现图元交互。
+## 1. 核心设计原则
 
-## 2. 目录架构层级 (Directory Structure)
+- 门面优先：对外统一由 `GraphXEngine` 承担入口，负责画板生命周期、表达式渲染、图形注册与能力执行。
+- capability-first：外部 UI 围绕统一能力描述渲染工具栏、面板和动画控制。
+- shape authoring 与 engine runtime 解耦：库提供通用组合式 authoring API，具体图形定义应尽量写在业务侧或 playground 中。
+- 2D / 3D 共用基础设施：视口投影、屏幕包围盒、锚点解析、动画调度与点标注都是跨图形、跨模式复用的能力。
+- 表达式渲染与图形运行时并存：命令渲染适合函数/几何表达式，shape runtime 适合复杂交互式对象，两者都由同一个引擎门面协调。
 
-核心代码集中在 `src/core` 目录下：
+## 2. 当前目录结构
+
+核心代码位于 `src/`：
 
 ```text
-src/core/
- ├── board/       # 画板管理 (JXG.Board 和 View3D 实例包装)
- ├── engine/      # 全局外观 (GraphXEngine)
- ├── entities/    # 实体池与生命周期管理，解决图元更新与销毁
- ├── math/        # 上下文域，存储用户定义的变量和自定义数学函数
- ├── parsing/     # 解析管线，包含 LaTeX 转义及表达式标准化
- ├── rendering/   # ★核心渲染引擎 (分发逻辑与 Handlers 实装)
- └── types/       # 类型定义与接口声明
+src/
+ ├── architecture/
+ │   ├── capabilities/   # 通用能力契约、能力处理器和注册表
+ │   └── shapes/         # shape definition、runtime、组合式 authoring API
+ ├── board/              # JSXGraph board / view3d 生命周期
+ ├── engine/             # GraphXEngine 对外门面
+ ├── entities/           # 表达式渲染结果的注册与清理
+ ├── math/               # 共享数学作用域
+ ├── parsing/            # 指令与表达式解析
+ ├── rendering/          # Renderer、指令目录、渲染处理器
+ └── types/              # 引擎与能力公共类型
 ```
 
-## 3. 指令渲染生命周期 (Rendering Pipeline)
+公共导出入口为 `src/index.ts`。当前对外暴露的重点不是某组内置图形，而是：
 
-`VueGraphX` 在接受到用户输入的字符串时，其生命周期分为下面四步：
+- `GraphXEngine`
+- `createComposedShapeDefinition()`
+- shape contracts 与 capability contracts
+- `BoardManager`、`MathScope`、基础类型定义
 
-### 3.1 解析阶段 (Parsing)
-输入：例如用户的 LaTeX 公式 `y = \sin(x)` 或纯文本 `Circle((0,0), (2,2))`。
-由 `parsing` 模块进行转义，将其归一化、去除多余字符并转换成 `mathjs` 及 `jsxgraph` 可识别的标准 AST 文本表达式。
+## 3. 双主线运行模型
 
-### 3.2 注入上下文 (Context Assembly)
-系统组装一个 `RenderContext`，其中不仅包含解析后的表达式，还会封装当前的 `Board` 实例、`math` 域内变量上下文、指定颜色（Color），以及绘制模式（`2d` 还是 `3d`）。
+### 3.1 表达式渲染主线
 
-### 3.3 处理器分发 (Handler Dispatch)
-通过注册中心（`RenderRegistry`），引擎会按照预设优先级，将上下文按顺序分发给所有已注册的 `RenderHandler`。
-每个 Handler 需要实现一个方法：`supports(ctx: RenderContext): boolean`。第一个返回 `true` 的处理器会接管此指令的执行。
+表达式渲染面向这类需求：
 
-### 3.4 图元注册与执行 (Execution & Entity Registration)
-命中处理策略（如 `Expression2DHandler` 处理显式 2D 函数），Handler 产出 `JXG.GeometryElement[]`。引擎随后会将这些产生的元素送入 `entities` 的生命周期池，便于将来快速修改样式、移除或垃圾回收。
+- 输入 `y = sin(x)` 一类函数表达式
+- 输入 `Circle((0,0), (2,0))` 一类几何命令
+- 输入 3D 公式或曲面定义
 
-## 4. 2D / 3D 差异化处理
+调用入口通常是 `GraphXEngine.executeCommand()`，整体流程如下：
 
-`VueGraphX` 采用统一渲染入口，但针对 3D 渲染，引擎做出了如下智能适配：
+1. `GraphXEngine` 接收命令 id、表达式、颜色和额外参数。
+2. `Renderer` 组装 `RenderContext`，包含当前模式、board、entity manager、math scope 等上下文。
+3. `parsing` 负责对表达式做预处理与标准化。
+4. `RenderRegistry` 按优先级分发给各个 `RenderHandler`。
+5. 命中的 handler 返回 `JXG.GeometryElement[]`。
+6. `EntityManager` 以命令 id 为单位登记这些元素，便于后续覆盖更新和移除。
 
-- **自动化 3D View 创建**：如探测到渲染模式为 `3d` 且上下文尚未初始化 3D 画布，引擎会自动生成 `view3d`。
-- **JSXGraph 命令映射**：底层 3D 命令（如 `curve3d`、`surface3d`）已经统一记录在映射表中（如 `jsxgraphCommandCatalog`），用户只需输入通用的 `Surface(...)`，系统会自动归一化。
+这条主线仍然保留 handler 扩展机制，但它已经只是整个系统中的一部分，而不是唯一扩展点。
 
-## 5. 易于扩展的系统 (Extensibility)
+### 3.2 图形运行时主线
 
-若需要扩展一套属于“抛物线焦点探测指令”，只需：
-1. 实现 `RenderHandler` 接口。
-2. 重写 `supports` 以匹配特定标识符。
-3. 重写 `handle` 利用 `ctx.board.create` 绘制元素。
-4. 挂载到 `RenderRegistry` 以提升优先级。
+图形运行时面向这类需求：
 
-## 6. 图形能力层 (Capability Layer)
+- 一个图形拥有自己的选中态、拖拽、动画和辅助 UI
+- 外部需要围绕统一工具栏和面板驱动多种图形
+- 图形作者希望复用点标注、动画轨道、投影和分组基础设施
 
-旧设计中，交互能力主要挂载在具体图形插件里，例如“圆形插件”同时承担了圆形数据、辅助线、标注、裁切、颜色等全部职责。这样虽然实现快，但对外部用户来说，接入方式会退化成“记住每种图形各自的专用 API”。
+这条主线由以下对象协作完成：
 
-现在的设计将“图形实现”和“图形能力”彻底拆开：
+- `GraphShapeDefinition`
+- `GraphShapeContext`
+- `GraphShapeComposition`
+- `GraphShapeApi`
+- `GraphShapeInstance`
 
-- 内部图形运行时只负责维护图形数据、选中态和底层 JSXGraph 对象。
-- 图形运行时通过 `getCapabilityTarget()` 暴露自己支持的通用能力契约，而不是直接拼装能力列表。
-- 引擎使用一组完全通用的能力处理器，把这些契约转换成统一能力描述与执行入口。
-- 外部只通过 `GraphXEngine.subscribeCapabilities()` 订阅能力快照。
-- 外部只通过 `GraphXEngine.executeCapability()` 触发能力，创建图形则通过 `GraphXEngine.createShape()`。
+典型流程如下：
 
-核心接口如下：
+1. 业务代码通过 `createComposedShapeDefinition()` 组合出一个 shape definition。
+2. 调用 `GraphXEngine.registerShape()` 注册定义。
+3. 调用 `createShape()` 或拖拽入口创建实例。
+4. 引擎基于 `GraphShapeContext` 和组合对象生成运行时实例。
+5. `setup()` 中创建 JSXGraph 对象、分组、事件、动画轨道和点标注。
+6. 选中态变化时，实例通过 `getCapabilityTarget()` 暴露统一能力契约。
 
-```typescript
-interface GraphCapabilityDescriptor {
-	id: string;
-	feature: string;
-	label: string;
-	entityType: string;
-	kind: 'action' | 'toggle' | 'input' | 'panel';
-	group: 'create' | 'inspect' | 'edit' | 'annotate' | 'style' | 'animation' | 'danger';
-	active?: boolean;
-	enabled?: boolean;
-	meta?: Record<string, unknown>;
-}
-```
+### 3.3 capability 主线
 
-这层抽象带来的收益：
+能力层把“图形内部实现”转换成“外部 UI 可消费的统一语义”：
 
-- 新图形只需要声明“自己支持哪些通用能力契约”，不必重新设计一套外部 API。
-- UI 层可以按能力分组动态渲染工具栏，而不是写死 `if shape === circle` 的控制分支。
-- 同类能力能形成稳定语义，例如 `resize`、`style`、`delete`，更适合做二次封装、低代码和扩展生态。
-- 引擎继续保留图形私有实现空间，不会把每个图形的内部细节暴露给业务层。
+1. 当前选中实例返回一个 `ShapeCapabilityTarget`。
+2. `capabilityRegistry` 中的通用能力处理器根据 target 判断自己是否适用。
+3. 每个能力处理器生成一个 `GraphCapabilityDescriptor`。
+4. 外部通过 `subscribeCapabilities()` 获得 `{ selection, capabilities }` 快照。
+5. 外部通过 `executeCapability(id, payload)` 调用统一执行入口。
+
+当前 capability 体系的重点收益是：
+
+- UI 可以按 `group` 和 `kind` 自动组织控件。
+- 同一个删除、样式、缩放、动画能力可以跨图形复用。
+- 图形内部仍保留私有实现细节，不必把每种图形的专用操作暴露给外部。
+
+## 4. shape authoring 的共享基础设施
+
+当前版本针对图形作者提供了几类重要的共享能力：
+
+- 动画轨道：`createAnimationTrack()`、多轨 animation contract、共享帧调度器。
+- 点标注：`togglePointAnnotations()`、`clearPointAnnotations()` 以及 point / intersection / midpoint / computed 等来源。
+- 投影工具：`projectUserPoint()`、`projectPoint3D()`、`projectUserBounds()`、`project3DBounds()`、`getBoundsAnchor()`。
+- 受管分组：`createGroup()`、分组命中、批量拖拽、批量属性控制。
+- UI 同步：`notifyChange()` 和 `scheduleUiChange()` 用于同步外部工具栏与悬浮 UI。
+
+这让图形作者只关注“几何如何变化”和“能力如何暴露”，而不必重复实现 requestAnimationFrame、命中批处理或投影换算。
+
+## 5. 推荐的外部接入方式
+
+### 5.1 如果你的需求是表达式驱动
+
+优先使用：
+
+- `executeCommand()` 渲染或替换一条表达式
+- `removeCommand()` 清理指定命令结果
+- `setMode()` 在 2D / 3D / geometry 之间切换
+
+### 5.2 如果你的需求是交互式图形编辑
+
+优先使用：
+
+- `registerShape()` 注册 shape definition
+- `createShape()` 创建实例
+- `subscribeCapabilities()` 驱动外部 UI
+- `executeCapability()` 统一执行交互行为
+
+### 5.3 如果你的需求是扩展库本身
+
+先判断你改动的是哪一层：
+
+- 新数学指令或表达式语义：改 `rendering/`。
+- 新的通用图形 authoring 能力：改 `architecture/shapes/`。
+- 新的通用外部交互能力：改 `architecture/capabilities/`。
+- 某个具体业务图形：优先放在 consumer 或 playground，不直接塞进库导出面。
+
+## 6. 架构关注点
+
+- `src/` 目录按能力、图形、渲染、引擎和基础类型分层组织。
+- 公共交互 API 采用 capability-first 模式。
+- `shape definition` 与 `composition` 是扩展复杂交互图形的主要方式。
+- 动画、点标注、投影、命中与分组属于共享基础设施。
+- 公共导出面聚焦通用 runtime 和 authoring API。
