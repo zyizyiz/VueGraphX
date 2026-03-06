@@ -57,3 +57,38 @@ If you wish to expand an instruction suite, for example, a "Parabola Focal Point
 2. Override `supports` to match specific identifiers.
 3. Override `handle` to utilize `ctx.board.create` to draw elements.
 4. Mount your handler into `RenderRegistry` to elevate its execution priority.
+
+## 6. Capability Layer
+
+In the previous design, interaction features were attached directly to shape-specific plugins. For example, the circle plugin simultaneously owned circle state, helper lines, marking, cutting, and color tools. That implementation was fast to ship, but it forced consumers to learn a different API surface for each shape.
+
+The new design fully separates shape implementation from shape capability:
+
+- Internal shape runtimes own shape state, selection state, and low-level JSXGraph objects.
+- Each shape runtime exposes generic capability contracts through `getCapabilityTarget()` instead of assembling capability lists directly.
+- The engine uses a fully generic capability handler layer to turn those contracts into descriptors and executable actions.
+- External integrations subscribe through `GraphXEngine.subscribeCapabilities()`.
+- External integrations trigger behavior through `GraphXEngine.executeCapability()`, while shape creation goes through `GraphXEngine.createShape()`.
+
+Core interface:
+
+```typescript
+interface GraphCapabilityDescriptor {
+	id: string;
+	feature: string;
+	label: string;
+	entityType: string;
+	kind: 'action' | 'toggle' | 'input' | 'panel';
+	group: 'create' | 'inspect' | 'edit' | 'annotate' | 'style' | 'animation' | 'danger';
+	active?: boolean;
+	enabled?: boolean;
+	meta?: Record<string, unknown>;
+}
+```
+
+Benefits of this layer:
+
+- New shapes only declare which generic capability contracts they support instead of inventing a brand new public API.
+- The UI can render toolbars by capability group rather than hard-coding `if shape === circle` branches.
+- Shared semantics such as `resize`, `style`, and `delete` become stable extension points for wrappers, low-code builders, and extension ecosystems.
+- The engine still preserves shape-private implementation details while exposing a much friendlier external contract.

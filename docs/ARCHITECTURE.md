@@ -57,3 +57,38 @@ src/core/
 2. 重写 `supports` 以匹配特定标识符。
 3. 重写 `handle` 利用 `ctx.board.create` 绘制元素。
 4. 挂载到 `RenderRegistry` 以提升优先级。
+
+## 6. 图形能力层 (Capability Layer)
+
+旧设计中，交互能力主要挂载在具体图形插件里，例如“圆形插件”同时承担了圆形数据、辅助线、标注、裁切、颜色等全部职责。这样虽然实现快，但对外部用户来说，接入方式会退化成“记住每种图形各自的专用 API”。
+
+现在的设计将“图形实现”和“图形能力”彻底拆开：
+
+- 内部图形运行时只负责维护图形数据、选中态和底层 JSXGraph 对象。
+- 图形运行时通过 `getCapabilityTarget()` 暴露自己支持的通用能力契约，而不是直接拼装能力列表。
+- 引擎使用一组完全通用的能力处理器，把这些契约转换成统一能力描述与执行入口。
+- 外部只通过 `GraphXEngine.subscribeCapabilities()` 订阅能力快照。
+- 外部只通过 `GraphXEngine.executeCapability()` 触发能力，创建图形则通过 `GraphXEngine.createShape()`。
+
+核心接口如下：
+
+```typescript
+interface GraphCapabilityDescriptor {
+	id: string;
+	feature: string;
+	label: string;
+	entityType: string;
+	kind: 'action' | 'toggle' | 'input' | 'panel';
+	group: 'create' | 'inspect' | 'edit' | 'annotate' | 'style' | 'animation' | 'danger';
+	active?: boolean;
+	enabled?: boolean;
+	meta?: Record<string, unknown>;
+}
+```
+
+这层抽象带来的收益：
+
+- 新图形只需要声明“自己支持哪些通用能力契约”，不必重新设计一套外部 API。
+- UI 层可以按能力分组动态渲染工具栏，而不是写死 `if shape === circle` 的控制分支。
+- 同类能力能形成稳定语义，例如 `resize`、`style`、`delete`，更适合做二次封装、低代码和扩展生态。
+- 引擎继续保留图形私有实现空间，不会把每个图形的内部细节暴露给业务层。

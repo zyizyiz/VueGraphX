@@ -42,7 +42,7 @@ npm install vuegraphx
 ### 1. 初始化引擎
 
 ```typescript
-import { GraphXEngine } from 'vuegraphx';
+import { GraphXEngine, createComposedShapeDefinition } from 'vuegraphx';
 // 如果未全局导入，需引入 JSXGraph 样式
 import 'jsxgraph/distrib/jsxgraph.css'; 
 
@@ -52,6 +52,35 @@ const engine = new GraphXEngine('box', {
   axis: true,
   showNavigation: false,
 });
+
+const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
+  type: 'circle',
+  supportedModes: ['2d', 'geometry'],
+  create(_context, payload) {
+    if (!payload) return null;
+    return {
+      entityType: 'circle',
+      initialState: {},
+      setup(api) {
+        const center = api.trackObject(api.board.create('point', [payload.x, payload.y], { visible: false }));
+        const radiusPoint = api.trackObject(api.board.create('point', [payload.x + 2, payload.y], { visible: false }));
+        const circle = api.trackObject(api.board.create('circle', [center, radiusPoint]));
+        circle.on('down', () => Promise.resolve().then(() => api.select()));
+      },
+      getCapabilityTarget(api) {
+        if (!api.selected) return null;
+        return {
+          entityType: 'circle',
+          entityId: api.id,
+          entity: { id: api.id },
+          remove: () => api.remove()
+        };
+      }
+    };
+  }
+});
+
+engine.registerShape(customCircle);
 ```
 
 ### 2. 绘制 2D 函数图像
@@ -76,6 +105,38 @@ engine.renderer.render('3d', 'z = sin(x)*cos(y)', '#42b883');
 // 绘制 3D 空间直线
 engine.renderer.render('3d', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
+
+### 4. 统一图形能力接口
+
+从当前版本开始，推荐外部使用者面向“能力”和“图形组合协议”编程。业务方新增图形时，不需要修改引擎内部，也不需要向库里增加某个特定图形类；只需要在自己的业务代码里组合出一个 shape definition，然后注册到引擎。
+
+```typescript
+import type { GraphCapabilitySnapshot } from 'vuegraphx';
+
+const unsubscribe = engine.subscribeCapabilities((snapshot: GraphCapabilitySnapshot) => {
+  console.log('当前选中图形:', snapshot.selection);
+  console.log('当前可用能力:', snapshot.capabilities);
+});
+
+// 图形创建与能力执行分离
+engine.createShape('circle', { x: 0, y: 0 });
+
+// 所有图形共用同一套能力 ID
+engine.executeCapability('animation.play');
+engine.executeCapability('style.stroke', { color: '#ef4444' });
+engine.executeCapability('resize.value', { value: 3.5 });
+
+unsubscribe();
+```
+
+能力描述统一包含：
+
+- `feature`：能力语义，例如 `resize`、`style`、`delete`。
+- `kind`：交互方式，例如 `action`、`toggle`、`input`、`panel`。
+- `group`：能力分组，例如 `edit`、`style`、`animation`。
+- `active` / `enabled` / `meta`：当前状态、可用性和附加参数。
+
+只要某个图形声明自己支持这些契约，外部就不需要再关心它是圆、矩形、多边形还是圆柱。
 
 ## 📚 开发图谱与进阶使用
 

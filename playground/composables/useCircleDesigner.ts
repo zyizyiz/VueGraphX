@@ -1,12 +1,37 @@
 import { shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import type { GraphXEngine } from 'vuegraphx';
-import { CircleDesignerPlugin, CircleDesignerState, CircleDesignerFastState, ActiveToolType, CircleModel } from 'vuegraphx';
+import type { GraphCapabilitySnapshot, GraphXEngine } from 'vuegraphx';
+
+type ActiveToolType = 'none' | 'size' | 'assist' | 'crop' | 'color-stroke' | 'color-fill';
+
+interface CircleModel {
+  id: string;
+  isPiece?: boolean;
+  intuitive: unknown | null;
+  cutDraft: unknown | null;
+  cutConfirmed?: boolean;
+}
+
+interface CirclePanelState {
+  circles: CircleModel[];
+  selectedId: string | null;
+  showFeature: boolean;
+  showColorPanel: boolean;
+  activeTool: ActiveToolType;
+  selectedColor: string;
+  isRadiusDragging: boolean;
+}
+
+interface CirclePanelUIState {
+  radiusValue: number;
+  toolbarStyle: Record<string, string>;
+  sizeInputStyle: Record<string, string>;
+}
 
 export function useCircleDesigner(
   getEngine: () => GraphXEngine | null,
   getActiveMode: () => string
 ) {
-  const pluginState = shallowRef<CircleDesignerState>({
+  const panelState = shallowRef<CirclePanelState>({
     circles: [],
     selectedId: null,
     showFeature: false,
@@ -16,42 +41,75 @@ export function useCircleDesigner(
     isRadiusDragging: false
   });
 
-  const fastState = shallowRef<CircleDesignerFastState>({
+  const fastState = shallowRef<CirclePanelUIState>({
     radiusValue: 2,
     toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' },
     sizeInputStyle: { left: '50%', top: '50%' }
   });
 
-  let plugin: CircleDesignerPlugin | null = null;
-  let unsubscribe: (() => void) | null = null;
-  let unsubscribeFast: (() => void) | null = null;
+  const capabilitySnapshot = shallowRef<GraphCapabilitySnapshot>({
+    selection: null,
+    capabilities: []
+  });
+
+  let unsubscribeCapabilities: (() => void) | null = null;
   let dragOverHandler: ((e: DragEvent) => void) | null = null;
   let dropHandler: ((e: DragEvent) => void) | null = null;
   let mountedDropTarget: HTMLElement | null = null;
 
-  const getPlugin = () => {
+  const getEngineInstance = () => {
     const engine = getEngine();
     if (!engine) return null;
-    
-    let p = engine.getPlugin<CircleDesignerPlugin>('circle');
-    if (!p) {
-      p = new CircleDesignerPlugin();
-      engine.registerPlugin('circle', p);
-    }
-    return p;
+    return engine;
+  };
+
+  const getCapability = (id: string) => capabilitySnapshot.value.capabilities.find(capability => capability.id === id);
+
+  const getActiveTool = (): ActiveToolType => {
+    if (getCapability('style.fill')?.active) return 'color-fill';
+    if (getCapability('style.stroke')?.active) return 'color-stroke';
+    if (getCapability('resize')?.active) return 'size';
+    if (getCapability('edit.auxiliary-line')?.active) return 'assist';
+    if (getCapability('edit.split')?.active) return 'crop';
+    return 'none';
   };
 
   const init = () => {
-    plugin = getPlugin();
-    if (plugin) {
-      if (unsubscribe) unsubscribe();
-      unsubscribe = plugin.subscribe((newState) => {
-        pluginState.value = newState;
+    const engine = getEngineInstance();
+    if (engine) {
+      if (unsubscribeCapabilities) unsubscribeCapabilities();
+      unsubscribeCapabilities = engine.subscribeCapabilities((snapshot) => {
+        capabilitySnapshot.value = snapshot;
+
+        const selected = snapshot.selection?.entityType === 'circle' || snapshot.selection?.entityType === 'circle-piece'
+          ? snapshot.selection.entity as CircleModel
+          : null;
+        const radiusCapability = getCapability('resize.value');
+        const styleCapability = getCapability('style');
+        const toolbarStyle = (snapshot.selection?.entityType === 'circle' || snapshot.selection?.entityType === 'circle-piece') && snapshot.selection.ui?.toolbarStyle
+          ? snapshot.selection.ui.toolbarStyle as Record<string, string>
+          : { left: '50%', top: 'calc(100% - 5rem)' };
+        const sizeInputStyle = (snapshot.selection?.entityType === 'circle' || snapshot.selection?.entityType === 'circle-piece') && snapshot.selection.ui?.sizeInputStyle
+          ? snapshot.selection.ui.sizeInputStyle as Record<string, string>
+          : { left: '50%', top: '50%' };
+
+        panelState.value = {
+          circles: selected ? [selected] : [],
+          selectedId: selected?.id ?? null,
+          showFeature: !!getCapability('inspect')?.active,
+          showColorPanel: !!styleCapability?.active,
+          activeTool: getActiveTool(),
+          selectedColor: typeof styleCapability?.meta?.selectedColor === 'string' ? styleCapability.meta.selectedColor : '#0ea5e9',
+          isRadiusDragging: false
+        };
+
+        fastState.value = {
+          radiusValue: typeof radiusCapability?.meta?.value === 'number' ? radiusCapability.meta.value : 2,
+          toolbarStyle,
+          sizeInputStyle
+        };
       });
-      if (unsubscribeFast) unsubscribeFast();
-      unsubscribeFast = plugin.subscribeFast((newFastState) => {
-        fastState.value = newFastState;
-      });
+
       installDropListeners();
     }
   };
@@ -97,8 +155,8 @@ export function useCircleDesigner(
   }, { immediate: true });
 
   watch(() => getActiveMode(), (mode) => {
-    if (mode !== 'geometry' && plugin) {
-      plugin.clearSelections();
+    if (mode !== 'geometry') {
+      capabilitySnapshot.value = { selection: null, capabilities: [] };
     }
   });
 
@@ -107,19 +165,24 @@ export function useCircleDesigner(
   });
 
   onBeforeUnmount(() => {
-    if (unsubscribe) unsubscribe();
-    if (unsubscribeFast) unsubscribeFast();
+    if (unsubscribeCapabilities) unsubscribeCapabilities();
     if (mountedDropTarget && dragOverHandler) mountedDropTarget.removeEventListener('dragover', dragOverHandler);
     if (mountedDropTarget && dropHandler) mountedDropTarget.removeEventListener('drop', dropHandler);
   });
 
   const selected = computed<CircleModel | null>(() => {
-    return pluginState.value.circles.find(c => c.id === pluginState.value.selectedId) || null;
+    return panelState.value.circles.find(c => c.id === panelState.value.selectedId) || null;
   });
 
+  const runCapability = (capabilityId: string, payload?: unknown) => {
+    const engine = getEngine();
+    if (!engine) return false;
+    return engine.executeCapability(capabilityId, payload);
+  };
+
   const toolClass = (kind: 'size' | 'assist' | 'crop' | 'color') => {
-    if (kind === 'color') return pluginState.value.showColorPanel ? 'bg-sky-100 text-sky-700' : '';
-    return pluginState.value.activeTool === kind ? 'bg-sky-100 text-sky-700' : '';
+    if (kind === 'color') return panelState.value.showColorPanel ? 'bg-sky-100 text-sky-700' : '';
+    return panelState.value.activeTool === kind ? 'bg-sky-100 text-sky-700' : '';
   };
 
   const onDragStart = (e: DragEvent) => {
@@ -127,36 +190,34 @@ export function useCircleDesigner(
     e.dataTransfer!.effectAllowed = 'copy';
   };
 
-  // 内部封装调用，保证非空
-  const safeCall = (fn: (p: CircleDesignerPlugin) => void) => {
-    if (plugin) fn(plugin);
-  };
-
   return {
-    state: pluginState,
+    state: panelState,
     fastState,
     selected,
     toolClass,
     onDragStart,
     
     // Actions forwarding
-    setShowFeature: (val: boolean) => safeCall((p) => p.setShowFeature(val)),
-    toggleSizeMode: () => safeCall((p) => p.toggleSizeMode()),
-    startAssistMode: () => safeCall((p) => p.startAssistMode()),
-    toggleIntuitive: () => safeCall((p) => p.toggleIntuitive()),
-    toggleMarking: () => safeCall((p) => p.toggleMarking()),
-    startCropMode: () => safeCall((p) => p.startCropMode()),
-    toggleColorPanel: () => safeCall((p) => p.toggleColorPanel()),
-    removeSelected: () => safeCall((p) => p.removeSelected()),
-    setActiveTool: (tool: ActiveToolType) => safeCall((p) => p.setActiveTool(tool)),
-    applyColorImmediately: (color: string) => safeCall((p) => p.applyColorImmediately(color)),
-    cancelCut: () => safeCall((p) => p.cancelCut()),
-    confirmCut: () => safeCall((p) => p.confirmCut()),
+    setShowFeature: (val: boolean) => val !== panelState.value.showFeature && runCapability('inspect'),
+    toggleSizeMode: () => runCapability('resize'),
+    startAssistMode: () => runCapability('edit.auxiliary-line'),
+    toggleIntuitive: () => runCapability('view.projection'),
+    toggleMarking: () => runCapability('annotation.mark'),
+    startCropMode: () => runCapability('edit.split'),
+    toggleColorPanel: () => runCapability('style'),
+    removeSelected: () => runCapability('delete'),
+    setActiveTool: (tool: ActiveToolType) => runCapability(tool === 'color-fill' ? 'style.fill' : 'style.stroke'),
+    applyColorImmediately: (color: string) => runCapability(
+      panelState.value.activeTool === 'color-fill' ? 'style.fill' : 'style.stroke',
+      { color }
+    ),
+    cancelCut: () => runCapability('edit.split.cancel'),
+    confirmCut: () => runCapability('edit.split.confirm'),
     
     // Model proxy
     radiusValue: computed({
       get: () => fastState.value.radiusValue,
-      set: (val: number) => safeCall((p) => p.applyRadiusInput(val))
+      set: (val: number) => runCapability('resize.value', { value: val })
     })
   };
 }

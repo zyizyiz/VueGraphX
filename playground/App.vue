@@ -137,6 +137,7 @@ import { GraphXEngine, type EngineMode } from 'vuegraphx';
 import { useFormulaStore, type CommandItem } from './stores/formula';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
+import { registerPlaygroundShapes } from './shapes';
 
 // 顶部工具栏模式列表
 const availableModes: {id: EngineMode, label: string, icon: string}[] = [
@@ -310,6 +311,7 @@ onMounted(() => {
       : { axis: true, showNavigation: true };
       
     engineRef.value = new GraphXEngine('vuegraphx-mount', boardOptions);
+    registerPlaygroundShapes(engineRef.value);
     syncAllToEngine();
   }
 });

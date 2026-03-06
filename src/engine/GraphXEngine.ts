@@ -4,15 +4,35 @@ import { BoardManager } from '../board/BoardManager';
 import { EntityManager } from '../entities/EntityManager';
 import { Renderer } from '../rendering/Renderer';
 import JXG from 'jsxgraph';
-import { BaseDesignerPlugin } from './plugins/BaseDesignerPlugin';
-import { CubeDesignerPlugin } from './plugins/CubeDesignerPlugin';
+import { capabilityRegistry } from '../architecture/capabilities/registry';
+import type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
+import type { GraphShapeContext, GraphShapeDefinition, GraphShapeInstance } from '../architecture/shapes/contracts';
+import type {
+  GraphCapabilityDescriptor,
+  GraphCapabilityListener,
+  GraphCapabilitySnapshot,
+  GraphSelectionSnapshot
+} from '../types/capabilities';
+
+export type {
+  GraphCapabilityDescriptor,
+  GraphCapabilityListener,
+  GraphCapabilitySnapshot,
+  GraphSelectionSnapshot
+} from '../types/capabilities';
+
+export type { GraphShapeContext, GraphShapeDefinition, GraphShapeInstance } from '../architecture/shapes/contracts';
+export type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
 
 export class GraphXEngine {
   private boardMgr: BoardManager;
   private entityMgr: EntityManager;
   private renderer: Renderer;
-  public plugins: Map<string, BaseDesignerPlugin> = new Map();
+  private shapeDefinitions: Map<string, GraphShapeDefinition> = new Map();
+  private shapeInstances: Map<string, GraphShapeInstance> = new Map();
+  private selectedShapeId: string | null = null;
   private isClickingObject = false;
+  private capabilityListeners: GraphCapabilityListener[] = [];
 
   constructor(containerId: string, options?: GraphXOptions) {
     this.boardMgr = new BoardManager(containerId, options);
@@ -22,64 +42,143 @@ export class GraphXEngine {
     this.renderer = new Renderer(this.boardMgr, this.entityMgr);
 
     this.setupGlobalEvents();
-    
-    // 初始化默认的 Cube 设计器插件（预装载）
-    this.registerPlugin('cube', new CubeDesignerPlugin());
   }
 
-  public registerPlugin(name: string, plugin: BaseDesignerPlugin): void {
-    if (this.plugins.has(name)) {
-      this.plugins.get(name)?.uninstall();
-    }
-    // 把名字与插件实例同步，强制约束字典与对象一致
-    plugin.name = name;
-    this.plugins.set(name, plugin);
-    
-    // 不再注册即装载，而是交由系统依据当前模式和规则尝试装载
-    this.evaluatePluginActivation(plugin);
+  public registerShape(definition: GraphShapeDefinition): void {
+    this.shapeDefinitions.set(definition.type, definition);
+    this.notifyCapabilityChange();
   }
 
-  // --- 动态控制 API: 允许外部主动启用 ---
-  public enablePlugin(name: string): void {
-    const p = this.plugins.get(name);
-    if (p && !p.isActive) {
-      p.install(this);
+  public registerShapes(definitions: Iterable<GraphShapeDefinition>): void {
+    for (const definition of definitions) {
+      this.registerShape(definition);
     }
   }
 
-  // --- 动态控制 API: 允许外部主动停用 ---
-  public disablePlugin(name: string): void {
-    const p = this.plugins.get(name);
-    if (p && p.isActive) {
-      p.uninstall();
-    }
-  }
-
-  /**
-   * 判断并激活插件。只有当插件约束 `requiredMode` 为 'all' 
-   * 或恰好匹配当前 engine 工作模式时，才会执行唤起 `install()`。
-   * 其他情况强制让其 `uninstall()` 隔离休眠。
-   */
-  private evaluatePluginActivation(plugin: BaseDesignerPlugin): void {
+  private isShapeAvailable(definition: GraphShapeDefinition): boolean {
     const currentMode = this.boardMgr.mode;
-    const isModeMatched = plugin.requiredMode === 'all' ||
-      (Array.isArray(plugin.requiredMode) 
-        ? plugin.requiredMode.includes(currentMode) 
-        : plugin.requiredMode === currentMode);
-        
-    if (isModeMatched) {
-      if (!plugin.isActive) plugin.install(this);
-    } else {
-      if (plugin.isActive) plugin.uninstall();
+    return definition.supportedModes === 'all' ||
+      (Array.isArray(definition.supportedModes)
+        ? definition.supportedModes.includes(currentMode)
+        : definition.supportedModes === currentMode);
+  }
+
+  private createShapeContext(): GraphShapeContext {
+    return {
+      engine: this,
+      board: this.getBoard(),
+      selectShape: (shapeId) => this.selectShape(shapeId),
+      isShapeSelected: (shapeId) => this.selectedShapeId === shapeId,
+      addShape: (instance) => this.addShapeInstance(instance),
+      removeShape: (shapeId) => this.removeShapeInstance(shapeId),
+      notifyChange: () => this.notifyCapabilityChange(),
+      generateId: (prefix) => `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      getUsrCoordFromEvent: (event) => this.getUsrCoordFromEvent(event)
+    };
+  }
+
+  public subscribeCapabilities(listener: GraphCapabilityListener): () => void {
+    this.capabilityListeners.push(listener);
+    listener(this.getCapabilitySnapshot());
+    return () => {
+      this.capabilityListeners = this.capabilityListeners.filter(l => l !== listener);
+    };
+  }
+
+  public getCapabilitySnapshot(): GraphCapabilitySnapshot {
+    const target = this.getSelectedCapabilityTarget();
+
+    return {
+      selection: target
+        ? {
+            entityType: target.entityType,
+            entityId: target.entityId,
+            entity: target.entity,
+            ui: target.ui
+          }
+        : null,
+      capabilities: target
+        ? capabilityRegistry
+            .filter(capability => capability.supports(target))
+            .map(capability => capability.createDescriptor(target))
+        : []
+    };
+  }
+
+  public getSelection(): GraphSelectionSnapshot | null {
+    return this.getCapabilitySnapshot().selection;
+  }
+
+  public getCapabilities(): GraphCapabilityDescriptor[] {
+    return this.getCapabilitySnapshot().capabilities;
+  }
+
+  public executeCapability(capabilityId: string, payload?: unknown): boolean {
+    const target = this.getSelectedCapabilityTarget();
+    if (!target) return false;
+    const capability = capabilityRegistry.find(item => item.id === capabilityId && item.supports(target));
+    return capability ? capability.execute(target, payload) : false;
+  }
+
+  public createShape(entityType: string, payload?: unknown): boolean {
+    const definition = this.shapeDefinitions.get(entityType);
+    if (!definition || !this.isShapeAvailable(definition)) return false;
+    const instance = definition.createShape(this.createShapeContext(), payload);
+    if (!instance) return false;
+    this.addShapeInstance(instance, true);
+    return true;
+  }
+
+  public notifyCapabilityChange(): void {
+    const snapshot = this.getCapabilitySnapshot();
+    this.capabilityListeners.forEach(listener => listener(snapshot));
+  }
+
+  private addShapeInstance(instance: GraphShapeInstance, select = false): void {
+    this.shapeInstances.set(instance.id, instance);
+    if (select) {
+      this.selectShape(instance.id);
+      return;
     }
+    this.notifyCapabilityChange();
   }
 
-  private evaluateAllPlugins(): void {
-    this.plugins.forEach(p => this.evaluatePluginActivation(p));
+  private removeShapeInstance(shapeId: string): void {
+    const instance = this.shapeInstances.get(shapeId);
+    if (!instance) return;
+    if (this.selectedShapeId === shapeId) {
+      this.selectedShapeId = null;
+      instance.setSelected(false);
+    }
+    instance.destroy();
+    this.shapeInstances.delete(shapeId);
+    this.notifyCapabilityChange();
   }
 
-  public getPlugin<T extends BaseDesignerPlugin>(name: string): T | undefined {
-    return this.plugins.get(name) as T | undefined;
+  private clearShapeInstances(): void {
+    this.shapeInstances.forEach((instance) => instance.destroy());
+    this.shapeInstances.clear();
+    this.selectedShapeId = null;
+  }
+
+  private selectShape(shapeId: string | null): void {
+    if (this.selectedShapeId === shapeId) return;
+
+    const previous = this.selectedShapeId ? this.shapeInstances.get(this.selectedShapeId) : null;
+    this.selectedShapeId = shapeId;
+    previous?.setSelected(false);
+
+    if (shapeId) {
+      this.shapeInstances.get(shapeId)?.setSelected(true);
+      return;
+    }
+
+    this.notifyCapabilityChange();
+  }
+
+  private getSelectedCapabilityTarget(): ShapeCapabilityTarget | null {
+    if (!this.selectedShapeId) return null;
+    return this.shapeInstances.get(this.selectedShapeId)?.getCapabilityTarget() ?? null;
   }
 
   private setupGlobalEvents(): void {
@@ -89,22 +188,21 @@ export class GraphXEngine {
     board.on('down', (e: any) => {
       const objs = board.getAllObjectsUnderMouse(e) || [];
       this.isClickingObject = objs.filter((o: any) => o.elType !== 'image').length > 0;
-      // 仅向处在激活状态下的插件派发事件
-      this.plugins.forEach(p => {
-        if (p.isActive) p.onBoardDown(e, this.isClickingObject);
+      Array.from(this.shapeInstances.values()).forEach((instance) => {
+        instance.onBoardDown?.(e, this.isClickingObject);
       });
     });
 
     board.on('up', (e: any) => {
       if (this.isEventFromDesignerUI(e)) return;
-      this.plugins.forEach(p => {
-        if (p.isActive) p.onBoardUp(e, this.isClickingObject);
+      Array.from(this.shapeInstances.values()).forEach((instance) => {
+        instance.onBoardUp?.(e, this.isClickingObject);
       });
     });
 
     board.on('update', () => {
-      this.plugins.forEach(p => {
-        if (p.isActive) p.onBoardUpdate();
+      Array.from(this.shapeInstances.values()).forEach((instance) => {
+        instance.onBoardUpdate?.();
       });
     });
   }
@@ -116,29 +214,33 @@ export class GraphXEngine {
   }
 
   public handleDropEvent(e: DragEvent): void {
-    this.plugins.forEach(p => p.onDrop(e));
+    for (const definition of this.shapeDefinitions.values()) {
+      if (!this.isShapeAvailable(definition) || !definition.createFromDrop) continue;
+      const instance = definition.createFromDrop(this.createShapeContext(), e);
+      if (!instance) continue;
+      this.addShapeInstance(instance, true);
+      return;
+    }
   }
 
   public setMode(mode: EngineMode, options?: GraphXOptions): void {
     const isRestarted = this.boardMgr.setMode(mode, options);
     if (isRestarted) {
-      this.plugins.forEach(p => p.uninstall());
+      this.clearShapeInstances();
       this.entityMgr.clearAll();
       this.clearVariables();
       this.setupGlobalEvents();
-      // 基于当前新的 mode，智能评估应该唤醒哪些插件
-      this.evaluateAllPlugins();
+      this.notifyCapabilityChange();
     }
   }
 
   public resetBoard(options?: GraphXOptions): void {
-    this.plugins.forEach(p => p.uninstall());
+    this.clearShapeInstances();
     this.boardMgr.resetBoard(options);
     this.entityMgr.clearAll();
     this.clearVariables();
     this.setupGlobalEvents();
-    // 画板重置后重新依规激活插件
-    this.evaluateAllPlugins();
+    this.notifyCapabilityChange();
   }
 
   public clearVariables(): void {
@@ -170,10 +272,11 @@ export class GraphXEngine {
   }
 
   public destroy(): void {
-    this.plugins.forEach(p => p.uninstall());
-    this.plugins.clear();
+    this.clearShapeInstances();
+    this.shapeDefinitions.clear();
     this.boardMgr.destroy();
     this.entityMgr.clearAll();
+    this.notifyCapabilityChange();
   }
 
   public forceUpdate(): void {
@@ -184,6 +287,35 @@ export class GraphXEngine {
 
   public getBoard(): JXG.Board | null {
     return this.boardMgr.board || null;
+  }
+
+  private getUsrCoordFromEvent(event: any): [number, number] | null {
+    const board = this.getBoard();
+    if (!board) return null;
+
+    let clientX = event.clientX;
+    let clientY = event.clientY;
+    if (clientX === undefined) {
+      if (event.changedTouches && event.changedTouches.length > 0) {
+        clientX = event.changedTouches[0].clientX;
+        clientY = event.changedTouches[0].clientY;
+      } else if (event.touches && event.touches.length > 0) {
+        clientX = event.touches[0].clientX;
+        clientY = event.touches[0].clientY;
+      } else {
+        return null;
+      }
+    }
+
+    const container = board.containerObj;
+    if (!container) return null;
+
+    const rect = container.getBoundingClientRect();
+    const dx = clientX - rect.left - (container.clientLeft || 0);
+    const dy = clientY - rect.top - (container.clientTop || 0);
+    const coords = new JXG.Coords(JXG.COORDS_BY_SCREEN, [dx, dy], board);
+    if (!Number.isFinite(coords.usrCoords[1])) return null;
+    return [coords.usrCoords[1], coords.usrCoords[2]];
   }
 
   public getView3D(): any {

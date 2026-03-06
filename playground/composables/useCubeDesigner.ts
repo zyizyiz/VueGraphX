@@ -1,51 +1,75 @@
-import { shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
-import type { GraphXEngine } from 'vuegraphx';
-import { CubeDesignerPlugin, CubeDesignerState, CubeDesignerFastState } from 'vuegraphx';
+import { computed, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
+import type { GraphCapabilitySnapshot, GraphXEngine } from 'vuegraphx';
+
+interface CubeModel {
+  id: string;
+  points: unknown[];
+  faces: unknown[];
+}
+
+interface CubePanelState {
+  cubes: CubeModel[];
+  selectedId: string | null;
+  isAnimating: boolean;
+}
+
+interface CubePanelUIState {
+  unfoldProgress: number;
+  toolbarStyle: Record<string, string>;
+}
 
 export function useCubeDesigner(
   getEngine: () => GraphXEngine | null,
-  getActiveMode: () => string
+  _getActiveMode: () => string
 ) {
-  const pluginState = shallowRef<CubeDesignerState>({
+  const panelState = shallowRef<CubePanelState>({
     cubes: [],
-    selectedId: null
+    selectedId: null,
+    isAnimating: false
   });
 
-  const fastState = shallowRef<CubeDesignerFastState>({
+  const fastState = shallowRef<CubePanelUIState>({
     unfoldProgress: 0,
     toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' }
   });
 
-  const isPlaying = shallowRef(false);
+  const capabilitySnapshot = shallowRef<GraphCapabilitySnapshot>({
+    selection: null,
+    capabilities: []
+  });
 
-  let plugin: CubeDesignerPlugin | null = null;
-  let unsubscribe: (() => void) | null = null;
-  let unsubscribeFast: (() => void) | null = null;
-  
-  let animId: number | null = null;
+  let unsubscribeCapabilities: (() => void) | null = null;
 
-  const getPlugin = () => {
+  const getEngineInstance = () => {
     const engine = getEngine();
     if (!engine) return null;
-    
-    let p = engine.getPlugin<CubeDesignerPlugin>('cube');
-    if (!p) {
-      p = new CubeDesignerPlugin();
-      engine.registerPlugin('cube', p);
-    }
-    return p;
+    return engine;
   };
 
+  const getCapability = (id: string) => capabilitySnapshot.value.capabilities.find(capability => capability.id === id);
+
   const init = () => {
-    plugin = getPlugin();
-    if (plugin) {
-      if (unsubscribe) unsubscribe();
-      unsubscribe = plugin.subscribe((newState) => {
-        pluginState.value = newState;
-      });
-      if (unsubscribeFast) unsubscribeFast();
-      unsubscribeFast = plugin.subscribeFast((newFastState) => {
-        fastState.value = newFastState;
+    const engine = getEngineInstance();
+    if (engine) {
+      if (unsubscribeCapabilities) unsubscribeCapabilities();
+      unsubscribeCapabilities = engine.subscribeCapabilities((snapshot) => {
+        capabilitySnapshot.value = snapshot;
+
+        const selected = snapshot.selection?.entityType === 'cube'
+          ? snapshot.selection.entity as CubeModel
+          : null;
+        const progressCapability = getCapability('animation.progress');
+        panelState.value = {
+          cubes: selected ? [selected] : [],
+          selectedId: selected?.id ?? null,
+          isAnimating: !!getCapability('animation.stop')?.enabled
+        };
+        fastState.value = {
+          unfoldProgress: typeof progressCapability?.meta?.value === 'number' ? progressCapability.meta.value : 0,
+          toolbarStyle: snapshot.selection?.entityType === 'cube' && snapshot.selection.ui?.toolbarStyle
+            ? snapshot.selection.ui.toolbarStyle as Record<string, string>
+            : { left: '50%', top: 'calc(100% - 5rem)' }
+        };
       });
     }
   };
@@ -59,99 +83,29 @@ export function useCubeDesigner(
   });
 
   onBeforeUnmount(() => {
-    if (unsubscribe) unsubscribe();
-    if (unsubscribeFast) unsubscribeFast();
-    if (animId) cancelAnimationFrame(animId);
+    if (unsubscribeCapabilities) unsubscribeCapabilities();
   });
 
-  const safeCall = (fn: (p: CubeDesignerPlugin) => void) => {
-    if (plugin) fn(plugin);
+  const runCapability = (capabilityId: string, payload?: unknown) => {
+    const engine = getEngine();
+    if (!engine) return false;
+    return engine.executeCapability(capabilityId, payload);
   };
 
-  const createCube = () => safeCall(p => p.createCube());
-  
-  const setProgress = (val: number) => {
-    if (isPlaying.value) stopAnim();
-    safeCall(p => p.setUnfoldProgress(val));
+  const createCube = () => {
+    const engine = getEngine();
+    if (!engine) return false;
+    return engine.createShape('cube');
   };
-  
-  const stopAnim = () => {
-    isPlaying.value = false;
-    if (animId) cancelAnimationFrame(animId);
-    animId = null;
-  };
-
-  // 展开动画 (0 -> 1)
-  const playUnfold = () => {
-    if (!plugin) return;
-    stopAnim();
-    isPlaying.value = true;
-    
-    const duration = 1500; // ms
-    let startVal = fastState.value.unfoldProgress;
-    let startTime: number | null = null;
-
-    const step = (timestamp: number) => {
-      if (!isPlaying.value) return;
-      if (!startTime) startTime = timestamp;
-      const elapsed = timestamp - startTime;
-      
-      // 缓入缓出 EaseInOut Quad
-      let progress = elapsed / duration;
-      if (progress > 1) progress = 1;
-      
-      const ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
-      
-      const nextVal = startVal + (1 - startVal) * ease;
-      plugin?.setUnfoldProgress(nextVal);
-      
-      if (progress < 1) {
-        animId = requestAnimationFrame(step);
-      } else {
-        isPlaying.value = false;
-      }
-    };
-    
-    animId = requestAnimationFrame(step);
-  };
-
-  // 收起动画 (1 -> 0)
-  const playFold = () => {
-    if (!plugin) return;
-    stopAnim();
-    isPlaying.value = true;
-    
-    const duration = 1500; // ms
-    let startVal = fastState.value.unfoldProgress;
-    let startTime: number | null = null;
-
-    const step = (timestamp: number) => {
-      if (!isPlaying.value) return;
-      if (!startTime) startTime = timestamp;
-      const elapsed = timestamp - startTime;
-      
-      let progress = elapsed / duration;
-      if (progress > 1) progress = 1;
-      
-      const ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
-      
-      const nextVal = startVal - startVal * ease;
-      plugin?.setUnfoldProgress(nextVal);
-      
-      if (progress < 1) {
-        animId = requestAnimationFrame(step);
-      } else {
-        isPlaying.value = false;
-      }
-    };
-    
-    animId = requestAnimationFrame(step);
-  };
+  const setProgress = (val: number) => runCapability('animation.progress', { value: val });
+  const playUnfold = () => runCapability('animation.play');
+  const playFold = () => runCapability('animation.reverse');
+  const stopAnim = () => runCapability('animation.stop');
 
   return {
-    state: pluginState,
+    state: panelState,
     fastState,
-    isPlaying,
+    isPlaying: computed(() => panelState.value.isAnimating),
     
     createCube,
     setProgress,
