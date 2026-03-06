@@ -1,5 +1,5 @@
 import type { ShapeCapabilityTarget } from '../capabilities/contracts';
-import type { GraphShapeContext, GraphShapeDefinition, GraphShapeInstance } from './contracts';
+import type { GraphShapeContext, GraphShapeDefinition, GraphShapeGroup, GraphShapeGroupInput, GraphShapeInstance } from './contracts';
 import { BaseShapeInstance } from './internal/BaseShapeInstance';
 
 export interface GraphShapeApi<StateType> {
@@ -13,6 +13,8 @@ export interface GraphShapeApi<StateType> {
   setState(partialState: Partial<StateType>): void;
   notifyChange(): void;
   trackObject<T>(objectRef: T): T;
+  createGroup(groupInput: GraphShapeGroupInput, options?: { id?: string; createNativeGroup?: boolean }): GraphShapeGroup;
+  removeGroup(group: GraphShapeGroup): void;
   select(): void;
   deselect(): void;
   remove(): void;
@@ -118,6 +120,12 @@ class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
       },
       trackObject(objectRef) {
         return thisRef.trackObject(objectRef);
+      },
+      createGroup(objectRefs, options) {
+        return thisRef.createGroup(objectRefs, options);
+      },
+      removeGroup(group) {
+        thisRef.removeGroup(group);
       },
       select() {
         thisRef.selectSelf();

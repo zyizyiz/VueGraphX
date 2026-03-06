@@ -1,5 +1,5 @@
 import JXG from 'jsxgraph';
-import { createComposedShapeDefinition, type GraphShapeApi, type GraphShapeComposition } from 'vuegraphx';
+import { createComposedShapeDefinition, type GraphShapeApi, type GraphShapeComposition, type GraphShapeGroup } from 'vuegraphx';
 import type { ShapeCapabilityTarget } from 'vuegraphx';
 
 interface HelperLine {
@@ -7,6 +7,7 @@ interface HelperLine {
   p1: any;
   p2: any;
   line: any;
+  group: GraphShapeGroup;
 }
 
 interface IntuitiveView {
@@ -20,6 +21,7 @@ interface CutDraft {
   p2: any;
   line: any;
   icon: any;
+  group: GraphShapeGroup;
 }
 
 type ActiveToolType = 'none' | 'size' | 'assist' | 'crop' | 'color-stroke' | 'color-fill';
@@ -272,9 +274,27 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       vertices: { visible: false },
       hasInnerPoints: false
     }));
+    const geometryGroup = api.createGroup({
+      center,
+      radiusPoint,
+      circle,
+      radiusLine,
+      bbox,
+      bboxP1: p1,
+      bboxP2: p2,
+      bboxP3: p3,
+      bboxP4: p4
+    });
+    geometryGroup.hide(['radiusPoint', 'radiusLine']);
 
     api.setState({
-      refs: { circle, center, radiusPoint, radiusLine, bbox },
+      refs: {
+        circle: geometryGroup.getObject('circle') ?? circle,
+        center: geometryGroup.getObject('center') ?? center,
+        radiusPoint: geometryGroup.getObject('radiusPoint') ?? radiusPoint,
+        radiusLine: geometryGroup.getObject('radiusLine') ?? radiusLine,
+        bbox: geometryGroup.getObject('bbox') ?? bbox
+      },
       radiusValue: 2
     });
     attachInteractiveHandlers(api);
@@ -346,17 +366,17 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
           strokeColor: '#64748b'
         }));
 
-        const helper: HelperLine = { id: api.uid('assist'), p1: api.state.assistCache.p1, p2, line };
-        line.on('down', () => {
+        const group = api.createGroup({ start: api.state.assistCache.p1, end: p2, line });
+        const helper: HelperLine = { id: api.uid('assist'), p1: api.state.assistCache.p1, p2, line, group };
+        group.on('down', (member) => {
+          if (member.key !== 'line') return;
           if (applyColorIfNeeded(api, helper.line, 'stroke')) return;
           Promise.resolve().then(() => {
-            api.removeObjectSafe(helper.p1);
-            api.removeObjectSafe(helper.p2);
-            api.removeObjectSafe(helper.line);
+            api.removeGroup(helper.group);
             api.setState({ helpers: api.state.helpers.filter((item) => item.id !== helper.id) });
             api.board?.update();
           });
-        });
+        }, 'line');
         helper.p1.on('down', () => Promise.resolve().then(() => api.select()));
         helper.p2.on('down', () => Promise.resolve().then(() => api.select()));
 
@@ -414,8 +434,9 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
           fixed: true
         }));
 
+        const group = api.createGroup({ start: cropStart, end: p2, line, icon });
         api.setState({
-          cutDraft: { p1: cropStart, p2, line, icon },
+          cutDraft: { p1: cropStart, p2, line, icon, group },
           cropCache: null
         });
       }
@@ -597,13 +618,8 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
 
     const cancelCut = () => {
       if (!api.state.cutDraft) return;
-      api.removeObjectSafe(api.state.cutDraft.p1);
-      api.removeObjectSafe(api.state.cutDraft.p2);
-      api.removeObjectSafe(api.state.cutDraft.line);
-      if (api.state.cutDraft.icon) {
-        api.state.cutDraft.icon.setAttribute({ visible: false });
-        api.removeObjectSafe(api.state.cutDraft.icon);
-      }
+      if (api.state.cutDraft.icon) api.state.cutDraft.icon.setAttribute({ visible: false });
+      api.removeGroup(api.state.cutDraft.group);
       api.setState({ cutDraft: null, activeTool: 'none' });
       api.board?.update();
     };
@@ -620,13 +636,8 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       const colorStroke = refs.circle.getAttribute('strokeColor');
       const colorFill = refs.circle.getAttribute('fillColor');
 
-      api.removeObjectSafe(cut.p1);
-      api.removeObjectSafe(cut.p2);
-      api.removeObjectSafe(cut.line);
-      if (cut.icon) {
-        cut.icon.setAttribute({ visible: false });
-        api.removeObjectSafe(cut.icon);
-      }
+      if (cut.icon) cut.icon.setAttribute({ visible: false });
+      api.removeGroup(cut.group);
       api.setState({ cutDraft: null });
 
       api.addShape(api.createShape(createCirclePieceComposition({
@@ -750,9 +761,15 @@ const createCirclePieceComposition = (payload: CirclePiecePayload): GraphShapeCo
       fixed: false,
       layer: 9
     }));
-    api.trackObject(api.board.create('group', [center, firstPoint, secondPoint, circle, radiusLine]));
+    const pieceGroup = api.createGroup({ center, firstPoint, secondPoint, circle, radiusLine });
 
-    api.setState({ refs: { circle, center, radiusLine } });
+    api.setState({
+      refs: {
+        circle: pieceGroup.getObject('circle') ?? circle,
+        center: pieceGroup.getObject('center') ?? center,
+        radiusLine: pieceGroup.getObject('radiusLine') ?? radiusLine
+      }
+    });
     attachInteractiveHandlers(api);
     api.board.update();
   },

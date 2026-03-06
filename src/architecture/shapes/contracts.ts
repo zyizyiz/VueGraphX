@@ -13,6 +13,32 @@ export interface GraphShapeInstance {
   destroy(): void;
 }
 
+export interface GraphShapeGroupMember {
+  id: string;
+  key: string;
+  object: any;
+}
+
+export type GraphShapeGroupInput = any[] | Record<string, any>;
+
+export interface GraphShapeGroup {
+  id: string;
+  members: readonly GraphShapeGroupMember[];
+  nativeGroup: any | null;
+  getMember(key: string): GraphShapeGroupMember | null;
+  getObject(key: string): any | null;
+  has(key: string): boolean;
+  keys(): string[];
+  pick(keys: string | string[]): GraphShapeGroup;
+  forEach(callback: (member: GraphShapeGroupMember) => void, keys?: string | string[]): void;
+  setAttribute(attributes: Record<string, unknown>, keys?: string | string[]): void;
+  setVisible(visible: boolean, keys?: string | string[]): void;
+  show(keys?: string | string[]): void;
+  hide(keys?: string | string[]): void;
+  on(eventName: string, handler: (member: GraphShapeGroupMember, ...args: any[]) => void, keys?: string | string[]): () => void;
+  off(eventName?: string, keys?: string | string[]): void;
+}
+
 export interface GraphShapeContext {
   engine: GraphXEngine;
   board: any;

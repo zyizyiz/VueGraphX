@@ -103,6 +103,7 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
         if (!api.board || !view3d) return;
         const faceNames = ['bottom', 'top', 'front', 'back', 'left', 'right'];
         const colors = ['#f87171', '#38bdf8', '#fbbf24', '#34d399', '#a78bfa', '#f472b6'];
+        const groupedObjects: any[] = [];
 
         faceNames.forEach((name, index) => {
           const corners = createFacePoints(api, name);
@@ -115,8 +116,16 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
             fillOpacity: 0.8,
             borders: { strokeWidth: 1.5, strokeColor: '#1e293b' }
           }));
-          polygon.on('down', () => Promise.resolve().then(() => api.select()));
+          const faceGroup = api.createGroup({ p1, p2, p3, p4, face: polygon }, { id: `cube_face_${index}`, createNativeGroup: false });
+          faceGroup.hide(['p1', 'p2', 'p3', 'p4']);
+          faceGroup.pick('face').on('down', (member) => {
+            if (member.key !== 'face') return;
+            Promise.resolve().then(() => api.select());
+          });
+          groupedObjects.push(p1, p2, p3, p4, polygon);
         });
+
+        api.createGroup(groupedObjects, { createNativeGroup: false });
         api.board.update();
       },
       onSelectionChange(api) {
