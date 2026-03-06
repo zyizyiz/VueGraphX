@@ -1,4 +1,8 @@
-import type { ShapeCapabilityTarget } from '../capabilities/contracts';
+import type {
+  AnimationCapabilityContract,
+  AnimationCollectionCapabilityContract,
+  ShapeCapabilityTarget
+} from '../capabilities/contracts';
 import type {
   GraphAnimationTrack,
   GraphAnimationTrackConfig,
@@ -73,6 +77,11 @@ export interface GraphShapeDefinitionComposition<Payload = unknown, StateType = 
   supportedModes: GraphShapeDefinition['supportedModes'];
   create(context: GraphShapeContext, payload?: Payload): GraphShapeComposition<StateType> | null;
   createFromDrop?(context: GraphShapeContext, event: DragEvent): GraphShapeComposition<StateType> | null;
+}
+
+export interface GraphAnimationCapabilityTarget {
+  animation: AnimationCapabilityContract;
+  animations: AnimationCollectionCapabilityContract;
 }
 
 class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
@@ -250,6 +259,70 @@ export const createComposedShapeDefinition = <Payload = unknown, StateType = unk
       }
     : undefined
 });
+
+export const createAnimationCapabilityContract = (track: GraphAnimationTrack): AnimationCapabilityContract => ({
+  id: track.id,
+  label: track.label,
+  isAnimating: track.isAnimating,
+  isPaused: track.isPaused,
+  loop: track.loop,
+  yoyo: track.yoyo,
+  progress: track.progress,
+  min: track.min,
+  max: track.max,
+  step: track.step,
+  playForward: () => track.playForward(),
+  playBackward: () => track.playBackward(),
+  pause: () => track.pause(),
+  resume: () => track.resume(),
+  stop: () => track.stop(),
+  setLoop: (value) => track.setLoop(value),
+  toggleLoop: () => track.toggleLoop(),
+  setYoyo: (value) => track.setYoyo(value),
+  toggleYoyo: () => track.toggleYoyo(),
+  setProgress: (value) => track.setProgress(value)
+});
+
+export const createAnimationCapabilityCollection = (
+  tracks: Record<string, GraphAnimationTrack | null | undefined>,
+  options?: { primaryTrackId?: string }
+): AnimationCollectionCapabilityContract | null => {
+  const entries = Object.entries(tracks).filter((entry): entry is [string, GraphAnimationTrack] => !!entry[1]);
+  if (entries.length === 0) return null;
+
+  const capabilityTracks = Object.fromEntries(
+    entries.map(([id, track]) => [id, createAnimationCapabilityContract(track)])
+  ) as Record<string, AnimationCapabilityContract>;
+
+  const primaryTrackId = options?.primaryTrackId && capabilityTracks[options.primaryTrackId]
+    ? options.primaryTrackId
+    : entries[0][0];
+
+  return {
+    primaryTrackId,
+    tracks: capabilityTracks
+  };
+};
+
+export const createAnimationCapabilityTarget = (
+  tracks: Record<string, GraphAnimationTrack | null | undefined>,
+  options?: { primaryTrackId?: string }
+): GraphAnimationCapabilityTarget | null => {
+  const animations = createAnimationCapabilityCollection(tracks, options);
+  if (!animations) return null;
+
+  const primaryTrackId = animations.primaryTrackId;
+  const animation = primaryTrackId
+    ? animations.tracks[primaryTrackId]
+    : Object.values(animations.tracks)[0];
+
+  if (!animation) return null;
+
+  return {
+    animation,
+    animations
+  };
+};
 
 export const createPointAnnotation = (
   key: string,

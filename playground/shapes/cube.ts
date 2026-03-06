@@ -1,4 +1,4 @@
-import { createComposedShapeDefinition, type GraphShapeApi } from 'vuegraphx';
+import { createAnimationCapabilityTarget, createComposedShapeDefinition, type GraphShapeApi } from 'vuegraphx';
 import type { ShapeCapabilityTarget } from 'vuegraphx';
 
 interface CubeState {
@@ -186,6 +186,15 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
         const rotateTrack = api.getAnimationTrack('rotate');
         if (!unfoldTrack || !rotateTrack) return null;
 
+        const animationCapabilityTarget = createAnimationCapabilityTarget(
+          {
+            unfold: unfoldTrack,
+            rotate: rotateTrack
+          },
+          { primaryTrackId: 'unfold' }
+        );
+        if (!animationCapabilityTarget) return null;
+
         return {
           entityType: 'cube',
           entityId: api.id,
@@ -193,77 +202,8 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
           ui: {
             toolbarStyle: { ...api.state.toolbarStyle }
           },
-          animations: {
-            primaryTrackId: 'unfold',
-            tracks: {
-              unfold: {
-                id: unfoldTrack.id,
-                label: '展开',
-                isAnimating: unfoldTrack.isAnimating,
-                isPaused: unfoldTrack.isPaused,
-                loop: unfoldTrack.loop,
-                yoyo: unfoldTrack.yoyo,
-                progress: unfoldTrack.progress,
-                min: unfoldTrack.min,
-                max: unfoldTrack.max,
-                step: unfoldTrack.step,
-                playForward: () => unfoldTrack.playForward(),
-                playBackward: () => unfoldTrack.playBackward(),
-                pause: () => unfoldTrack.pause(),
-                resume: () => unfoldTrack.resume(),
-                stop: () => unfoldTrack.stop(),
-                setLoop: (value) => unfoldTrack.setLoop(value),
-                toggleLoop: () => unfoldTrack.toggleLoop(),
-                setYoyo: (value) => unfoldTrack.setYoyo(value),
-                toggleYoyo: () => unfoldTrack.toggleYoyo(),
-                setProgress: (value) => unfoldTrack.setProgress(value)
-              },
-              rotate: {
-                id: rotateTrack.id,
-                label: '旋转',
-                isAnimating: rotateTrack.isAnimating,
-                isPaused: rotateTrack.isPaused,
-                loop: rotateTrack.loop,
-                yoyo: rotateTrack.yoyo,
-                progress: rotateTrack.progress,
-                min: rotateTrack.min,
-                max: rotateTrack.max,
-                step: rotateTrack.step,
-                playForward: () => rotateTrack.playForward(),
-                playBackward: () => rotateTrack.playBackward(),
-                pause: () => rotateTrack.pause(),
-                resume: () => rotateTrack.resume(),
-                stop: () => rotateTrack.stop(),
-                setLoop: (value) => rotateTrack.setLoop(value),
-                toggleLoop: () => rotateTrack.toggleLoop(),
-                setYoyo: (value) => rotateTrack.setYoyo(value),
-                toggleYoyo: () => rotateTrack.toggleYoyo(),
-                setProgress: (value) => rotateTrack.setProgress(value)
-              }
-            }
-          },
-          animation: {
-            id: unfoldTrack.id,
-            label: '展开',
-            isAnimating: unfoldTrack.isAnimating,
-            isPaused: unfoldTrack.isPaused,
-            loop: unfoldTrack.loop,
-            yoyo: unfoldTrack.yoyo,
-            progress: unfoldTrack.progress,
-            min: unfoldTrack.min,
-            max: unfoldTrack.max,
-            step: unfoldTrack.step,
-            playForward: () => unfoldTrack.playForward(),
-            playBackward: () => unfoldTrack.playBackward(),
-            pause: () => unfoldTrack.pause(),
-            resume: () => unfoldTrack.resume(),
-            stop: () => unfoldTrack.stop(),
-            setLoop: (value) => unfoldTrack.setLoop(value),
-            toggleLoop: () => unfoldTrack.toggleLoop(),
-            setYoyo: (value) => unfoldTrack.setYoyo(value),
-            toggleYoyo: () => unfoldTrack.toggleYoyo(),
-            setProgress: (value) => unfoldTrack.setProgress(value)
-          },
+          animations: animationCapabilityTarget.animations,
+          animation: animationCapabilityTarget.animation,
           remove: () => api.remove()
         };
       }

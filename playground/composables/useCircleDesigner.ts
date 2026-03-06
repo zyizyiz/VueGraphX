@@ -1,6 +1,7 @@
 import { shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import type { GraphCapabilitySnapshot, GraphXEngine } from 'vuegraphx';
 import type { DesignerAnimationTrackState } from '../types/animation';
+import { useAnimationCapabilityTracks } from './useAnimationCapabilityTracks';
 
 type ActiveToolType = 'none' | 'size' | 'assist' | 'crop' | 'color-stroke' | 'color-fill';
 
@@ -60,6 +61,17 @@ export function useCircleDesigner(
   let dropHandler: ((e: DragEvent) => void) | null = null;
   let mountedDropTarget: HTMLElement | null = null;
 
+  const runCapability = (capabilityId: string, payload?: unknown) => {
+    const engine = getEngine();
+    if (!engine) return false;
+    return engine.executeCapability(capabilityId, payload);
+  };
+
+  const animationTracksState = useAnimationCapabilityTracks(
+    () => capabilitySnapshot.value,
+    runCapability
+  );
+
   const getEngineInstance = () => {
     const engine = getEngine();
     if (!engine) return null;
@@ -88,7 +100,6 @@ export function useCircleDesigner(
           ? snapshot.selection.entity as CircleModel
           : null;
         const radiusCapability = getCapability('resize.value');
-        const animationCapability = getCapability('animation.progress');
         const styleCapability = getCapability('style');
         const toolbarStyle = (snapshot.selection?.entityType === 'circle' || snapshot.selection?.entityType === 'circle-piece') && snapshot.selection.ui?.toolbarStyle
           ? snapshot.selection.ui.toolbarStyle as Record<string, string>
@@ -96,9 +107,6 @@ export function useCircleDesigner(
         const sizeInputStyle = (snapshot.selection?.entityType === 'circle' || snapshot.selection?.entityType === 'circle-piece') && snapshot.selection.ui?.sizeInputStyle
           ? snapshot.selection.ui.sizeInputStyle as Record<string, string>
           : { left: '50%', top: '50%' };
-        const animationTracks = Array.isArray(animationCapability?.meta?.tracks)
-          ? animationCapability.meta.tracks as Array<Record<string, unknown>>
-          : [];
 
         panelState.value = {
           circles: selected ? [selected] : [],
@@ -114,20 +122,7 @@ export function useCircleDesigner(
           radiusValue: typeof radiusCapability?.meta?.value === 'number' ? radiusCapability.meta.value : 2,
           toolbarStyle,
           sizeInputStyle,
-          animationTracks: animationTracks
-            .filter((track): track is Record<string, unknown> & { id: string } => typeof track.id === 'string')
-            .map((track) => ({
-              id: track.id,
-              label: typeof track.label === 'string' && track.label ? track.label : track.id,
-              progress: typeof track.progress === 'number' ? track.progress : 0,
-              min: typeof track.min === 'number' ? track.min : 0,
-              max: typeof track.max === 'number' ? track.max : 1,
-              step: typeof track.step === 'number' ? track.step : 0.01,
-              isAnimating: !!track.isAnimating,
-              isPaused: !!track.isPaused,
-              loop: !!track.loop,
-              yoyo: !!track.yoyo
-            }))
+          animationTracks: animationTracksState.tracks.value
         };
       });
 
@@ -195,12 +190,6 @@ export function useCircleDesigner(
     return panelState.value.circles.find(c => c.id === panelState.value.selectedId) || null;
   });
 
-  const runCapability = (capabilityId: string, payload?: unknown) => {
-    const engine = getEngine();
-    if (!engine) return false;
-    return engine.executeCapability(capabilityId, payload);
-  };
-
   const toolClass = (kind: 'size' | 'assist' | 'crop' | 'color') => {
     if (kind === 'color') return panelState.value.showColorPanel ? 'bg-sky-100 text-sky-700' : '';
     return panelState.value.activeTool === kind ? 'bg-sky-100 text-sky-700' : '';
@@ -211,21 +200,11 @@ export function useCircleDesigner(
     e.dataTransfer!.effectAllowed = 'copy';
   };
 
-  const setTrackProgress = (trackId: string, value: number) => runCapability('animation.progress', { trackId, value });
-  const playTrackForward = (trackId: string) => runCapability('animation.play', { trackId });
-  const playTrackBackward = (trackId: string) => runCapability('animation.reverse', { trackId });
-  const pauseTrack = (trackId: string) => runCapability('animation.pause', { trackId });
-  const resumeTrack = (trackId: string) => runCapability('animation.resume', { trackId });
-  const stopTrack = (trackId: string) => runCapability('animation.stop', { trackId });
-  const toggleTrackLoop = (trackId: string, value?: boolean) => runCapability('animation.loop', { trackId, value });
-  const toggleTrackYoyo = (trackId: string, value?: boolean) => runCapability('animation.yoyo', { trackId, value });
-  const isAnyAnimationPlaying = computed(() => fastState.value.animationTracks.some((track) => track.isAnimating));
-
   return {
     state: panelState,
     fastState,
     selected,
-    isAnyAnimationPlaying,
+    isAnyAnimationPlaying: animationTracksState.isAnyTrackPlaying,
     toolClass,
     onDragStart,
     
@@ -245,14 +224,14 @@ export function useCircleDesigner(
     ),
     cancelCut: () => runCapability('edit.split.cancel'),
     confirmCut: () => runCapability('edit.split.confirm'),
-    setTrackProgress,
-    playTrackForward,
-    playTrackBackward,
-    pauseTrack,
-    resumeTrack,
-    stopTrack,
-    toggleTrackLoop,
-    toggleTrackYoyo,
+    setTrackProgress: animationTracksState.setTrackProgress,
+    playTrackForward: animationTracksState.playTrackForward,
+    playTrackBackward: animationTracksState.playTrackBackward,
+    pauseTrack: animationTracksState.pauseTrack,
+    resumeTrack: animationTracksState.resumeTrack,
+    stopTrack: animationTracksState.stopTrack,
+    toggleTrackLoop: animationTracksState.toggleTrackLoop,
+    toggleTrackYoyo: animationTracksState.toggleTrackYoyo,
     
     // Model proxy
     radiusValue: computed({

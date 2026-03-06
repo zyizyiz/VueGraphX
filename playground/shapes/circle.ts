@@ -1,4 +1,5 @@
 import {
+  createAnimationCapabilityTarget,
   createComposedShapeDefinition,
   createIntersectionAnnotation,
   createPairwiseIntersectionAnnotations,
@@ -770,55 +771,15 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
         confirm: confirmCut
       };
       if (pulseTrack) {
-        target.animations = {
-          primaryTrackId: 'pulse',
-          tracks: {
-            pulse: {
-              id: pulseTrack.id,
-              label: '脉冲',
-              isAnimating: pulseTrack.isAnimating,
-              isPaused: pulseTrack.isPaused,
-              loop: pulseTrack.loop,
-              yoyo: pulseTrack.yoyo,
-              progress: pulseTrack.progress,
-              min: pulseTrack.min,
-              max: pulseTrack.max,
-              step: pulseTrack.step,
-              playForward: () => pulseTrack.playForward(),
-              playBackward: () => pulseTrack.playBackward(),
-              pause: () => pulseTrack.pause(),
-              resume: () => pulseTrack.resume(),
-              stop: () => pulseTrack.stop(),
-              setLoop: (value) => pulseTrack.setLoop(value),
-              toggleLoop: () => pulseTrack.toggleLoop(),
-              setYoyo: (value) => pulseTrack.setYoyo(value),
-              toggleYoyo: () => pulseTrack.toggleYoyo(),
-              setProgress: (value) => pulseTrack.setProgress(value)
-            }
-          }
-        };
-        target.animation = {
-          id: pulseTrack.id,
-          label: '脉冲',
-          isAnimating: pulseTrack.isAnimating,
-          isPaused: pulseTrack.isPaused,
-          loop: pulseTrack.loop,
-          yoyo: pulseTrack.yoyo,
-          progress: pulseTrack.progress,
-          min: pulseTrack.min,
-          max: pulseTrack.max,
-          step: pulseTrack.step,
-          playForward: () => pulseTrack.playForward(),
-          playBackward: () => pulseTrack.playBackward(),
-          pause: () => pulseTrack.pause(),
-          resume: () => pulseTrack.resume(),
-          stop: () => pulseTrack.stop(),
-          setLoop: (value) => pulseTrack.setLoop(value),
-          toggleLoop: () => pulseTrack.toggleLoop(),
-          setYoyo: (value) => pulseTrack.setYoyo(value),
-          toggleYoyo: () => pulseTrack.toggleYoyo(),
-          setProgress: (value) => pulseTrack.setProgress(value)
-        };
+        const animationCapabilityTarget = createAnimationCapabilityTarget(
+          { pulse: pulseTrack },
+          { primaryTrackId: 'pulse' }
+        );
+
+        if (animationCapabilityTarget) {
+          target.animations = animationCapabilityTarget.animations;
+          target.animation = animationCapabilityTarget.animation;
+        }
       }
     }
 
