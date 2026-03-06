@@ -1,6 +1,9 @@
 import JXG from 'jsxgraph';
 import type { ShapeCapabilityTarget } from '../../capabilities/contracts';
 import type {
+  GraphAnimationEasing,
+  GraphAnimationTrack,
+  GraphAnimationTrackConfig,
   GraphPointAnnotationOptions,
   GraphPointAnnotationSpec,
   GraphShapeContext,
@@ -16,6 +19,12 @@ interface ManagedPointAnnotations {
   nextLabelIndex: number;
 }
 
+const defaultAnimationEasing: GraphAnimationEasing = (progress) => (
+  progress < 0.5
+    ? 2 * progress * progress
+    : -1 + (4 - 2 * progress) * progress
+);
+
 export abstract class BaseShapeInstance<StateType = Record<string, never>> implements GraphShapeInstance {
   public abstract readonly id: string;
   public abstract readonly entityType: string;
@@ -25,6 +34,7 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
   protected selected = false;
   private readonly ownedObjects = new Set<any>();
   private readonly ownedGroups = new Map<string, GraphShapeGroup>();
+  private readonly animationTracks = new Map<string, GraphAnimationTrack>();
   private readonly pointAnnotations: ManagedPointAnnotations = {
     marks: [],
     labelMap: new Map(),
@@ -49,6 +59,7 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
   public abstract getCapabilityTarget(): ShapeCapabilityTarget | null;
 
   public destroy(): void {
+    Array.from(this.animationTracks.keys()).forEach((trackId) => this.removeAnimationTrack(trackId));
     this.clearPointAnnotations(false);
 
     const groupedMembers = new Set<any>();
@@ -160,6 +171,227 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
 
   protected uid(prefix = 'id'): string {
     return this.context.generateId(prefix);
+  }
+
+  protected createAnimationTrack(config: GraphAnimationTrackConfig): GraphAnimationTrack {
+    const existingTrack = this.animationTracks.get(config.id);
+    if (existingTrack) return existingTrack;
+
+    const min = config.min ?? 0;
+    const max = config.max ?? 1;
+    const step = config.step ?? 0.01;
+    const duration = config.duration ?? 1000;
+    const taskId = `${this.id}:animation:${config.id}`;
+    const trackState = {
+      progress: this.clampAnimationProgress(config.initialProgress ?? min, min, max),
+      isAnimating: false,
+      isPaused: false,
+      loop: config.loop ?? false,
+      yoyo: config.yoyo ?? false,
+      duration,
+      easing: config.easing ?? defaultAnimationEasing,
+      playback: null as null | {
+        from: number;
+        to: number;
+        duration: number;
+        easing: GraphAnimationEasing;
+        startedAt: number | null;
+        elapsedOffset: number;
+      }
+    };
+
+    const notifyTrackChange = () => {
+      this.notifyStateChange();
+    };
+
+    const stopTrack = (notify = true) => {
+      if (!trackState.isAnimating && !trackState.isPaused) {
+        this.engine.unregisterAnimationTask(taskId);
+        return;
+      }
+
+      trackState.isAnimating = false;
+      trackState.isPaused = false;
+      trackState.playback = null;
+      this.engine.unregisterAnimationTask(taskId);
+      if (notify) notifyTrackChange();
+    };
+
+    const schedulePlayback = () => {
+      this.engine.registerAnimationTask(taskId, (timestamp) => {
+        const playback = trackState.playback;
+        if (!trackState.isAnimating || trackState.isPaused || !playback) return false;
+
+        if (playback.startedAt === null) {
+          playback.startedAt = timestamp;
+        }
+
+        const elapsed = playback.elapsedOffset + (timestamp - playback.startedAt);
+        const rawProgress = Math.min(elapsed / playback.duration, 1);
+        const easedProgress = playback.easing(Math.max(0, Math.min(1, rawProgress)));
+
+        track.setProgress(playback.from + (playback.to - playback.from) * easedProgress);
+
+        if (rawProgress < 1 && trackState.isAnimating && !trackState.isPaused) {
+          return true;
+        }
+
+        if (trackState.loop) {
+          const nextFrom = trackState.yoyo ? playback.to : playback.from;
+          const nextTo = trackState.yoyo ? playback.from : playback.to;
+          trackState.playback = {
+            ...playback,
+            from: nextFrom,
+            to: nextTo,
+            startedAt: timestamp,
+            elapsedOffset: 0
+          };
+          track.setProgress(nextFrom);
+          return true;
+        }
+
+        trackState.isAnimating = false;
+        trackState.isPaused = false;
+        trackState.playback = null;
+        notifyTrackChange();
+        return false;
+      });
+    };
+
+    const track: GraphAnimationTrack = {
+      get id() {
+        return config.id;
+      },
+      get label() {
+        return config.label;
+      },
+      get progress() {
+        return trackState.progress;
+      },
+      get isAnimating() {
+        return trackState.isAnimating;
+      },
+      get isPaused() {
+        return trackState.isPaused;
+      },
+      get loop() {
+        return trackState.loop;
+      },
+      get yoyo() {
+        return trackState.yoyo;
+      },
+      get min() {
+        return min;
+      },
+      get max() {
+        return max;
+      },
+      get step() {
+        return step;
+      },
+      get duration() {
+        return trackState.duration;
+      },
+      playTo: (target, options) => {
+        const clampedTarget = this.clampAnimationProgress(target, min, max);
+        const playbackDuration = options?.duration ?? trackState.duration;
+        const easing = options?.easing ?? trackState.easing;
+        const startProgress = trackState.progress;
+
+        stopTrack(false);
+
+        if (startProgress === clampedTarget || playbackDuration <= 0) {
+          track.setProgress(clampedTarget);
+          return;
+        }
+
+        trackState.isAnimating = true;
+        trackState.isPaused = false;
+        trackState.playback = {
+          from: startProgress,
+          to: clampedTarget,
+          duration: playbackDuration,
+          easing,
+          startedAt: null,
+          elapsedOffset: 0
+        };
+        notifyTrackChange();
+        schedulePlayback();
+      },
+      playForward: (options) => {
+        track.playTo(max, options);
+      },
+      playBackward: (options) => {
+        track.playTo(min, options);
+      },
+      pause: () => {
+        if (!trackState.isAnimating || trackState.isPaused || !trackState.playback) return;
+
+        if (trackState.playback.startedAt !== null) {
+          trackState.playback.elapsedOffset += performance.now() - trackState.playback.startedAt;
+          trackState.playback.startedAt = null;
+        }
+
+        trackState.isPaused = true;
+        this.engine.unregisterAnimationTask(taskId);
+        notifyTrackChange();
+      },
+      resume: () => {
+        if (!trackState.isAnimating || !trackState.isPaused || !trackState.playback) return;
+
+        trackState.isPaused = false;
+        trackState.playback.startedAt = null;
+        notifyTrackChange();
+        schedulePlayback();
+      },
+      stop: () => {
+        stopTrack();
+      },
+      setLoop: (enabled) => {
+        if (trackState.loop === enabled) return;
+        trackState.loop = enabled;
+        notifyTrackChange();
+      },
+      toggleLoop: () => {
+        track.setLoop(!trackState.loop);
+      },
+      setYoyo: (enabled) => {
+        if (trackState.yoyo === enabled) return;
+        trackState.yoyo = enabled;
+        notifyTrackChange();
+      },
+      toggleYoyo: () => {
+        track.setYoyo(!trackState.yoyo);
+      },
+      setProgress: (value) => {
+        const nextProgress = this.clampAnimationProgress(value, min, max);
+        if (trackState.progress === nextProgress) return;
+
+        trackState.progress = nextProgress;
+        config.onProgress?.(nextProgress, track);
+        notifyTrackChange();
+      }
+    };
+
+    this.animationTracks.set(config.id, track);
+    config.onProgress?.(trackState.progress, track);
+    return track;
+  }
+
+  protected getAnimationTrack(id: string): GraphAnimationTrack | null {
+    return this.animationTracks.get(id) ?? null;
+  }
+
+  protected getAnimationTracks(): GraphAnimationTrack[] {
+    return Array.from(this.animationTracks.values());
+  }
+
+  protected removeAnimationTrack(id: string): void {
+    const track = this.animationTracks.get(id);
+    if (!track) return;
+
+    track.stop();
+    this.animationTracks.delete(id);
   }
 
   protected hasPointAnnotations(): boolean {
@@ -328,6 +560,10 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
     } while (currentIndex >= 0);
 
     return label;
+  }
+
+  private clampAnimationProgress(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
   }
 
   private createGroupView(

@@ -1,5 +1,14 @@
 import type { GraphCapability } from '../BaseCapability';
-import { AnimationPlayCapability, AnimationProgressCapability, AnimationReverseCapability, AnimationStopCapability } from './animation';
+import {
+  AnimationLoopCapability,
+  AnimationPauseCapability,
+  AnimationPlayCapability,
+  AnimationProgressCapability,
+  AnimationResumeCapability,
+  AnimationReverseCapability,
+  AnimationStopCapability,
+  AnimationYoyoCapability
+} from './animation';
 import { AnnotationCapability, AuxiliaryLineCapability, ProjectionCapability } from './annotation';
 import { DeleteCapability } from './delete';
 import { InspectCapability } from './inspect';
@@ -9,9 +18,13 @@ import { FillStyleCapability, StrokeStyleCapability, StylePanelCapability } from
 
 export {
   AnimationPlayCapability,
+  AnimationPauseCapability,
   AnimationProgressCapability,
+  AnimationResumeCapability,
   AnimationReverseCapability,
   AnimationStopCapability,
+  AnimationLoopCapability,
+  AnimationYoyoCapability,
   AnnotationCapability,
   AuxiliaryLineCapability,
   DeleteCapability,
@@ -41,8 +54,12 @@ export const builtinCapabilities: GraphCapability[] = [
   new StrokeStyleCapability(),
   new FillStyleCapability(),
   new AnimationPlayCapability(),
+  new AnimationPauseCapability(),
+  new AnimationResumeCapability(),
   new AnimationReverseCapability(),
   new AnimationStopCapability(),
+  new AnimationLoopCapability(),
+  new AnimationYoyoCapability(),
   new AnimationProgressCapability(),
   new DeleteCapability()
 ];

@@ -39,6 +39,8 @@ interface CircleVisualRefs {
   radiusPoint?: any;
   radiusLine?: any;
   bbox?: any;
+  pulsePoint?: any;
+  pulseCircle?: any;
 }
 
 interface CircleState {
@@ -111,6 +113,31 @@ const getRefs = (api: GraphShapeApi<CircleState>): CircleVisualRefs => {
     throw new Error('Circle shape refs are not initialized');
   }
   return api.state.refs;
+};
+
+const getPulseTrack = (api: GraphShapeApi<CircleState>) => api.getAnimationTrack('pulse');
+
+const getPulseAmount = (api: GraphShapeApi<CircleState>) => {
+  const pulseTrack = getPulseTrack(api);
+  if (!pulseTrack) return 0;
+  return Math.max(0, Math.sin(pulseTrack.progress * Math.PI));
+};
+
+const syncPulseVisual = (api: GraphShapeApi<CircleState>) => {
+  if (!api.state.refs || api.state.isPiece) return;
+  const pulseTrack = getPulseTrack(api);
+  const pulseCircle = getRefs(api).pulseCircle;
+  if (!pulseTrack || !pulseCircle) return;
+
+  const amount = getPulseAmount(api);
+  const visible = api.selected && (pulseTrack.isAnimating || amount > 0.001);
+
+  pulseCircle.setAttribute({
+    visible,
+    strokeOpacity: visible ? 0.2 + amount * 0.65 : 0,
+    fillOpacity: visible ? 0.02 + amount * 0.08 : 0,
+    strokeWidth: 1.5 + amount * 4
+  });
 };
 
 const applyColorIfNeeded = (api: GraphShapeApi<CircleState>, target: any, kind: 'stroke' | 'fill' | 'both') => {
@@ -274,10 +301,40 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     const radius = () => center.Dist(radiusPoint);
     const centerX = () => center.X();
     const centerY = () => center.Y();
+    api.createAnimationTrack({
+      id: 'pulse',
+      label: '脉冲',
+      initialProgress: 0,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      duration: 1400,
+      onProgress: () => {
+        syncPulseVisual(api);
+        api.board?.update();
+      }
+    });
+
     const p1 = api.trackObject(api.board.create('point', [() => centerX() - radius(), () => centerY() + radius()], { visible: false }));
     const p2 = api.trackObject(api.board.create('point', [() => centerX() + radius(), () => centerY() + radius()], { visible: false }));
     const p3 = api.trackObject(api.board.create('point', [() => centerX() + radius(), () => centerY() - radius()], { visible: false }));
     const p4 = api.trackObject(api.board.create('point', [() => centerX() - radius(), () => centerY() - radius()], { visible: false }));
+    const pulsePoint = api.trackObject(api.board.create('point', [
+      () => centerX() + radius() * (1 + getPulseAmount(api) * 0.18),
+      () => centerY()
+    ], { visible: false }));
+    const pulseCircle = api.trackObject(api.board.create('circle', [center, pulsePoint], {
+      visible: false,
+      strokeColor: '#38bdf8',
+      fillColor: '#38bdf8',
+      fillOpacity: 0,
+      strokeOpacity: 0,
+      strokeWidth: 1.5,
+      dash: 2,
+      highlight: false,
+      fixed: true,
+      hasInnerPoints: false
+    }));
     const bbox = api.trackObject(api.board.create('polygon', [p1, p2, p3, p4], {
       fillOpacity: 0,
       borders: { strokeColor: '#0ea5e9', strokeWidth: 1, visible: false },
@@ -288,6 +345,8 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       center,
       radiusPoint,
       circle,
+      pulsePoint,
+      pulseCircle,
       radiusLine,
       bbox,
       bboxP1: p1,
@@ -295,7 +354,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       bboxP3: p3,
       bboxP4: p4
     }, { createNativeGroup: false });
-    geometryGroup.hide(['radiusPoint', 'radiusLine']);
+    geometryGroup.hide(['radiusPoint', 'radiusLine', 'pulsePoint', 'pulseCircle']);
 
     api.setState({
       refs: {
@@ -303,10 +362,13 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
         center: geometryGroup.getObject('center') ?? center,
         radiusPoint: geometryGroup.getObject('radiusPoint') ?? radiusPoint,
         radiusLine: geometryGroup.getObject('radiusLine') ?? radiusLine,
-        bbox: geometryGroup.getObject('bbox') ?? bbox
+        bbox: geometryGroup.getObject('bbox') ?? bbox,
+        pulsePoint: geometryGroup.getObject('pulsePoint') ?? pulsePoint,
+        pulseCircle: geometryGroup.getObject('pulseCircle') ?? pulseCircle
       },
       radiusValue: 2
     });
+    syncPulseVisual(api);
     attachInteractiveHandlers(api);
     updateToolbarPosition(api);
     api.board.update();
@@ -319,6 +381,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       refs.radiusLine?.setAttribute({ visible: false });
       refs.bbox?.borders.forEach((border: any) => border.setAttribute({ visible: false }));
       api.setState({ showFeature: false, showColorPanel: false, activeTool: 'none' });
+      syncPulseVisual(api);
       updateToolbarPosition(api);
       api.board?.update();
       return;
@@ -327,6 +390,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     if (refs.radiusPoint) {
       api.setState({ radiusValue: parseFloat(refs.center.Dist(refs.radiusPoint).toFixed(2)) });
     }
+    syncPulseVisual(api);
     updateToolbarPosition(api);
     api.board?.update();
   },
@@ -456,6 +520,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     }
   },
   onDestroy(api) {
+    api.removeAnimationTrack('pulse');
     if (api.state.rafId !== null) cancelAnimationFrame(api.state.rafId);
   },
   getCapabilityTarget(api): ShapeCapabilityTarget | null {
@@ -675,6 +740,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     };
 
     if (!api.state.isPiece) {
+      const pulseTrack = api.getAnimationTrack('pulse');
       target.resize = {
         active: api.state.activeTool === 'size',
         value: api.state.radiusValue,
@@ -703,6 +769,57 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
         cancel: cancelCut,
         confirm: confirmCut
       };
+      if (pulseTrack) {
+        target.animations = {
+          primaryTrackId: 'pulse',
+          tracks: {
+            pulse: {
+              id: pulseTrack.id,
+              label: '脉冲',
+              isAnimating: pulseTrack.isAnimating,
+              isPaused: pulseTrack.isPaused,
+              loop: pulseTrack.loop,
+              yoyo: pulseTrack.yoyo,
+              progress: pulseTrack.progress,
+              min: pulseTrack.min,
+              max: pulseTrack.max,
+              step: pulseTrack.step,
+              playForward: () => pulseTrack.playForward(),
+              playBackward: () => pulseTrack.playBackward(),
+              pause: () => pulseTrack.pause(),
+              resume: () => pulseTrack.resume(),
+              stop: () => pulseTrack.stop(),
+              setLoop: (value) => pulseTrack.setLoop(value),
+              toggleLoop: () => pulseTrack.toggleLoop(),
+              setYoyo: (value) => pulseTrack.setYoyo(value),
+              toggleYoyo: () => pulseTrack.toggleYoyo(),
+              setProgress: (value) => pulseTrack.setProgress(value)
+            }
+          }
+        };
+        target.animation = {
+          id: pulseTrack.id,
+          label: '脉冲',
+          isAnimating: pulseTrack.isAnimating,
+          isPaused: pulseTrack.isPaused,
+          loop: pulseTrack.loop,
+          yoyo: pulseTrack.yoyo,
+          progress: pulseTrack.progress,
+          min: pulseTrack.min,
+          max: pulseTrack.max,
+          step: pulseTrack.step,
+          playForward: () => pulseTrack.playForward(),
+          playBackward: () => pulseTrack.playBackward(),
+          pause: () => pulseTrack.pause(),
+          resume: () => pulseTrack.resume(),
+          stop: () => pulseTrack.stop(),
+          setLoop: (value) => pulseTrack.setLoop(value),
+          toggleLoop: () => pulseTrack.toggleLoop(),
+          setYoyo: (value) => pulseTrack.setYoyo(value),
+          toggleYoyo: () => pulseTrack.toggleYoyo(),
+          setProgress: (value) => pulseTrack.setProgress(value)
+        };
+      }
     }
 
     return target;

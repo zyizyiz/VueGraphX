@@ -39,6 +39,8 @@ export class GraphXEngine {
   private renderer: Renderer;
   private shapeDefinitions: Map<string, GraphShapeDefinition> = new Map();
   private shapeInstances: Map<string, GraphShapeInstance> = new Map();
+  private animationTasks: Map<string, (timestamp: number) => boolean | void> = new Map();
+  private animationFrameId: number | null = null;
   private selectedShapeId: string | null = null;
   private isClickingObject = false;
   private capabilityListeners: GraphCapabilityListener[] = [];
@@ -287,9 +289,24 @@ export class GraphXEngine {
     this.resetBoard();
   }
 
+  public registerAnimationTask(taskId: string, task: (timestamp: number) => boolean | void): void {
+    this.animationTasks.set(taskId, task);
+    this.ensureAnimationLoop();
+  }
+
+  public unregisterAnimationTask(taskId: string): void {
+    this.animationTasks.delete(taskId);
+
+    if (this.animationTasks.size === 0 && this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+  }
+
   public destroy(): void {
     this.clearShapeInstances();
     this.shapeDefinitions.clear();
+    this.stopAnimationLoop();
     this.boardMgr.destroy();
     this.entityMgr.clearAll();
     this.notifyCapabilityChange();
@@ -404,6 +421,33 @@ export class GraphXEngine {
       width: right - left,
       height: bottom - top
     };
+  }
+
+  private ensureAnimationLoop(): void {
+    if (this.animationFrameId !== null || this.animationTasks.size === 0) return;
+
+    this.animationFrameId = requestAnimationFrame((timestamp) => {
+      this.animationFrameId = null;
+      const tasks = Array.from(this.animationTasks.entries());
+
+      tasks.forEach(([taskId, task]) => {
+        const shouldKeepRunning = task(timestamp);
+        if (shouldKeepRunning === false) {
+          this.animationTasks.delete(taskId);
+        }
+      });
+
+      this.ensureAnimationLoop();
+    });
+  }
+
+  private stopAnimationLoop(): void {
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    this.animationTasks.clear();
   }
 
   private getUsrCoordFromEvent(event: any): [number, number] | null {

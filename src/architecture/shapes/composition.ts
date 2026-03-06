@@ -1,5 +1,7 @@
 import type { ShapeCapabilityTarget } from '../capabilities/contracts';
 import type {
+  GraphAnimationTrack,
+  GraphAnimationTrackConfig,
   GraphPointAnnotationOptions,
   GraphPointAnnotationSpec,
   GraphScreenAnchor,
@@ -29,6 +31,10 @@ export interface GraphShapeApi<StateType> {
   projectUserBounds(points: Array<[number, number]>): GraphScreenBounds | null;
   project3DBounds(points: Array<[number, number, number]>): GraphScreenBounds | null;
   getBoundsAnchor(bounds: GraphScreenBounds, anchor?: GraphScreenAnchor): GraphScreenPoint;
+  createAnimationTrack(config: GraphAnimationTrackConfig): GraphAnimationTrack;
+  getAnimationTrack(id: string): GraphAnimationTrack | null;
+  getAnimationTracks(): GraphAnimationTrack[];
+  removeAnimationTrack(id: string): void;
   hasPointAnnotations(): boolean;
   togglePointAnnotations(specs: GraphPointAnnotationSpec[], options?: GraphPointAnnotationOptions): boolean;
   clearPointAnnotations(): void;
@@ -152,6 +158,18 @@ class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
       },
       getBoundsAnchor(bounds, anchor) {
         return thisRef.context.getBoundsAnchor(bounds, anchor);
+      },
+      createAnimationTrack(config) {
+        return thisRef.createAnimationTrack(config);
+      },
+      getAnimationTrack(id) {
+        return thisRef.getAnimationTrack(id);
+      },
+      getAnimationTracks() {
+        return thisRef.getAnimationTracks();
+      },
+      removeAnimationTrack(id) {
+        thisRef.removeAnimationTrack(id);
       },
       hasPointAnnotations() {
         return thisRef.hasPointAnnotations();

@@ -41,15 +41,31 @@ export interface SplitCapabilityContract {
 }
 
 export interface AnimationCapabilityContract {
+  id: string;
+  label?: string;
   isAnimating: boolean;
+  isPaused: boolean;
+  loop: boolean;
+  yoyo: boolean;
   progress: number;
   min?: number;
   max?: number;
   step?: number;
   playForward: () => void;
   playBackward: () => void;
+  pause: () => void;
+  resume: () => void;
   stop: () => void;
+  setLoop: (enabled: boolean) => void;
+  toggleLoop: () => void;
+  setYoyo: (enabled: boolean) => void;
+  toggleYoyo: () => void;
   setProgress: (value: number) => void;
+}
+
+export interface AnimationCollectionCapabilityContract {
+  primaryTrackId?: string;
+  tracks: Record<string, AnimationCapabilityContract>;
 }
 
 export interface ShapeCapabilityTarget {
@@ -67,5 +83,6 @@ export interface ShapeCapabilityTarget {
   strokeStyle?: ColorStyleCapabilityContract;
   fillStyle?: ColorStyleCapabilityContract;
   animation?: AnimationCapabilityContract;
+  animations?: AnimationCollectionCapabilityContract;
   remove?: () => void;
 }

@@ -52,6 +52,21 @@
         <button class="mini-btn !bg-sky-100 !text-sky-700 !border-sky-300" @click="confirmCut">确定</button>
       </div>
 
+      <div v-if="!selected?.isPiece && fastState.animationTracks.length > 0" class="mt-2">
+        <AnimationTracksPanel
+          :tracks="fastState.animationTracks"
+          theme="sky"
+          @set-progress="setTrackProgress"
+          @play-forward="playTrackForward"
+          @play-backward="playTrackBackward"
+          @pause="pauseTrack"
+          @resume="resumeTrack"
+          @stop="stopTrack"
+          @toggle-loop="toggleTrackLoop"
+          @toggle-yoyo="toggleTrackYoyo"
+        />
+      </div>
+
 
     </div>
 
@@ -93,6 +108,7 @@
 <script setup lang="ts">
 import type { EngineMode, GraphXEngine } from 'vuegraphx';
 import { useCircleDesigner } from '../composables/useCircleDesigner';
+import AnimationTracksPanel from './AnimationTracksPanel.vue';
 
 const props = defineProps<{
   engine: GraphXEngine | null;
@@ -119,6 +135,14 @@ const {
   applyColorImmediately,
   cancelCut,
   confirmCut,
+  setTrackProgress,
+  playTrackForward,
+  playTrackBackward,
+  pauseTrack,
+  resumeTrack,
+  stopTrack,
+  toggleTrackLoop,
+  toggleTrackYoyo,
   radiusValue
 } = useCircleDesigner(
   () => props.engine,

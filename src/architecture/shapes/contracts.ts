@@ -67,6 +67,52 @@ export interface GraphPointAnnotationSpec {
   attributes?: Record<string, unknown>;
 }
 
+export type GraphAnimationEasing = (progress: number) => number;
+
+export interface GraphAnimationPlaybackOptions {
+  duration?: number;
+  easing?: GraphAnimationEasing;
+}
+
+export interface GraphAnimationTrack {
+  readonly id: string;
+  readonly label?: string;
+  readonly progress: number;
+  readonly isAnimating: boolean;
+  readonly isPaused: boolean;
+  readonly loop: boolean;
+  readonly yoyo: boolean;
+  readonly min: number;
+  readonly max: number;
+  readonly step: number;
+  readonly duration: number;
+  playTo(target: number, options?: GraphAnimationPlaybackOptions): void;
+  playForward(options?: GraphAnimationPlaybackOptions): void;
+  playBackward(options?: GraphAnimationPlaybackOptions): void;
+  pause(): void;
+  resume(): void;
+  stop(): void;
+  setLoop(enabled: boolean): void;
+  toggleLoop(): void;
+  setYoyo(enabled: boolean): void;
+  toggleYoyo(): void;
+  setProgress(value: number): void;
+}
+
+export interface GraphAnimationTrackConfig {
+  id: string;
+  label?: string;
+  initialProgress?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  duration?: number;
+  loop?: boolean;
+  yoyo?: boolean;
+  easing?: GraphAnimationEasing;
+  onProgress?: (value: number, track: GraphAnimationTrack) => void;
+}
+
 export interface GraphScreenBounds {
   left: number;
   right: number;

@@ -1,5 +1,6 @@
 import { shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import type { GraphCapabilitySnapshot, GraphXEngine } from 'vuegraphx';
+import type { DesignerAnimationTrackState } from '../types/animation';
 
 type ActiveToolType = 'none' | 'size' | 'assist' | 'crop' | 'color-stroke' | 'color-fill';
 
@@ -25,6 +26,7 @@ interface CirclePanelUIState {
   radiusValue: number;
   toolbarStyle: Record<string, string>;
   sizeInputStyle: Record<string, string>;
+  animationTracks: DesignerAnimationTrackState[];
 }
 
 export function useCircleDesigner(
@@ -44,7 +46,8 @@ export function useCircleDesigner(
   const fastState = shallowRef<CirclePanelUIState>({
     radiusValue: 2,
     toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' },
-    sizeInputStyle: { left: '50%', top: '50%' }
+    sizeInputStyle: { left: '50%', top: '50%' },
+    animationTracks: []
   });
 
   const capabilitySnapshot = shallowRef<GraphCapabilitySnapshot>({
@@ -85,6 +88,7 @@ export function useCircleDesigner(
           ? snapshot.selection.entity as CircleModel
           : null;
         const radiusCapability = getCapability('resize.value');
+        const animationCapability = getCapability('animation.progress');
         const styleCapability = getCapability('style');
         const toolbarStyle = (snapshot.selection?.entityType === 'circle' || snapshot.selection?.entityType === 'circle-piece') && snapshot.selection.ui?.toolbarStyle
           ? snapshot.selection.ui.toolbarStyle as Record<string, string>
@@ -92,6 +96,9 @@ export function useCircleDesigner(
         const sizeInputStyle = (snapshot.selection?.entityType === 'circle' || snapshot.selection?.entityType === 'circle-piece') && snapshot.selection.ui?.sizeInputStyle
           ? snapshot.selection.ui.sizeInputStyle as Record<string, string>
           : { left: '50%', top: '50%' };
+        const animationTracks = Array.isArray(animationCapability?.meta?.tracks)
+          ? animationCapability.meta.tracks as Array<Record<string, unknown>>
+          : [];
 
         panelState.value = {
           circles: selected ? [selected] : [],
@@ -106,7 +113,21 @@ export function useCircleDesigner(
         fastState.value = {
           radiusValue: typeof radiusCapability?.meta?.value === 'number' ? radiusCapability.meta.value : 2,
           toolbarStyle,
-          sizeInputStyle
+          sizeInputStyle,
+          animationTracks: animationTracks
+            .filter((track): track is Record<string, unknown> & { id: string } => typeof track.id === 'string')
+            .map((track) => ({
+              id: track.id,
+              label: typeof track.label === 'string' && track.label ? track.label : track.id,
+              progress: typeof track.progress === 'number' ? track.progress : 0,
+              min: typeof track.min === 'number' ? track.min : 0,
+              max: typeof track.max === 'number' ? track.max : 1,
+              step: typeof track.step === 'number' ? track.step : 0.01,
+              isAnimating: !!track.isAnimating,
+              isPaused: !!track.isPaused,
+              loop: !!track.loop,
+              yoyo: !!track.yoyo
+            }))
         };
       });
 
@@ -190,10 +211,21 @@ export function useCircleDesigner(
     e.dataTransfer!.effectAllowed = 'copy';
   };
 
+  const setTrackProgress = (trackId: string, value: number) => runCapability('animation.progress', { trackId, value });
+  const playTrackForward = (trackId: string) => runCapability('animation.play', { trackId });
+  const playTrackBackward = (trackId: string) => runCapability('animation.reverse', { trackId });
+  const pauseTrack = (trackId: string) => runCapability('animation.pause', { trackId });
+  const resumeTrack = (trackId: string) => runCapability('animation.resume', { trackId });
+  const stopTrack = (trackId: string) => runCapability('animation.stop', { trackId });
+  const toggleTrackLoop = (trackId: string, value?: boolean) => runCapability('animation.loop', { trackId, value });
+  const toggleTrackYoyo = (trackId: string, value?: boolean) => runCapability('animation.yoyo', { trackId, value });
+  const isAnyAnimationPlaying = computed(() => fastState.value.animationTracks.some((track) => track.isAnimating));
+
   return {
     state: panelState,
     fastState,
     selected,
+    isAnyAnimationPlaying,
     toolClass,
     onDragStart,
     
@@ -213,6 +245,14 @@ export function useCircleDesigner(
     ),
     cancelCut: () => runCapability('edit.split.cancel'),
     confirmCut: () => runCapability('edit.split.confirm'),
+    setTrackProgress,
+    playTrackForward,
+    playTrackBackward,
+    pauseTrack,
+    resumeTrack,
+    stopTrack,
+    toggleTrackLoop,
+    toggleTrackYoyo,
     
     // Model proxy
     radiusValue: computed({
