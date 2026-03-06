@@ -1,4 +1,3 @@
-import JXG from 'jsxgraph';
 import { createComposedShapeDefinition, type GraphShapeApi } from 'vuegraphx';
 import type { ShapeCapabilityTarget } from 'vuegraphx';
 
@@ -22,18 +21,17 @@ const notifyFastChange = (api: GraphShapeApi<CubeState>) => {
 };
 
 const updateToolbarPosition = (api: GraphShapeApi<CubeState>) => {
-  if (!api.selected || !api.engine || !api.board) return;
-  const view3d = api.engine.getView3D();
-  if (!view3d) return;
-  const projected = view3d.project3DTo2D([0, 0, 0]);
-  if (!projected || projected.length < 2) return;
+  if (!api.selected) return;
+  const screenPoint = api.projectPoint3D([0, 0, 0]);
+  if (!screenPoint) return;
 
-  const screenPoint = new JXG.Coords(JXG.COORDS_BY_USER, projected, api.board);
-  const boardWidth = api.board.canvasWidth || 1000;
-  const boardHeight = api.board.canvasHeight || 700;
+  const clampedPoint = api.clampScreenPoint(
+    { x: screenPoint.x, y: screenPoint.y + 150 },
+    { left: 160, right: 160, top: 16, bottom: 90 }
+  );
   const toolbarStyle = {
-    left: `${Math.max(160, Math.min(boardWidth - 160, screenPoint.scrCoords[1]))}px`,
-    top: `${Math.max(16, Math.min(boardHeight - 90, screenPoint.scrCoords[2] + 150))}px`
+    left: `${clampedPoint.x}px`,
+    top: `${clampedPoint.y}px`
   };
 
   if (api.state.toolbarStyle.left !== toolbarStyle.left || api.state.toolbarStyle.top !== toolbarStyle.top) {

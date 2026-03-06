@@ -1,4 +1,3 @@
-import JXG from 'jsxgraph';
 import { createComposedShapeDefinition, type GraphShapeApi, type GraphShapeComposition, type GraphShapeGroup } from 'vuegraphx';
 import type { ShapeCapabilityTarget } from 'vuegraphx';
 
@@ -140,7 +139,7 @@ const closeIntuitive = (api: GraphShapeApi<CircleState>) => {
 };
 
 const updateToolbarPosition = (api: GraphShapeApi<CircleState>) => {
-  if (!api.selected || !api.board || !api.state.refs) {
+  if (!api.selected || !api.state.refs) {
     if (api.state.toolbarStyle.top !== 'calc(100% - 5rem)') {
       api.setState({
         toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' }
@@ -155,24 +154,28 @@ const updateToolbarPosition = (api: GraphShapeApi<CircleState>) => {
   const centerY = center.Y();
   const radius = radiusPoint ? center.Dist(radiusPoint) : 1;
   const bottomEdgeY = centerY - radius;
-  const screenPoint = new JXG.Coords(JXG.COORDS_BY_USER, [centerX, bottomEdgeY], api.board);
-
-  const boardWidth = api.board.canvasWidth || 1000;
-  const boardHeight = api.board.canvasHeight || 700;
+  const screenPoint = api.projectUserPoint([centerX, bottomEdgeY]);
+  if (!screenPoint) return;
+  const clampedToolbarPoint = api.clampScreenPoint(
+    { x: screenPoint.x, y: screenPoint.y + 20 },
+    { left: 160, right: 160, top: 16, bottom: 90 }
+  );
   const toolbarStyle = {
-    left: `${Math.max(160, Math.min(boardWidth - 160, screenPoint.scrCoords[1]))}px`,
-    top: `${Math.max(16, Math.min(boardHeight - 90, screenPoint.scrCoords[2] + 20))}px`
+    left: `${clampedToolbarPoint.x}px`,
+    top: `${clampedToolbarPoint.y}px`
   };
 
   let sizeInputStyle = api.state.sizeInputStyle;
   if (api.state.activeTool === 'size' && radiusPoint) {
     const middleX = (center.X() + radiusPoint.X()) / 2;
     const middleY = (center.Y() + radiusPoint.Y()) / 2;
-    const middlePoint = new JXG.Coords(JXG.COORDS_BY_USER, [middleX, middleY], api.board);
-    sizeInputStyle = {
-      left: `${middlePoint.scrCoords[1]}px`,
-      top: `${middlePoint.scrCoords[2]}px`
-    };
+    const middlePoint = api.projectUserPoint([middleX, middleY]);
+    if (middlePoint) {
+      sizeInputStyle = {
+        left: `${middlePoint.x}px`,
+        top: `${middlePoint.y}px`
+      };
+    }
   }
 
   if (

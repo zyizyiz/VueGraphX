@@ -19,6 +19,23 @@ export interface GraphShapeGroupMember {
   object: any;
 }
 
+export interface GraphScreenPoint {
+  x: number;
+  y: number;
+}
+
+export interface GraphViewport {
+  width: number;
+  height: number;
+}
+
+export interface GraphViewportPadding {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+}
+
 export type GraphShapeGroupInput = any[] | Record<string, any>;
 
 export interface GraphShapeGroup {
@@ -49,6 +66,10 @@ export interface GraphShapeContext {
   notifyChange(): void;
   generateId(prefix: string): string;
   getUsrCoordFromEvent(event: any): [number, number] | null;
+  getViewport(): GraphViewport;
+  projectUserPoint(point: [number, number]): GraphScreenPoint | null;
+  projectPoint3D(point: [number, number, number]): GraphScreenPoint | null;
+  clampScreenPoint(point: GraphScreenPoint, padding?: GraphViewportPadding): GraphScreenPoint;
 }
 
 export interface GraphShapeDefinition {

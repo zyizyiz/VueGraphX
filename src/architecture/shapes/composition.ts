@@ -1,5 +1,5 @@
 import type { ShapeCapabilityTarget } from '../capabilities/contracts';
-import type { GraphShapeContext, GraphShapeDefinition, GraphShapeGroup, GraphShapeGroupInput, GraphShapeInstance } from './contracts';
+import type { GraphScreenPoint, GraphShapeContext, GraphShapeDefinition, GraphShapeGroup, GraphShapeGroupInput, GraphShapeInstance, GraphViewport, GraphViewportPadding } from './contracts';
 import { BaseShapeInstance } from './internal/BaseShapeInstance';
 
 export interface GraphShapeApi<StateType> {
@@ -10,6 +10,10 @@ export interface GraphShapeApi<StateType> {
   readonly context: GraphShapeContext;
   readonly engine: GraphShapeContext['engine'];
   readonly board: GraphShapeContext['board'];
+  getViewport(): GraphViewport;
+  projectUserPoint(point: [number, number]): GraphScreenPoint | null;
+  projectPoint3D(point: [number, number, number]): GraphScreenPoint | null;
+  clampScreenPoint(point: GraphScreenPoint, padding?: GraphViewportPadding): GraphScreenPoint;
   setState(partialState: Partial<StateType>): void;
   notifyChange(): void;
   trackObject<T>(objectRef: T): T;
@@ -111,6 +115,18 @@ class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
       },
       get board() {
         return thisRef.board;
+      },
+      getViewport() {
+        return thisRef.context.getViewport();
+      },
+      projectUserPoint(point) {
+        return thisRef.context.projectUserPoint(point);
+      },
+      projectPoint3D(point) {
+        return thisRef.context.projectPoint3D(point);
+      },
+      clampScreenPoint(point, padding) {
+        return thisRef.context.clampScreenPoint(point, padding);
       },
       setState(partialState) {
         thisRef.setState(partialState);

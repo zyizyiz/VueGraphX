@@ -6,7 +6,7 @@ import { Renderer } from '../rendering/Renderer';
 import JXG from 'jsxgraph';
 import { capabilityRegistry } from '../architecture/capabilities/registry';
 import type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
-import type { GraphShapeContext, GraphShapeDefinition, GraphShapeInstance } from '../architecture/shapes/contracts';
+import type { GraphScreenPoint, GraphShapeContext, GraphShapeDefinition, GraphShapeInstance, GraphViewport, GraphViewportPadding } from '../architecture/shapes/contracts';
 import type {
   GraphCapabilityDescriptor,
   GraphCapabilityListener,
@@ -73,7 +73,11 @@ export class GraphXEngine {
       removeShape: (shapeId) => this.removeShapeInstance(shapeId),
       notifyChange: () => this.notifyCapabilityChange(),
       generateId: (prefix) => `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-      getUsrCoordFromEvent: (event) => this.getUsrCoordFromEvent(event)
+      getUsrCoordFromEvent: (event) => this.getUsrCoordFromEvent(event),
+      getViewport: () => this.getViewport(),
+      projectUserPoint: (point) => this.projectUserPoint(point),
+      projectPoint3D: (point) => this.projectPoint3D(point),
+      clampScreenPoint: (point, padding) => this.clampScreenPoint(point, padding)
     };
   }
 
@@ -287,6 +291,47 @@ export class GraphXEngine {
 
   public getBoard(): JXG.Board | null {
     return this.boardMgr.board || null;
+  }
+
+  public getViewport(): GraphViewport {
+    const board = this.getBoard();
+    return {
+      width: board?.canvasWidth || 1000,
+      height: board?.canvasHeight || 700
+    };
+  }
+
+  public projectUserPoint(point: [number, number]): GraphScreenPoint | null {
+    const board = this.getBoard();
+    if (!board) return null;
+    const coords = new JXG.Coords(JXG.COORDS_BY_USER, point, board);
+    if (!Number.isFinite(coords.scrCoords[1]) || !Number.isFinite(coords.scrCoords[2])) return null;
+    return {
+      x: coords.scrCoords[1],
+      y: coords.scrCoords[2]
+    };
+  }
+
+  public projectPoint3D(point: [number, number, number]): GraphScreenPoint | null {
+    const board = this.getBoard();
+    const view3d = this.getView3D();
+    if (!board || !view3d) return null;
+    const projected = view3d.project3DTo2D(point);
+    if (!projected || projected.length < 2) return null;
+    return this.projectUserPoint([projected[0], projected[1]]);
+  }
+
+  public clampScreenPoint(point: GraphScreenPoint, padding: GraphViewportPadding = {}): GraphScreenPoint {
+    const viewport = this.getViewport();
+    const left = padding.left ?? 0;
+    const right = padding.right ?? 0;
+    const top = padding.top ?? 0;
+    const bottom = padding.bottom ?? 0;
+
+    return {
+      x: Math.max(left, Math.min(viewport.width - right, point.x)),
+      y: Math.max(top, Math.min(viewport.height - bottom, point.y))
+    };
   }
 
   private getUsrCoordFromEvent(event: any): [number, number] | null {
