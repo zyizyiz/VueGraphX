@@ -114,6 +114,36 @@ src/
 
 这让图形作者只关注“几何如何变化”和“能力如何暴露”，而不必重复实现 requestAnimationFrame、命中批处理或投影换算。
 
+## 4.1 可展开立体抽象
+
+针对“立方体、圆柱、圆锥等立体在 2D 中投影展示、旋转、展开/收起”的需求，当前新增了一层实验性的 solids 抽象，代码位于 `src/architecture/solids/`。
+
+这层抽象把立体统一表示为三部分：
+
+- patch：面片语义，当前统一为 `polygon`、`band`、`disk`、`sector` 四类。
+- hinge：面片之间的铰链关系，负责描述折叠态与展开态之间的角度变化。
+- state：统一驱动 `rotationX/Y/Z`、`unfoldProgress`、`explodeProgress` 与 `viewMode`。
+
+这样做的目标不是立即替换现有 playground 图形，而是先把“通用几何层”从具体 shape 里抽出来。后续像 cube、cylinder、cone 一类图形可以只提供：
+
+- 参数模型，例如边长、半径、高度、母线长、分段数。
+- patch 拓扑与 hinge 树。
+- 样式和能力映射。
+
+然后由上层 shape runtime 复用同一套：
+
+- 折叠态投影到 2D
+- 展开态净图布局
+- 旋转与展开动画轨道
+- 统一工具栏与 capability 面板
+
+当前这层又向前推进了一步：
+
+- `src/architecture/solids/renderer2d.ts` 提供通用 `renderSolidTopology2D()`，统一把 `polygon`、`band`、`disk`、`sector` 四类 patch 渲染成 2D 轮廓。
+- renderer 支持三种视图：`projected`、`net`、`hybrid`，其中 `hybrid` 会按 `unfoldProgress` 在折叠投影和展开净图之间插值。
+- renderer 也统一处理 `explodeProgress`，把面片沿整体包围盒中心向外分离，适合作为教学展示或结构拆解动画。
+- `src/architecture/solids/shape2d.ts` 提供 `createSolid2DScene()` 和 `createSolid2DShapeDefinition()`，把 renderer 输出接成 JSXGraph polygon 集合，并进一步把拖拽、工具栏定位、动画轨道和 capability 暴露收敛成通用 authoring API。
+
 ## 5. 推荐的外部接入方式
 
 ### 5.1 如果你的需求是表达式驱动

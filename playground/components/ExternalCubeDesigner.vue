@@ -5,18 +5,21 @@
       class="pointer-events-auto absolute rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur"
       :class="activeMode === 'geometry' ? 'left-4 top-24' : 'left-4 top-4'"
     >
-      <div
-        v-if="activeMode === 'geometry'"
-        draggable="true"
-        @dragstart="onDragStart"
-        class="flex cursor-grab items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
-      >
-        <span class="relative inline-flex h-4 w-4 items-center justify-center">
-          <span class="absolute inset-x-[2px] top-0 h-[6px] -skew-x-[30deg] rounded border border-indigo-400 bg-indigo-100"></span>
-          <span class="absolute left-0 top-[5px] h-[8px] w-[8px] rounded border border-indigo-500 bg-indigo-200"></span>
-          <span class="absolute right-0 top-[5px] h-[8px] w-[7px] -skew-y-[30deg] rounded border border-indigo-600 bg-indigo-300"></span>
-        </span>
-        拖动立方体到画布
+      <div v-if="activeMode === 'geometry'" class="flex flex-col gap-2">
+        <button
+          v-for="spec in geometrySolidSpecs"
+          :key="spec.type"
+          draggable="true"
+          @click="createGeometrySolid(spec.type)"
+          @dragstart="onDragStart(spec.type, $event)"
+          class="flex cursor-grab items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
+          :class="spec.badgeClass"
+        >
+          <span class="relative inline-flex h-4 w-4 items-center justify-center">
+            <span class="inline-block h-4 w-4" :class="spec.iconClass"></span>
+          </span>
+          {{ spec.dragLabel }}
+        </button>
       </div>
 
       <button
@@ -79,8 +82,10 @@ const props = defineProps<{
 const {
   state,
   fastState,
+  geometrySolidSpecs,
   isAnyTrackPlaying,
   createCube,
+  createGeometrySolid,
   onDragStart,
   setTrackProgress,
   playTrackForward,
@@ -95,9 +100,14 @@ const {
   () => props.activeMode
 );
 
-const selected = computed(() => state.value.cubes.find(c => c.id === state.value.selectedId));
+const selected = computed(() => state.value.solids.find(c => c.id === state.value.selectedId));
 const createLabel = computed(() => '在中心生成 3D 正方体');
-const panelTitle = computed(() => props.activeMode === 'geometry' ? '2D 立方体控制器' : '正方体控制器');
+const panelTitle = computed(() => {
+  if (props.activeMode !== 'geometry') return '正方体控制器';
+  if (state.value.selectedType === 'cylinder-2d') return '2D 圆柱控制器';
+  if (state.value.selectedType === 'cone-2d') return '2D 圆锥控制器';
+  return '2D 立体控制器';
+});
 </script>
 
 <style scoped></style>
