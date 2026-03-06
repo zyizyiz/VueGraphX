@@ -452,8 +452,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
             api.board?.update();
           });
         }, 'line');
-        helper.p1.on('down', () => Promise.resolve().then(() => api.select()));
-        helper.p2.on('down', () => Promise.resolve().then(() => api.select()));
+        group.bindSelectOnHit({ keys: ['start', 'end'] });
 
         api.setState({
           helpers: [...api.state.helpers, helper],

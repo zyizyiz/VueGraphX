@@ -646,6 +646,25 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
           }
         };
       },
+      onHit: (handler, options) => {
+        const eventName = options?.eventName ?? 'down';
+        return this.createGroupView(groupId, members, nativeGroup, listenerEntries).on(
+          eventName,
+          (member, ...args) => {
+            if (options?.filter && !options.filter(member, ...args)) return;
+            handler(member, ...args);
+          },
+          options?.keys
+        );
+      },
+      bindSelectOnHit: (options) => {
+        return this.createGroupView(groupId, members, nativeGroup, listenerEntries).onHit(
+          () => {
+            Promise.resolve().then(() => this.selectSelf());
+          },
+          options
+        );
+      },
       off: (eventName?: string, keys?: string | string[]) => {
         const targetKeys = new Set(resolveMembers(keys).map((member) => member.key));
         for (let index = listenerEntries.length - 1; index >= 0; index -= 1) {

@@ -158,10 +158,7 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
           }));
           const faceGroup = api.createGroup({ p1, p2, p3, p4, face: polygon }, { id: `cube_face_${index}`, createNativeGroup: false });
           faceGroup.hide(['p1', 'p2', 'p3', 'p4']);
-          faceGroup.pick('face').on('down', (member) => {
-            if (member.key !== 'face') return;
-            Promise.resolve().then(() => api.select());
-          });
+          faceGroup.bindSelectOnHit({ keys: 'face' });
           groupedObjects.push(p1, p2, p3, p4, polygon);
         });
 

@@ -135,6 +135,12 @@ export type GraphScreenAnchor =
 
 export type GraphShapeGroupInput = any[] | Record<string, any>;
 
+export interface GraphShapeGroupHitOptions {
+  keys?: string | string[];
+  eventName?: string;
+  filter?: (member: GraphShapeGroupMember, ...args: any[]) => boolean;
+}
+
 export interface GraphShapeGroup {
   id: string;
   members: readonly GraphShapeGroupMember[];
@@ -150,6 +156,8 @@ export interface GraphShapeGroup {
   show(keys?: string | string[]): void;
   hide(keys?: string | string[]): void;
   on(eventName: string, handler: (member: GraphShapeGroupMember, ...args: any[]) => void, keys?: string | string[]): () => void;
+  onHit(handler: (member: GraphShapeGroupMember, ...args: any[]) => void, options?: GraphShapeGroupHitOptions): () => void;
+  bindSelectOnHit(options?: GraphShapeGroupHitOptions): () => void;
   off(eventName?: string, keys?: string | string[]): void;
 }
 
