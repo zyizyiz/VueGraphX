@@ -1,5 +1,7 @@
 import type { ShapeCapabilityTarget } from '../capabilities/contracts';
 import type {
+  GraphPointAnnotationOptions,
+  GraphPointAnnotationSpec,
   GraphScreenAnchor,
   GraphScreenBounds,
   GraphScreenPoint,
@@ -27,6 +29,9 @@ export interface GraphShapeApi<StateType> {
   projectUserBounds(points: Array<[number, number]>): GraphScreenBounds | null;
   project3DBounds(points: Array<[number, number, number]>): GraphScreenBounds | null;
   getBoundsAnchor(bounds: GraphScreenBounds, anchor?: GraphScreenAnchor): GraphScreenPoint;
+  hasPointAnnotations(): boolean;
+  togglePointAnnotations(specs: GraphPointAnnotationSpec[], options?: GraphPointAnnotationOptions): boolean;
+  clearPointAnnotations(): void;
   clampScreenPoint(point: GraphScreenPoint, padding?: GraphViewportPadding): GraphScreenPoint;
   setState(partialState: Partial<StateType>): void;
   notifyChange(): void;
@@ -148,6 +153,15 @@ class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
       getBoundsAnchor(bounds, anchor) {
         return thisRef.context.getBoundsAnchor(bounds, anchor);
       },
+      hasPointAnnotations() {
+        return thisRef.hasPointAnnotations();
+      },
+      togglePointAnnotations(specs, options) {
+        return thisRef.togglePointAnnotations(specs, options);
+      },
+      clearPointAnnotations() {
+        thisRef.clearPointAnnotations();
+      },
       clampScreenPoint(point, padding) {
         return thisRef.context.clampScreenPoint(point, padding);
       },
@@ -217,4 +231,75 @@ export const createComposedShapeDefinition = <Payload = unknown, StateType = unk
         return composition ? createComposedShape(context, composition) : null;
       }
     : undefined
+});
+
+export const createPointAnnotation = (
+  key: string,
+  point: any,
+  options?: Pick<GraphPointAnnotationSpec, 'label' | 'attributes'>
+): GraphPointAnnotationSpec => ({
+  key,
+  label: options?.label,
+  attributes: options?.attributes,
+  source: { kind: 'point', point }
+});
+
+export const createIntersectionAnnotation = (
+  key: string,
+  elements: any[],
+  index = 0,
+  options?: Pick<GraphPointAnnotationSpec, 'label' | 'attributes'>
+): GraphPointAnnotationSpec => ({
+  key,
+  label: options?.label,
+  attributes: options?.attributes,
+  source: { kind: 'intersection', elements, index }
+});
+
+export const createPairwiseIntersectionAnnotations = (
+  entries: Array<{ key: string; element: any }>,
+  options?: {
+    createKey?: (left: { key: string; element: any }, right: { key: string; element: any }) => string;
+    attributes?: GraphPointAnnotationSpec['attributes'];
+  }
+): GraphPointAnnotationSpec[] => {
+  const specs: GraphPointAnnotationSpec[] = [];
+
+  for (let leftIndex = 0; leftIndex < entries.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < entries.length; rightIndex += 1) {
+      const left = entries[leftIndex];
+      const right = entries[rightIndex];
+      specs.push(createIntersectionAnnotation(
+        options?.createKey?.(left, right) ?? `${left.key}:${right.key}`,
+        [left.element, right.element],
+        0,
+        { attributes: options?.attributes }
+      ));
+    }
+  }
+
+  return specs;
+};
+
+export const createMidpointAnnotation = (
+  key: string,
+  firstPoint: any,
+  secondPoint: any,
+  options?: Pick<GraphPointAnnotationSpec, 'label' | 'attributes'>
+): GraphPointAnnotationSpec => ({
+  key,
+  label: options?.label,
+  attributes: options?.attributes,
+  source: { kind: 'midpoint', points: [firstPoint, secondPoint] }
+});
+
+export const createComputedPointAnnotation = (
+  key: string,
+  resolve: () => any,
+  options?: Pick<GraphPointAnnotationSpec, 'label' | 'attributes'>
+): GraphPointAnnotationSpec => ({
+  key,
+  label: options?.label,
+  attributes: options?.attributes,
+  source: { kind: 'computed', resolve }
 });

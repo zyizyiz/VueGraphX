@@ -36,6 +36,37 @@ export interface GraphViewportPadding {
   bottom?: number;
 }
 
+export interface GraphPointAnnotationOptions {
+  alphabet?: string;
+  defaultAttributes?: Record<string, unknown>;
+}
+
+export type GraphPointAnnotationSource =
+  | {
+      kind: 'point';
+      point: any;
+    }
+  | {
+      kind: 'intersection';
+      elements: any[];
+      index?: number;
+    }
+  | {
+      kind: 'midpoint';
+      points: [any, any];
+    }
+  | {
+      kind: 'computed';
+      resolve: () => any;
+    };
+
+export interface GraphPointAnnotationSpec {
+  key: string;
+  label?: string;
+  source: GraphPointAnnotationSource;
+  attributes?: Record<string, unknown>;
+}
+
 export interface GraphScreenBounds {
   left: number;
   right: number;

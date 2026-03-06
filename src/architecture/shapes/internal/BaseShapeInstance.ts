@@ -1,6 +1,20 @@
 import JXG from 'jsxgraph';
 import type { ShapeCapabilityTarget } from '../../capabilities/contracts';
-import type { GraphShapeContext, GraphShapeGroup, GraphShapeGroupInput, GraphShapeGroupMember, GraphShapeInstance } from '../contracts';
+import type {
+  GraphPointAnnotationOptions,
+  GraphPointAnnotationSpec,
+  GraphShapeContext,
+  GraphShapeGroup,
+  GraphShapeGroupInput,
+  GraphShapeGroupMember,
+  GraphShapeInstance
+} from '../contracts';
+
+interface ManagedPointAnnotations {
+  marks: any[];
+  labelMap: Map<string, string>;
+  nextLabelIndex: number;
+}
 
 export abstract class BaseShapeInstance<StateType = Record<string, never>> implements GraphShapeInstance {
   public abstract readonly id: string;
@@ -11,6 +25,11 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
   protected selected = false;
   private readonly ownedObjects = new Set<any>();
   private readonly ownedGroups = new Map<string, GraphShapeGroup>();
+  private readonly pointAnnotations: ManagedPointAnnotations = {
+    marks: [],
+    labelMap: new Map(),
+    nextLabelIndex: 0
+  };
 
   constructor(context: GraphShapeContext, initialState: StateType) {
     this.context = context;
@@ -30,6 +49,8 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
   public abstract getCapabilityTarget(): ShapeCapabilityTarget | null;
 
   public destroy(): void {
+    this.clearPointAnnotations(false);
+
     const groupedMembers = new Set<any>();
     Array.from(this.ownedGroups.values()).reverse().forEach((group) => {
       group.members.forEach((member) => groupedMembers.add(member.object));
@@ -141,6 +162,40 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
     return this.context.generateId(prefix);
   }
 
+  protected hasPointAnnotations(): boolean {
+    return this.pointAnnotations.marks.length > 0;
+  }
+
+  protected togglePointAnnotations(specs: GraphPointAnnotationSpec[], options?: GraphPointAnnotationOptions): boolean {
+    if (this.hasPointAnnotations()) {
+      this.clearPointAnnotations();
+      return false;
+    }
+
+    if (!this.board || specs.length === 0) return false;
+
+    const createdMarks = specs
+      .map((spec) => this.createPointAnnotation(spec, options))
+      .filter((mark): mark is any => !!mark);
+
+    this.pointAnnotations.marks = createdMarks;
+    this.board.update();
+    this.notifyStateChange();
+    return createdMarks.length > 0;
+  }
+
+  protected clearPointAnnotations(notify = true): void {
+    Array.from(this.pointAnnotations.marks).reverse().forEach((mark) => {
+      this.removeObjectSafe(mark);
+    });
+    this.pointAnnotations.marks = [];
+
+    if (!notify) return;
+
+    this.board?.update();
+    this.notifyStateChange();
+  }
+
   private removeGroupSafe(group: GraphShapeGroup): void {
     group.off();
 
@@ -163,6 +218,116 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
       x: coords.scrCoords[1],
       y: coords.scrCoords[2]
     };
+  }
+
+  private createPointAnnotation(spec: GraphPointAnnotationSpec, options?: GraphPointAnnotationOptions): any | null {
+    if (!this.board) return null;
+
+    const defaultAttributes = {
+      withLabel: true,
+      visible: true,
+      fixed: true,
+      highlight: false,
+      size: 2,
+      strokeColor: '#0f172a',
+      fillColor: '#0f172a',
+      ...(options?.defaultAttributes ?? {}),
+      ...(spec.attributes ?? {})
+    };
+
+    const label = spec.label ?? this.getOrCreateAnnotationLabel(spec.key, options?.alphabet);
+
+    if (spec.source.kind === 'point') {
+      const coordinates = this.resolvePointCoordinates(spec.source.point);
+      if (!coordinates) return null;
+
+      return this.board.create('point', [...coordinates], {
+        ...defaultAttributes,
+        name: label
+      });
+    }
+
+    if (spec.source.kind === 'intersection') {
+      return this.board.create('intersection', [...spec.source.elements, spec.source.index ?? 0], {
+        ...defaultAttributes,
+        name: label
+      });
+    }
+
+    if (spec.source.kind === 'midpoint') {
+      const firstPoint = this.resolvePointCoordinates(spec.source.points[0]);
+      const secondPoint = this.resolvePointCoordinates(spec.source.points[1]);
+      if (!firstPoint || !secondPoint) return null;
+
+      return this.board.create('point', [
+        () => (firstPoint[0]() + secondPoint[0]()) / 2,
+        () => (firstPoint[1]() + secondPoint[1]()) / 2
+      ], {
+        ...defaultAttributes,
+        name: label
+      });
+    }
+
+    if (spec.source.kind === 'computed') {
+      const coordinates = this.resolvePointCoordinates(spec.source.resolve);
+      if (!coordinates) return null;
+
+      return this.board.create('point', [...coordinates], {
+        ...defaultAttributes,
+        name: label
+      });
+    }
+
+    return null;
+  }
+
+  private resolvePointCoordinates(point: any): [() => number, () => number] | null {
+    if (typeof point === 'function') {
+      return this.resolvePointCoordinates(point());
+    }
+
+    if (Array.isArray(point) && point.length >= 2) {
+      const [x, y] = point;
+      if (typeof x === 'function' && typeof y === 'function') {
+        return [() => x(), () => y()];
+      }
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        return [() => x, () => y];
+      }
+    }
+
+    if (point && typeof point.X === 'function' && typeof point.Y === 'function') {
+      return [() => point.X(), () => point.Y()];
+    }
+
+    if (point?.coords?.usrCoords && point.coords.usrCoords.length >= 3) {
+      return [() => point.coords.usrCoords[1], () => point.coords.usrCoords[2]];
+    }
+
+    return null;
+  }
+
+  private getOrCreateAnnotationLabel(key: string, alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'): string {
+    const cachedLabel = this.pointAnnotations.labelMap.get(key);
+    if (cachedLabel) return cachedLabel;
+
+    const label = this.getIndexedLabel(this.pointAnnotations.nextLabelIndex, alphabet);
+    this.pointAnnotations.nextLabelIndex += 1;
+    this.pointAnnotations.labelMap.set(key, label);
+    return label;
+  }
+
+  private getIndexedLabel(index: number, alphabet: string): string {
+    const letters = alphabet.length > 0 ? alphabet : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let currentIndex = index;
+    let label = '';
+
+    do {
+      label = letters[currentIndex % letters.length] + label;
+      currentIndex = Math.floor(currentIndex / letters.length) - 1;
+    } while (currentIndex >= 0);
+
+    return label;
   }
 
   private createGroupView(

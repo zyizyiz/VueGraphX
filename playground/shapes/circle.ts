@@ -1,4 +1,12 @@
-import { createComposedShapeDefinition, type GraphShapeApi, type GraphShapeComposition, type GraphShapeGroup } from 'vuegraphx';
+import {
+  createComposedShapeDefinition,
+  createIntersectionAnnotation,
+  createPairwiseIntersectionAnnotations,
+  createPointAnnotation,
+  type GraphShapeApi,
+  type GraphShapeComposition,
+  type GraphShapeGroup
+} from 'vuegraphx';
 import type { ShapeCapabilityTarget } from 'vuegraphx';
 
 interface HelperLine {
@@ -41,9 +49,6 @@ interface CircleState {
   selectedColor: string;
   isRadiusDragging: boolean;
   helpers: HelperLine[];
-  marks: any[];
-  markNameMap: Map<string, string>;
-  nextLetterIndex: number;
   intuitive: IntuitiveView | null;
   cutDraft: CutDraft | null;
   cropCache: { p1: any } | null;
@@ -80,9 +85,6 @@ const createBaseState = (isPiece: boolean): CircleState => ({
   selectedColor: '#0ea5e9',
   isRadiusDragging: false,
   helpers: [],
-  marks: [],
-  markNameMap: new Map(),
-  nextLetterIndex: 0,
   intuitive: null,
   cutDraft: null,
   cropCache: null,
@@ -292,7 +294,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       bboxP2: p2,
       bboxP3: p3,
       bboxP4: p4
-    });
+    }, { createNativeGroup: false });
     geometryGroup.hide(['radiusPoint', 'radiusLine']);
 
     api.setState({
@@ -374,7 +376,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
           strokeColor: '#64748b'
         }));
 
-        const group = api.createGroup({ start: api.state.assistCache.p1, end: p2, line });
+        const group = api.createGroup({ start: api.state.assistCache.p1, end: p2, line }, { createNativeGroup: false });
         const helper: HelperLine = { id: api.uid('assist'), p1: api.state.assistCache.p1, p2, line, group };
         group.on('down', (member) => {
           if (member.key !== 'line') return;
@@ -442,7 +444,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
           fixed: true
         }));
 
-        const group = api.createGroup({ start: cropStart, end: p2, line, icon });
+        const group = api.createGroup({ start: cropStart, end: p2, line, icon }, { createNativeGroup: false });
         api.setState({
           cutDraft: { p1: cropStart, p2, line, icon, group },
           cropCache: null
@@ -563,55 +565,22 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     };
 
     const toggleMarking = () => {
-      if (!api.board) return;
-      if (api.state.marks.length > 0) {
-        api.state.marks.forEach((mark) => {
-          if (mark === refs.center) {
-            mark.setAttribute({ name: '', withLabel: false, visible: false });
-          } else {
-            api.removeObjectSafe(mark);
-          }
-        });
-        api.setState({ marks: [] });
-        api.board.update();
-        return;
-      }
+      const helperLineEntries = api.state.helpers.map((helper) => ({
+        key: helper.id,
+        element: helper.line
+      }));
 
-      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      refs.center.setAttribute({
-        name: 'O',
-        withLabel: true,
-        visible: true,
-        size: 2,
-        strokeColor: '#0f172a',
-        fillColor: '#0f172a'
-      });
-      const marks = [refs.center];
-      const markNameMap = new Map(api.state.markNameMap);
-      let nextLetterIndex = api.state.nextLetterIndex;
-
-      api.state.helpers.forEach((helper) => {
-        [0, 1].forEach((index) => {
-          const key = `${helper.id}:${index}`;
-          let label = markNameMap.get(key);
-          if (!label) {
-            label = alphabet[nextLetterIndex % alphabet.length];
-            nextLetterIndex += 1;
-            markNameMap.set(key, label);
-          }
-          const point = api.trackObject(api.board.create('intersection', [helper.line, refs.circle, index], {
-            name: label,
-            withLabel: true,
-            size: 2,
-            strokeColor: '#0f172a',
-            fillColor: '#0f172a'
-          }));
-          marks.push(point);
-        });
-      });
-
-      api.setState({ marks, markNameMap, nextLetterIndex });
-      api.board.update();
+      api.togglePointAnnotations([
+        createPointAnnotation('center', refs.center, { label: 'O' }),
+        ...api.state.helpers.flatMap((helper) => [0, 1].map((index) => createIntersectionAnnotation(
+          `${helper.id}:${index}`,
+          [helper.line, refs.circle],
+          index
+        ))),
+        ...createPairwiseIntersectionAnnotations(helperLineEntries, {
+          createKey: (left, right) => `${left.key}:${right.key}:intersection`
+        })
+      ]);
     };
 
     const startCropMode = () => {
@@ -723,7 +692,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
         toggle: toggleIntuitive
       };
       target.annotation = {
-        active: api.state.marks.length > 0,
+        active: api.hasPointAnnotations(),
         toggle: toggleMarking
       };
       target.split = {
@@ -769,7 +738,7 @@ const createCirclePieceComposition = (payload: CirclePiecePayload): GraphShapeCo
       fixed: false,
       layer: 9
     }));
-    const pieceGroup = api.createGroup({ center, firstPoint, secondPoint, circle, radiusLine });
+    const pieceGroup = api.createGroup({ center, firstPoint, secondPoint, circle, radiusLine }, { createNativeGroup: false });
 
     api.setState({
       refs: {
