@@ -21,7 +21,7 @@ interface CubePanelUIState {
 
 export function useCubeDesigner(
   getEngine: () => GraphXEngine | null,
-  _getActiveMode: () => string
+  getActiveMode: () => string
 ) {
   const panelState = shallowRef<CubePanelState>({
     cubes: [],
@@ -64,7 +64,7 @@ export function useCubeDesigner(
       unsubscribeCapabilities = engine.subscribeCapabilities((snapshot) => {
         capabilitySnapshot.value = snapshot;
 
-        const selected = snapshot.selection?.entityType === 'cube'
+        const selected = snapshot.selection?.entityType === 'cube' || snapshot.selection?.entityType === 'cube-2d'
           ? snapshot.selection.entity as CubeModel
           : null;
         panelState.value = {
@@ -73,7 +73,7 @@ export function useCubeDesigner(
         };
         fastState.value = {
           tracks: animationTracksState.tracks.value,
-          toolbarStyle: snapshot.selection?.entityType === 'cube' && snapshot.selection.ui?.toolbarStyle
+          toolbarStyle: (snapshot.selection?.entityType === 'cube' || snapshot.selection?.entityType === 'cube-2d') && snapshot.selection.ui?.toolbarStyle
             ? snapshot.selection.ui.toolbarStyle as Record<string, string>
             : { left: '50%', top: 'calc(100% - 5rem)' }
         };
@@ -96,15 +96,22 @@ export function useCubeDesigner(
   const createCube = () => {
     const engine = getEngine();
     if (!engine) return false;
-    return engine.createShape('cube');
+    return engine.createShape(getActiveMode() === 'geometry' ? 'cube-2d' : 'cube');
+  };
+
+  const onDragStart = (e: DragEvent) => {
+    if (getActiveMode() !== 'geometry') return;
+    e.dataTransfer?.setData('shape', 'cube-2d');
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
   };
 
   return {
     state: panelState,
     fastState,
     isAnyTrackPlaying: animationTracksState.isAnyTrackPlaying,
-    
+
     createCube,
+    onDragStart,
     setTrackProgress: animationTracksState.setTrackProgress,
     playTrackForward: animationTracksState.playTrackForward,
     playTrackBackward: animationTracksState.playTrackBackward,

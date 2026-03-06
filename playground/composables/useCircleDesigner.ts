@@ -149,12 +149,12 @@ export function useCircleDesigner(
 
       dropHandler = (e: DragEvent) => {
         if (getActiveMode() !== 'geometry') return;
-        if (e.dataTransfer?.getData('shape') !== 'circle') return;
+        if (!Array.from(e.dataTransfer?.types ?? []).includes('shape')) return;
         e.preventDefault();
-        
+
         const engine = getEngine();
         if (!engine) return;
-        
+
         engine.handleDropEvent(e);
       };
 
