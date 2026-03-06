@@ -36,6 +36,26 @@ export interface GraphViewportPadding {
   bottom?: number;
 }
 
+export interface GraphScreenBounds {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+export type GraphScreenAnchor =
+  | 'top-left'
+  | 'top'
+  | 'top-right'
+  | 'left'
+  | 'center'
+  | 'right'
+  | 'bottom-left'
+  | 'bottom'
+  | 'bottom-right';
+
 export type GraphShapeGroupInput = any[] | Record<string, any>;
 
 export interface GraphShapeGroup {
@@ -69,6 +89,9 @@ export interface GraphShapeContext {
   getViewport(): GraphViewport;
   projectUserPoint(point: [number, number]): GraphScreenPoint | null;
   projectPoint3D(point: [number, number, number]): GraphScreenPoint | null;
+  projectUserBounds(points: Array<[number, number]>): GraphScreenBounds | null;
+  project3DBounds(points: Array<[number, number, number]>): GraphScreenBounds | null;
+  getBoundsAnchor(bounds: GraphScreenBounds, anchor?: GraphScreenAnchor): GraphScreenPoint;
   clampScreenPoint(point: GraphScreenPoint, padding?: GraphViewportPadding): GraphScreenPoint;
 }
 

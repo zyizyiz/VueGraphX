@@ -153,9 +153,14 @@ const updateToolbarPosition = (api: GraphShapeApi<CircleState>) => {
   const centerX = center.X();
   const centerY = center.Y();
   const radius = radiusPoint ? center.Dist(radiusPoint) : 1;
-  const bottomEdgeY = centerY - radius;
-  const screenPoint = api.projectUserPoint([centerX, bottomEdgeY]);
-  if (!screenPoint) return;
+  const bounds = api.projectUserBounds([
+    [centerX - radius, centerY],
+    [centerX + radius, centerY],
+    [centerX, centerY - radius],
+    [centerX, centerY + radius]
+  ]);
+  if (!bounds) return;
+  const screenPoint = api.getBoundsAnchor(bounds, 'bottom');
   const clampedToolbarPoint = api.clampScreenPoint(
     { x: screenPoint.x, y: screenPoint.y + 20 },
     { left: 160, right: 160, top: 16, bottom: 90 }

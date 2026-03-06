@@ -20,29 +20,9 @@ const notifyFastChange = (api: GraphShapeApi<CubeState>) => {
   });
 };
 
-const updateToolbarPosition = (api: GraphShapeApi<CubeState>) => {
-  if (!api.selected) return;
-  const screenPoint = api.projectPoint3D([0, 0, 0]);
-  if (!screenPoint) return;
-
-  const clampedPoint = api.clampScreenPoint(
-    { x: screenPoint.x, y: screenPoint.y + 150 },
-    { left: 160, right: 160, top: 16, bottom: 90 }
-  );
-  const toolbarStyle = {
-    left: `${clampedPoint.x}px`,
-    top: `${clampedPoint.y}px`
-  };
-
-  if (api.state.toolbarStyle.left !== toolbarStyle.left || api.state.toolbarStyle.top !== toolbarStyle.top) {
-    api.setState({ toolbarStyle });
-    notifyFastChange(api);
-  }
-};
-
-const createFacePoints = (api: GraphShapeApi<CubeState>, name: string): Array<() => [number, number, number]> => [0, 1, 2, 3].map((index) => () => {
-  const angle = api.state.unfoldProgress * (Math.PI / 2);
-  const half = api.state.halfEdge;
+const getCubeVertices = (unfoldProgress: number, halfEdge: number, name?: string): Array<[number, number, number]> => {
+  const angle = unfoldProgress * (Math.PI / 2);
+  const half = halfEdge;
   const b0: [number, number, number] = [-half, -half, -half];
   const b1: [number, number, number] = [half, -half, -half];
   const b2: [number, number, number] = [half, half, -half];
@@ -70,16 +50,44 @@ const createFacePoints = (api: GraphShapeApi<CubeState>, name: string): Array<()
     return [deltaX * cosValue + deltaZ * sinValue + pivotX, y, -deltaX * sinValue + deltaZ * cosValue + pivotZ];
   };
 
-  if (name === 'bottom') return [b0, b1, b2, b3][index];
-  if (name === 'front') return rotateX([b0, b1, t1, t0][index], angle, -half, -half);
-  if (name === 'back') return rotateX([b3, b2, t2, t3][index], -angle, half, -half);
-  if (name === 'left') return rotateY([b0, t0, t3, b3][index], -angle, -half, -half);
-  if (name === 'right') return rotateY([b1, b2, t2, t1][index], angle, half, -half);
+  if (name === 'bottom') return [b0, b1, b2, b3];
+  if (name === 'front') return [b0, b1, t1, t0].map((point) => rotateX(point, angle, -half, -half));
+  if (name === 'back') return [b3, b2, t2, t3].map((point) => rotateX(point, -angle, half, -half));
+  if (name === 'left') return [b0, t0, t3, b3].map((point) => rotateY(point, -angle, -half, -half));
+  if (name === 'right') return [b1, b2, t2, t1].map((point) => rotateY(point, angle, half, -half));
   if (name === 'top') {
-    const rotatedSelf = rotateX([t3, t2, t1, t0][index], -angle, half, half);
-    return rotateX(rotatedSelf, -angle, half, -half);
+    return [t3, t2, t1, t0].map((point) => {
+      const rotatedSelf = rotateX(point, -angle, half, half);
+      return rotateX(rotatedSelf, -angle, half, -half);
+    });
   }
-  return [0, 0, 0];
+
+  return ['bottom', 'front', 'back', 'left', 'right', 'top'].flatMap((faceName) => getCubeVertices(unfoldProgress, halfEdge, faceName));
+};
+
+const updateToolbarPosition = (api: GraphShapeApi<CubeState>) => {
+  if (!api.selected) return;
+  const bounds = api.project3DBounds(getCubeVertices(api.state.unfoldProgress, api.state.halfEdge));
+  if (!bounds) return;
+  const screenPoint = api.getBoundsAnchor(bounds, 'bottom');
+
+  const clampedPoint = api.clampScreenPoint(
+    { x: screenPoint.x, y: screenPoint.y + 24 },
+    { left: 160, right: 160, top: 16, bottom: 90 }
+  );
+  const toolbarStyle = {
+    left: `${clampedPoint.x}px`,
+    top: `${clampedPoint.y}px`
+  };
+
+  if (api.state.toolbarStyle.left !== toolbarStyle.left || api.state.toolbarStyle.top !== toolbarStyle.top) {
+    api.setState({ toolbarStyle });
+    notifyFastChange(api);
+  }
+};
+
+const createFacePoints = (api: GraphShapeApi<CubeState>, name: string): Array<() => [number, number, number]> => [0, 1, 2, 3].map((index) => () => {
+  return getCubeVertices(api.state.unfoldProgress, api.state.halfEdge, name)[index] ?? [0, 0, 0];
 });
 
 export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState>({

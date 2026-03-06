@@ -6,7 +6,16 @@ import { Renderer } from '../rendering/Renderer';
 import JXG from 'jsxgraph';
 import { capabilityRegistry } from '../architecture/capabilities/registry';
 import type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
-import type { GraphScreenPoint, GraphShapeContext, GraphShapeDefinition, GraphShapeInstance, GraphViewport, GraphViewportPadding } from '../architecture/shapes/contracts';
+import type {
+  GraphScreenAnchor,
+  GraphScreenBounds,
+  GraphScreenPoint,
+  GraphShapeContext,
+  GraphShapeDefinition,
+  GraphShapeInstance,
+  GraphViewport,
+  GraphViewportPadding
+} from '../architecture/shapes/contracts';
 import type {
   GraphCapabilityDescriptor,
   GraphCapabilityListener,
@@ -77,6 +86,9 @@ export class GraphXEngine {
       getViewport: () => this.getViewport(),
       projectUserPoint: (point) => this.projectUserPoint(point),
       projectPoint3D: (point) => this.projectPoint3D(point),
+      projectUserBounds: (points) => this.projectUserBounds(points),
+      project3DBounds: (points) => this.project3DBounds(points),
+      getBoundsAnchor: (bounds, anchor) => this.getBoundsAnchor(bounds, anchor),
       clampScreenPoint: (point, padding) => this.clampScreenPoint(point, padding)
     };
   }
@@ -321,6 +333,41 @@ export class GraphXEngine {
     return this.projectUserPoint([projected[0], projected[1]]);
   }
 
+  public projectUserBounds(points: Array<[number, number]>): GraphScreenBounds | null {
+    return this.getScreenBounds(points.map((point) => this.projectUserPoint(point)));
+  }
+
+  public project3DBounds(points: Array<[number, number, number]>): GraphScreenBounds | null {
+    return this.getScreenBounds(points.map((point) => this.projectPoint3D(point)));
+  }
+
+  public getBoundsAnchor(bounds: GraphScreenBounds, anchor: GraphScreenAnchor = 'center'): GraphScreenPoint {
+    const centerX = bounds.left + bounds.width / 2;
+    const centerY = bounds.top + bounds.height / 2;
+
+    switch (anchor) {
+      case 'top-left':
+        return { x: bounds.left, y: bounds.top };
+      case 'top':
+        return { x: centerX, y: bounds.top };
+      case 'top-right':
+        return { x: bounds.right, y: bounds.top };
+      case 'left':
+        return { x: bounds.left, y: centerY };
+      case 'right':
+        return { x: bounds.right, y: centerY };
+      case 'bottom-left':
+        return { x: bounds.left, y: bounds.bottom };
+      case 'bottom':
+        return { x: centerX, y: bounds.bottom };
+      case 'bottom-right':
+        return { x: bounds.right, y: bounds.bottom };
+      case 'center':
+      default:
+        return { x: centerX, y: centerY };
+    }
+  }
+
   public clampScreenPoint(point: GraphScreenPoint, padding: GraphViewportPadding = {}): GraphScreenPoint {
     const viewport = this.getViewport();
     const left = padding.left ?? 0;
@@ -331,6 +378,31 @@ export class GraphXEngine {
     return {
       x: Math.max(left, Math.min(viewport.width - right, point.x)),
       y: Math.max(top, Math.min(viewport.height - bottom, point.y))
+    };
+  }
+
+  private getScreenBounds(points: Array<GraphScreenPoint | null>): GraphScreenBounds | null {
+    const validPoints = points.filter((point): point is GraphScreenPoint => {
+      if (!point) return false;
+      return Number.isFinite(point.x) && Number.isFinite(point.y);
+    });
+
+    if (validPoints.length === 0) return null;
+
+    const xs = validPoints.map((point) => point.x);
+    const ys = validPoints.map((point) => point.y);
+    const left = Math.min(...xs);
+    const right = Math.max(...xs);
+    const top = Math.min(...ys);
+    const bottom = Math.max(...ys);
+
+    return {
+      left,
+      right,
+      top,
+      bottom,
+      width: right - left,
+      height: bottom - top
     };
   }
 
