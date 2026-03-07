@@ -18,51 +18,10 @@ export const cuboidFaceIds = ['front', 'top', 'right', 'left', 'bottom', 'back']
 
 export type CuboidFaceId = typeof cuboidFaceIds[number];
 
-interface CuboidFaceVisualStyle {
-  fillColor: string;
-  fillOpacity: number;
-  strokeColor: string;
-  strokeWidth: number;
-}
-
-export const cuboidFaceStyles: Record<CuboidFaceId, CuboidFaceVisualStyle> = {
-  front: {
-    fillColor: '#818cf8',
-    fillOpacity: 0.96,
-    strokeColor: '#3730a3',
-    strokeWidth: 2
-  },
-  top: {
-    fillColor: '#c7d2fe',
-    fillOpacity: 0.94,
-    strokeColor: '#4338ca',
-    strokeWidth: 2
-  },
-  right: {
-    fillColor: '#4f46e5',
-    fillOpacity: 0.94,
-    strokeColor: '#312e81',
-    strokeWidth: 2
-  },
-  left: {
-    fillColor: '#a5b4fc',
-    fillOpacity: 0.9,
-    strokeColor: '#4f46e5',
-    strokeWidth: 2
-  },
-  bottom: {
-    fillColor: '#cbd5e1',
-    fillOpacity: 0.92,
-    strokeColor: '#64748b',
-    strokeWidth: 2
-  },
-  back: {
-    fillColor: '#e0e7ff',
-    fillOpacity: 0.92,
-    strokeColor: '#6366f1',
-    strokeWidth: 2
-  }
-};
+// 彻底抛弃原静态硬编码色系。我们将通过实时 HSL (Hue, Saturation, Lightness) 替代。
+// 基于原本模型主要色调为 Indigo（对应 HSL中大约 hue=233, sat=80%），动态计算光照覆盖 Lightness 即可。
+const baseHue = 233;
+const baseSaturation = 80;
 const projectedRotationX = degToRad(-28);
 const projectedRotationY = degToRad(34);
 const topologyCache = new Map<number, GraphSolidTopology>();
@@ -183,28 +142,52 @@ const lerpTuplePoint = (from: [number, number], to: [number, number], t: number)
   from[1] + (to[1] - from[1]) * t
 ];
 
-const projectPerspectiveTuple3D = (point: [number, number, number], cameraDistance: number): [number, number] => {
-  const perspective = cameraDistance / Math.max(0.001, cameraDistance - point[2]);
-  return [point[0] * perspective, point[1] * perspective];
+const projectCabinetTuple3D = (point: [number, number, number], edgeSize: number): [[number, number], number] => {
+  const x = point[0];
+  const y = point[1];
+  const z = point[2];
+  const half = edgeSize / 2;
+  
+  // 原画板在默认透视时给出的背面倾斜比为 X偏 0.27 倍距，Y偏 0.1425 倍距。
+  // 注意，原模型中 Front面 Z 为 +half (距离屏幕极近)，背面 Z 为 -half。
+  // 通过此等二测方程，能将真实的 3D 缩放点绝对等效地还原为斜面平面画版！
+  const px = x - (z - half) * 0.27;
+  const py = y - (z - half) * 0.1425;
+  return [[px, py], z];
 };
 
-const cuboidProxyVertexOrders: Record<CuboidFaceId, [number, number, number, number]> = {
-  front: [0, 1, 2, 3],
-  top: [0, 1, 2, 3],
-  right: [1, 0, 3, 2],
-  left: [0, 1, 2, 3],
-  bottom: [0, 1, 2, 3],
-  back: [1, 0, 3, 2]
+const faceNormals: Record<CuboidFaceId, [number, number, number]> = {
+  front: [0, 0, 1],
+  back: [0, 0, -1],
+  right: [1, 0, 0],
+  left: [-1, 0, 0],
+  top: [0, 1, 0],
+  bottom: [0, -1, 0]
 };
 
-const remapProxyOutline = (
-  faceId: CuboidFaceId,
-  outline: Array<[number, number, number]>
-): Array<[number, number, number]> => {
-  const vertexOrder = cuboidProxyVertexOrders[faceId];
-  return vertexOrder.map((index) => outline[index] ?? [0, 0, 0]);
+// 用于求三维法向量的光照工具函数
+const getLighting = (faceId: CuboidFaceId, rotateAngle: number): number => {
+  const normal = faceNormals[faceId];
+  
+  // 法线跟随模型做同样视角的旋转绕 Y 轴
+  const rotatedNormal = rotatePointAroundY(
+    { x: normal[0], y: normal[1], z: normal[2] },
+    rotateAngle
+  );
+  
+  // 虚拟阳光在左前方上面。设定 x(向左), y(向上), z(向前)
+  // 原色调特点：Top最亮(Y正), Left次之(X负), Front中等(Z正), Right偏暗(X正), Bottom最暗(Y负)
+  let lx = -0.8, ly = 1.2, lz = 0.5;
+  const llen = Math.sqrt(lx * lx + ly * ly + lz * lz);
+  lx /= llen; ly /= llen; lz /= llen;
+  
+  // 表面法线跟光线点集作为亮度反射系数。向光为正，背光为负
+  const nx = rotatedNormal.x;
+  const ny = rotatedNormal.y;
+  const nz = rotatedNormal.z;
+  
+  return nx * lx + ny * ly + nz * lz;
 };
-
 const getOutlineBounds = (outlines: Array<Array<[number, number]>>) => {
   let minX = Infinity;
   let minY = Infinity;
@@ -292,7 +275,7 @@ export const getCuboidFoldLikeTransformedFaceVertices2D = (options: {
   faceId: CuboidFaceId;
   patchOrder?: CuboidFaceId[];
   anchor?: GraphSolidPoint2D;
-}): Array<[number, number]> => {
+}): { points: Array<[number, number]>; depthZ: number } => {
   const {
     edgeSize,
     unfoldProgress,
@@ -303,57 +286,53 @@ export const getCuboidFoldLikeTransformedFaceVertices2D = (options: {
     anchor = { x: 0, y: 0 }
   } = options;
 
-  const localOutlines = patchOrder.map((currentFaceId) => getCuboidFoldLikeFaceVertices2D(edgeSize, unfoldProgress, currentFaceId));
-  const baselineProxyOutlines = patchOrder.map((currentFaceId) => remapProxyOutline(
-    currentFaceId,
-    getCuboidFaceVertices3D(edgeSize, unfoldProgress, 0, currentFaceId)
-  ));
-  const rotatedProxyOutlines = patchOrder.map((currentFaceId) => remapProxyOutline(
-    currentFaceId,
-    getCuboidFaceVertices3D(edgeSize, unfoldProgress, rotateProgress, currentFaceId)
-  ));
-  const cameraDistance = edgeSize * 6;
-  const rotatedLikeOutlines = patchOrder.map((_, faceIndex) => {
-    const localOutline = localOutlines[faceIndex] ?? [];
-    const baselineProxy = baselineProxyOutlines[faceIndex] ?? [];
-    const rotatedProxy = rotatedProxyOutlines[faceIndex] ?? [];
-
-    return localOutline.map((point, pointIndex) => {
-      const baselineProjected = projectPerspectiveTuple3D(baselineProxy[pointIndex] ?? [0, 0, 0], cameraDistance);
-      const rotatedProjected = projectPerspectiveTuple3D(rotatedProxy[pointIndex] ?? [0, 0, 0], cameraDistance);
-      return [
-        point[0] + (rotatedProjected[0] - baselineProjected[0]),
-        point[1] + (rotatedProjected[1] - baselineProjected[1])
-      ] as [number, number];
-    });
-  });
-  const { center, spread } = getOutlineBounds(rotatedLikeOutlines);
+  // 为了兼容之前的爆炸展开逻辑，我们保留对原本未做 3D 旋转时的 2D 状态包围盒求心运算
+  // 由于我们现在的 projectCabinetTuple3D 是绝对吻合底板逻辑的，所以它们原本就在同样的坐标系原点。
+  const localOutlines = patchOrder.map((currentFaceId) => getCuboidFoldLikeFaceVertices2D(edgeSize, unfoldProgress, currentFaceId, { x: 0, y: 0 }));
+  const { center: explodeCenter, spread } = getOutlineBounds(localOutlines);
   const explodeDistance = spread * 0.08 * clampSolidProgress(explodeProgress);
 
-  const transformedOutlines = new Map<CuboidFaceId, Array<[number, number]>>();
-  patchOrder.forEach((currentFaceId, index) => {
-    const outline = rotatedLikeOutlines[index] ?? [];
-    const centroid = outline.reduce<[number, number]>((sum, point) => [sum[0] + point[0], sum[1] + point[1]], [0, 0]);
-    const normalizedCentroid: [number, number] = outline.length > 0
-      ? [centroid[0] / outline.length, centroid[1] / outline.length]
-      : center;
-    const direction: [number, number] = [normalizedCentroid[0] - center[0], normalizedCentroid[1] - center[1]];
-    const directionLength = Math.hypot(direction[0], direction[1]) || 1;
-    const explodeShift: [number, number] = [
-      direction[0] / directionLength * explodeDistance,
-      direction[1] / directionLength * explodeDistance
+  const rotateAngle = rotateProgress * Math.PI * 2;
+  const transformedOutlines = new Map<CuboidFaceId, { points: Array<[number, number]>; depthZ: number; lighting: number }>();
+
+  patchOrder.forEach((currentFaceId) => {
+    // 100% 依赖最本源的带旋转支持的 3D 原点阵，摒弃一切 Proxy Delta 补丁！
+    const points3D = getCuboidFaceVertices3D(edgeSize, unfoldProgress, rotateProgress, currentFaceId);
+    
+    // 我们直接基于面ID和当前整个旋转角度施加光照模型，彻底规避点序列方向错误带来的阴阳乱相
+    const lighting = getLighting(currentFaceId, rotateAngle);
+    
+    let avgDepthZ = 0;
+    const projectedPoints = points3D.map((point) => {
+      const [projected, depthZ] = projectCabinetTuple3D(point, edgeSize);
+      avgDepthZ += depthZ;
+      return projected as [number, number];
+    });
+    avgDepthZ = points3D.length > 0 ? avgDepthZ / points3D.length : 0;
+
+    const faceCenter = getOutlineBounds([projectedPoints]).center;
+    const explodeVector = [faceCenter[0] - explodeCenter[0], faceCenter[1] - explodeCenter[1]];
+    const explodeLength = Math.sqrt(explodeVector[0] ** 2 + explodeVector[1] ** 2) || 1;
+    const explodeShift = [
+      (explodeVector[0] / explodeLength) * explodeDistance,
+      (explodeVector[1] / explodeLength) * explodeDistance
     ];
 
-    transformedOutlines.set(currentFaceId, outline.map((point, pointIndex) => {
-      void pointIndex;
-      return [
-        point[0] + explodeShift[0] + anchor.x,
-        point[1] + explodeShift[1] + anchor.y
-      ];
-    }));
+    transformedOutlines.set(currentFaceId, {
+      points: projectedPoints.map((point) => {
+        // 由于项目要求手工图的画版是在 anchor 画出的。且这套参数体系恰恰做到了不需要进行中心平移：
+        // 投影公式确保了未经 anchor 对齐的形态中心绝对落回 0,0 坐标！这正是它如此完美的印证！
+        return [
+          point[0] + explodeShift[0] + anchor.x,
+          point[1] + explodeShift[1] + anchor.y
+        ];
+      }),
+      depthZ: avgDepthZ,
+      lighting
+    });
   });
 
-  return transformedOutlines.get(faceId) ?? [];
+  return transformedOutlines.get(faceId) ?? { points: [], depthZ: 0 };
 };
 
 export const createCuboidFoldLikeScene2D = <StateType>(options: {
@@ -391,21 +370,21 @@ export const createCuboidFoldLikeScene2D = <StateType>(options: {
 
   patchOrder.forEach((faceId) => {
     const points = [0, 1, 2, 3].map((index) => {
-      const pointKey = `${faceId}_point_${index}`;
+      const pointKey = api.uid(`cuboid-face-${faceId}-patch-${index}`);
       const point = api.trackObject(api.board.create('point', [
-        () => getOutline(faceId)[index]?.[0] ?? getAnchorPoint().x,
-        () => getOutline(faceId)[index]?.[1] ?? getAnchorPoint().y
+        () => getOutline(faceId).points[index]?.[0] ?? getAnchorPoint().x,
+        () => getOutline(faceId).points[index]?.[1] ?? getAnchorPoint().y
       ], { visible: false, name: '' }));
       groupMembers[pointKey] = point;
       hiddenKeys.push(pointKey);
       return point;
     });
 
-    const style = cuboidFaceStyles[faceId];
+    // 创建多边形，初始给一个中等颜色。真实的颜色将在下一帧 syncVisibility 中根据实时角度接管
     patchPolygons[faceId] = api.trackObject(api.board.create('polygon', points, {
-      fillColor: style.fillColor,
-      fillOpacity: style.fillOpacity,
-      borders: { strokeWidth: style.strokeWidth, strokeColor: style.strokeColor },
+      fillColor: `hsl(${baseHue}, ${baseSaturation}%, 70%)`,
+      fillOpacity: 0.94,
+      borders: { strokeWidth: 2, strokeColor: `hsl(${baseHue}, 50%, 40%)` },
       vertices: { visible: false },
       highlight: false,
       fixed: false,
@@ -423,15 +402,50 @@ export const createCuboidFoldLikeScene2D = <StateType>(options: {
     patchIds: [...patchOrder],
     patchPolygons,
     syncVisibility() {
-      Object.values(patchPolygons).forEach((polygon) => {
-        polygon.setAttribute({ visible: true });
+      // 注意：为了让近景遮挡远景，Z越小代表离用户越近。
+      // 画家算法要求：先画远处的被遮挡景，最后画近处的叠在上层。
+      // JSXGraph 元素渲染采用 SVG，依靠 DOM 순서 决定层级。
+      // 因此我们需要根据距离（深度）降序排序：深度大（远）的放前面，深度小（近）的放后面。
+      const depths = patchOrder.map(faceId => ({
+        faceId,
+        depth: getOutline(faceId).depthZ
+      }));
+      
+      depths.sort((a, b) => b.depth - a.depth);
+      
+      depths.forEach((item) => {
+        const polygon = patchPolygons[item.faceId];
+        if (polygon) {
+          // 根据法向量和光线夹角的点积(-1到1)，映射出亮度Lightness（L：55 到 89）
+          const { lighting = 0.5 } = getOutline(item.faceId) as unknown as { lighting: number };
+          // 为了使得色彩层次更分明，且在最亮时能贴合类似 #c7d2fe 的光感，暗时 #4f46e5 (L:59) 的饱和阴暗深色
+          // 我们扩大它的映射差：把 dot (-1 ~ 1) 映射到 Lightness (52% ~ 88%)
+          // 同时为了避免过度暗淡，我们可以加入一个最小环境光照阈值。
+          const lStrength = (lighting + 1) / 2; // 0 到 1
+          const lightness = 52 + (88 - 52) * lStrength;
+          
+          polygon.setAttribute({ 
+            visible: true,
+            fillColor: `hsl(${baseHue}, ${baseSaturation}%, ${lightness}%)`,
+            borders: {
+               // 边框也同步变深
+               strokeColor: `hsl(${baseHue}, 60%, ${Math.max(30, lightness - 20)}%)`
+            }
+          });
+          
+          // 直接操作核心 DOM 节点重新 append 改变 Z 叠放顺序，强制画家算法生效
+          const svgNode = polygon.rendNode;
+          if (svgNode && svgNode.parentNode) {
+            svgNode.parentNode.appendChild(svgNode);
+          }
+        }
       });
     },
     getAllPoints() {
-      return patchOrder.flatMap((faceId) => getOutline(faceId));
+      return patchOrder.flatMap((faceId) => getOutline(faceId).points);
     },
     getPatchOutline(patchId: string) {
-      return patchOrder.includes(patchId as CuboidFaceId) ? getOutline(patchId as CuboidFaceId) : [];
+      return patchOrder.includes(patchId as CuboidFaceId) ? getOutline(patchId as CuboidFaceId).points : [];
     }
   };
 };

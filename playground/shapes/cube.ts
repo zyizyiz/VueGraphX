@@ -1,6 +1,6 @@
 import { createAnimationCapabilityTarget, createComposedShapeDefinition, type GraphShapeApi } from 'vuegraphx';
 import type { ShapeCapabilityTarget } from 'vuegraphx';
-import { cuboidFaceIds, cuboidFaceStyles, getCuboidFaceVertices3D, getCuboidVertices3D, type CuboidFaceId } from './cuboidShared';
+import { cuboidFaceIds, getCuboidFaceVertices3D, getCuboidVertices3D, type CuboidFaceId } from './cuboidShared';
 
 interface CubeState {
   toolbarStyle: Record<string, string>;
@@ -77,17 +77,22 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
 
         const groupedObjects: any[] = [];
 
+        const baseHue = 233;
         cuboidFaceIds.forEach((faceId, index) => {
           const corners = createFacePoints(api, faceId);
-          const faceStyle = cuboidFaceStyles[faceId];
+          // 为真3D立体各个面分配不同明度和透明度，使其依然保持立体错觉感
+          // Front面(index=0)较亮, 依次加深
+          const lightness = 80 - index * 5; 
+          
           const p1 = api.trackObject(view3d.create('point3d', corners[0], { visible: false }));
           const p2 = api.trackObject(view3d.create('point3d', corners[1], { visible: false }));
           const p3 = api.trackObject(view3d.create('point3d', corners[2], { visible: false }));
           const p4 = api.trackObject(view3d.create('point3d', corners[3], { visible: false }));
+          
           const polygon = api.trackObject(view3d.create('polygon3d', [p1, p2, p3, p4], {
-            fillColor: faceStyle.fillColor,
-            fillOpacity: Math.min(faceStyle.fillOpacity, 0.85),
-            borders: { strokeWidth: 1.5, strokeColor: faceStyle.strokeColor }
+            fillColor: `hsl(${baseHue}, 80%, ${lightness}%)`,
+            fillOpacity: 0.85,
+            borders: { strokeWidth: 1.5, strokeColor: `hsl(${baseHue}, 60%, ${lightness * 0.7}%)` }
           }));
           const faceGroup = api.createGroup({ p1, p2, p3, p4, face: polygon }, { id: `cube_face_${index}_${faceId}`, createNativeGroup: false });
           faceGroup.hide(['p1', 'p2', 'p3', 'p4']);
