@@ -60,16 +60,23 @@ export class BoardManager {
       defaultOptions.showNavigation = false;
     }
 
-    this.board = JXG.JSXGraph.initBoard(this.containerId, { ...defaultOptions, ...this.globalOptions });
+    const view3DOptions = this.globalOptions?.view3D;
+    const boardOptions = { ...this.globalOptions };
+    delete (boardOptions as Partial<GraphXOptions>).view3D;
+
+    this.board = JXG.JSXGraph.initBoard(this.containerId, { ...defaultOptions, ...boardOptions });
 
     if (this.mode === '3d') {
+      const viewRect = view3DOptions?.rect ?? [[-6, -3], [8, 8], [[-5, 5], [-5, 5], [-5, 5]]];
+      const viewAttributes = {
+        xPlaneElements: { visible: false },
+        yPlaneElements: { visible: false },
+        ...(view3DOptions?.attributes ?? {})
+      };
+
       this.view3d = this.board.create('view3d',
-        [[-6, -3], [8, 8],
-         [[-5, 5], [-5, 5], [-5, 5]]],
-        {
-          xPlaneElements: { visible: false },
-          yPlaneElements: { visible: false },
-        }
+        viewRect,
+        viewAttributes
       ) as JXGView3D;
     }
   }

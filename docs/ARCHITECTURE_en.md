@@ -102,6 +102,28 @@ This is valuable because:
 - delete, style, resize, split, annotation, and animation behavior can be reused across shapes.
 - shapes keep their private implementation details while still exposing a stable public interaction model.
 
+### 3.4 Playground mixed mode
+
+The playground currently includes an experimental `mixed` mode that demonstrates a math-software-style interaction model where planar objects and solids live in one shared coordinate system.
+
+This mode has two important boundaries:
+
+- `mixed` is not a public `EngineMode` and is not part of the exported engine type surface; inside the playground it is mapped to engine `3d` mode.
+- It is not a separate renderer. It is composed from the existing `view3d` lifecycle, a fixed front-facing camera configuration, and an additional 2D bottom coordinate layer.
+
+The current mixed-mode structure is:
+
+1. `playground/types/mode.ts` maps `mixed` to engine `3d` mode and locks projection, camera, and `view3D` viewport behavior.
+2. `playground/composables/useMixedModeScene.ts` builds the `z = 0` work plane and the planar semantics on top of it.
+3. Solid objects remain true 3D elements, but only object-local rotation is allowed; the global axes do not rotate.
+4. Axes and grids are rendered as an independent 2D bottom layer rather than ordinary 3D scene elements, so they do not share the same occlusion and hit-testing semantics as faces.
+
+Why this design exists:
+
+- math-software interaction is closer to “fixed coordinate system + local object inspection” than full scene trackball rotation
+- if axes and grids are added as normal 3D elements, they inherit face occlusion, layering, and hit behavior that feels wrong for a coordinate system
+- mixed mode is intentionally treated as a playground-level experiment before expanding the public engine mode surface
+
 ## 4. Shared Infrastructure for Shape Authors
 
 The current runtime provides several reusable authoring primitives:
@@ -123,6 +145,8 @@ Prefer:
 - `executeCommand()` to render or replace an expression result
 - `removeCommand()` to clean up a specific command
 - `setMode()` to switch between `2d`, `3d`, and `geometry`
+
+Note: if you see `mixed` in the playground UI, that is a composed demo layer built on top of `3d`, not a public engine mode exposed as `setMode('mixed')`.
 
 ### 5.2 If your use case is an interactive shape editor
 

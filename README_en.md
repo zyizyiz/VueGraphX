@@ -20,6 +20,12 @@ VueGraphX exposes two complementary workflows:
 - Expression rendering for 2D/3D math expressions and geometry commands.
 - Shape runtime authoring built around shape definitions plus a capability-first interaction model.
 
+The playground also includes an experimental mixed mode:
+
+- 2D objects are treated as content living on the `z = 0` work plane.
+- Solid objects share the same coordinate system but rotate only at the object level, without rotating the global axes.
+- A fixed front-facing `view3d` hosts the 3D scene while an independent 2D axis/grid layer is rendered underneath to mimic math-software-style “plane + solid in one system” behavior.
+
 That makes it suitable both as a standalone rendering engine and as the runtime layer of an interactive geometry editor, education tool, or custom whiteboard.
 
 🌐 Live Demo: [https://zyizyiz.github.io/VueGraphX/](https://zyizyiz.github.io/VueGraphX/)
@@ -30,6 +36,7 @@ That makes it suitable both as a standalone rendering engine and as the runtime 
 - 🧩 Composable shape authoring: build local shapes with `createComposedShapeDefinition()`, `GraphShapeApi`, and `GraphShapeContext`.
 - 🎬 Shared runtime utilities: animation tracks, point annotations, hit groups, drag helpers, and screen projection helpers are reusable across shapes.
 - 📐 Unified 2D / 3D entry point: expression rendering and `view3d` lifecycle are managed through the same engine facade.
+- 🧪 Experimental playground mixed mode: built on top of engine `3d` mode, but organized around a `z = 0` work plane plus object-local solid rotation.
 - 🛡️ Type-safe public surface: engine options, capability contracts, and shape authoring interfaces are exported for downstream integrations.
 
 ## 📦 Installation
@@ -123,6 +130,21 @@ engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
 engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
 
+### 5. About the playground mixed mode
+
+Mixed mode is currently a playground-level composition, not a new public `EngineMode`. It demonstrates a math-software-oriented interaction model:
+
+- one shared coordinate system where planar objects keep `z = 0` semantics
+- solid objects that can be inspected through local rotation
+- an independent 2D axis/grid layer instead of treating axes as ordinary 3D scene elements
+
+The current implementation lives in:
+
+- `playground/App.vue`: mixed-mode entry and mode switching
+- `playground/types/mode.ts`: mapping `mixed` to engine `3d` mode plus fixed-view `view3D` configuration
+- `playground/composables/useMixedModeScene.ts`: `z = 0` work plane, cube scene, and 2D bottom axis/grid layer
+- `playground/components/MixedModePanel.vue`: mixed-mode-specific controls
+
 ## 🧠 Recommended Mental Model
 
 The current public API is easiest to use if you think about it in this order:
@@ -167,6 +189,13 @@ The library is organized under `src/`:
 - `parsing/`: text and expression parsing.
 - `rendering/`: renderer, command catalog, and render handlers.
 - `types/`: public engine and capability types.
+
+Playground files directly involved in mixed mode:
+
+- `playground/App.vue`: playground mode switching and mixed panel mounting
+- `playground/types/mode.ts`: playground-to-engine mode mapping and board configuration
+- `playground/composables/useMixedModeScene.ts`: mixed scene, 2D coordinate layer, object-level rotation, and interaction scheduling
+- `playground/components/MixedModePanel.vue`: mixed-mode visibility and pose controls
 
 ## 🧪 Testing & Validation
 

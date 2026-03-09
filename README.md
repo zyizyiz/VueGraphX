@@ -20,6 +20,12 @@ VueGraphX 提供两条互补的能力主线：
 - 表达式渲染：把 2D/3D 数学表达式、几何指令交给统一渲染管线执行。
 - 图形运行时：把具体图形实现收敛为 shape definition，再通过统一 capability API 暴露交互能力。
 
+当前 playground 还提供一个实验性的混合模式：
+
+- 把 2D 对象理解为落在 `z = 0` 工作平面上的内容。
+- 把立体对象放在同一坐标系里，但仅允许对象局部旋转，不旋转全局坐标轴。
+- 用固定正视角的 `view3d` 承载 3D 场景，再叠加独立的 2D 坐标轴与网格层，用来模拟更接近数学软件的“平面 + 立体同轴展示”。
+
 它适合两类场景：
 
 - 直接作为数学表达式渲染引擎使用。
@@ -33,6 +39,7 @@ VueGraphX 提供两条互补的能力主线：
 - 🧩 组合式图形定义：使用 `createComposedShapeDefinition()`、`GraphShapeApi` 和 `GraphShapeContext` 在业务侧组合自己的图形。
 - 🎬 共享动画与标注能力：动画轨道、点标注、命中分组、拖拽与悬浮 UI 投影工具都是通用基础设施。
 - 📐 统一 2D / 3D 渲染入口：表达式渲染和 view3d 生命周期都通过同一个引擎门面管理。
+- 🧪 playground 混合模式：以 `3d` 引擎模式为底座，在 `z = 0` 平面上组织 2D 语义内容，并通过对象级旋转查看立体结构。
 - 🛡️ 类型安全：公共类型、能力契约和 shape authoring API 都完整导出，适合二次封装和 IDE 自动提示。
 
 ## 📦 安装
@@ -126,6 +133,21 @@ engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
 engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
 
+### 5. 关于 playground 的混合模式
+
+混合模式当前是 playground 层的组合能力，不是新的公共 `EngineMode`。它的目标是演示一种更接近数学软件的交互方式：
+
+- 全局只有一套坐标系，平面对象按 `z = 0` 语义理解。
+- 立体对象和 2D 对象共处同一坐标系，但立体对象允许局部旋转以观察结构。
+- 坐标轴和网格使用独立的 2D 底层覆盖，而不是把它们也当成普通 3D 图元处理。
+
+当前实现位于：
+
+- `playground/App.vue`：混合模式入口与模式切换。
+- `playground/types/mode.ts`：把 playground 的 `mixed` 映射到引擎 `3d` 模式，并配置固定视角的 `view3D`。
+- `playground/composables/useMixedModeScene.ts`：构建 `z = 0` 工作平面、立方体、底层 2D 坐标轴与网格。
+- `playground/components/MixedModePanel.vue`：混合模式专用控制面板。
+
 ## 🧠 推荐使用方式
 
 当前版本建议按下面的心智模型接入：
@@ -170,6 +192,13 @@ npm run docs:api
 - `parsing/`: 文本与表达式解析。
 - `rendering/`: 表达式渲染器、指令目录和处理器。
 - `types/`: 对外基础类型与引擎配置。
+
+playground 中与混合模式直接相关的文件：
+
+- `playground/App.vue`: playground 模式切换与 mixed 面板挂载。
+- `playground/types/mode.ts`: playground 模式到引擎模式的映射与 board 配置。
+- `playground/composables/useMixedModeScene.ts`: mixed 场景、2D 坐标层、对象级旋转与交互调度。
+- `playground/components/MixedModePanel.vue`: mixed 模式的显示与姿态控制。
 
 ## 🧪 测试与校验
 

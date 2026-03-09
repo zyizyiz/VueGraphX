@@ -92,6 +92,35 @@ npm install
 - 具体图形通过 `createComposedShapeDefinition()` 在消费侧组合。
 - 图形交互尽量通过 capability-first 模式暴露给外部 UI。
 
+### 4. 扩展 playground 的混合模式
+
+适用场景：
+
+- 调整“平面 + 立体同轴展示”的交互方式
+- 修改混合模式下的固定视角、工作平面、坐标轴或网格表现
+- 增加 mixed 专用的控制面板、对象或教学演示
+
+主要文件：
+
+- `playground/App.vue`
+- `playground/types/mode.ts`
+- `playground/composables/useMixedModeScene.ts`
+- `playground/components/MixedModePanel.vue`
+
+实现约束：
+
+- `mixed` 当前是 playground 模式，不是公共 `EngineMode`；底层仍映射到引擎的 `3d` 模式。
+- 2D 语义对象应继续围绕 `z = 0` 工作平面组织，不要把 mixed 写成第二套独立坐标系。
+- 坐标轴和网格优先作为独立 2D 底层覆盖处理，而不是作为普通 3D 图元加入场景。
+- mixed 场景对象较多时，重建前后应优先使用 `board.suspendUpdate()` / `board.unsuspendUpdate()` 批量包裹，避免切换开关时卡顿。
+
+建议流程：
+
+1. 先在 `playground/types/mode.ts` 明确视角、投影和 `view3D` 容器配置。
+2. 再在 `useMixedModeScene.ts` 中处理工作平面、3D 对象和 2D 底层坐标层。
+3. mixed 专用 UI 放在 `MixedModePanel.vue`，避免把 playground 其余模式逻辑耦合进去。
+4. 如果改动影响用户对 mixed 模式的理解，记得同步更新 README 和架构文档。
+
 ## 当前推荐的图形扩展方式
 
 下面是当前更推荐的 shape authoring 方式：

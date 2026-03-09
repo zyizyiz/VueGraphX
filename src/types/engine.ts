@@ -33,6 +33,21 @@ export interface GraphXOptions {
    * 是否显示 JSXGraph 默认版权信息。
    */
   showCopyright?: boolean;
+
+  /**
+   * 3D 视图的布局与属性配置。仅在 3D 画板模式下生效。
+   */
+  view3D?: {
+    /**
+     * view3d 的创建参数，格式为 [[left, bottom], [width, height], [[x1, x2], [y1, y2], [z1, z2]]]
+     */
+    rect?: [[number, number], [number, number], [[number, number], [number, number], [number, number]]];
+
+    /**
+     * 透传给 JSXGraph view3d 的属性。
+     */
+    attributes?: Record<string, any>;
+  };
 }
 
 /**

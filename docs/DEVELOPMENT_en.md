@@ -90,6 +90,35 @@ Principles:
 - concrete shapes should be composed with `createComposedShapeDefinition()`
 - external UI should integrate through the capability-first model whenever possible
 
+### 4. Extending the playground mixed mode
+
+Use this path when you are:
+
+- adjusting the “plane + solid in one coordinate system” interaction model
+- changing the fixed camera, work plane, axis, or grid behavior used by mixed mode
+- adding mixed-specific controls, objects, or teaching demos
+
+Main files:
+
+- `playground/App.vue`
+- `playground/types/mode.ts`
+- `playground/composables/useMixedModeScene.ts`
+- `playground/components/MixedModePanel.vue`
+
+Implementation constraints:
+
+- `mixed` is currently a playground mode, not a public `EngineMode`; under the hood it still maps to engine `3d` mode.
+- 2D semantics should continue to be organized around the `z = 0` work plane rather than a separate coordinate system.
+- Axes and grids should preferably be implemented as an independent 2D bottom layer instead of ordinary 3D scene elements.
+- When rebuilding a large mixed scene, prefer wrapping creation/removal in `board.suspendUpdate()` / `board.unsuspendUpdate()` to avoid UI freezes when toggling controls.
+
+Suggested workflow:
+
+1. Start in `playground/types/mode.ts` to define camera, projection, and `view3D` container behavior.
+2. Then implement the work plane, solid objects, and 2D bottom coordinate layer in `useMixedModeScene.ts`.
+3. Keep mixed-specific UI in `MixedModePanel.vue` instead of coupling it into the other playground modes.
+4. If the change affects how users should understand mixed mode, update the README and architecture docs as well.
+
 ## Recommended Shape Authoring Pattern
 
 The current recommended pattern looks like this:

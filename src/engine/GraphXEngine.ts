@@ -343,6 +343,31 @@ export class GraphXEngine {
     }
   }
 
+  /**
+   * 安全地调整当前画板的渲染尺寸。如果在混合层或监听容器调整大小，使用此方法能避免用 `resetBoard` 导致的灾难性“死循环重建”。
+   * 如果不传递 width 和 height，引擎将自动探测当前绑定的 DOM 容器实际大小进行重置。
+   */
+  public resize(width?: number, height?: number): void {
+    const board = this.boardMgr.board;
+    if (!board) return;
+
+    let targetWidth = width;
+    let targetHeight = height;
+
+    if (targetWidth === undefined || targetHeight === undefined) {
+      const container = board.containerObj;
+      if (container) {
+        targetWidth = targetWidth ?? container.clientWidth;
+        targetHeight = targetHeight ?? container.clientHeight;
+      }
+    }
+
+    if (targetWidth !== undefined && targetHeight !== undefined) {
+      board.resizeContainer(targetWidth, targetHeight, true);
+      board.update();
+    }
+  }
+
   /** 返回底层 JSXGraph 画板实例。若当前尚未初始化成功，则返回 null。 */
   public getBoard(): JXG.Board | null {
     return this.boardMgr.board || null;

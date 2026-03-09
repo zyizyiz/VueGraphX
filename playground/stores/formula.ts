@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import type { PlaygroundMode } from '../types/mode';
 
 export interface CommandItem {
   id: string;
@@ -11,17 +12,16 @@ export interface CommandItem {
   options?: any;       // 开放拓展透传给底层绘图引擎的自定义配置项（例如 fillColor）
 }
 
-export type EngineMode = '2d' | '3d' | 'geometry';
-
 export const useFormulaStore = defineStore('formula', () => {
   // 分别维护三个模式下的独立状态表
-  const commandsMap = ref<Record<EngineMode, CommandItem[]>>({
+  const commandsMap = ref<Record<PlaygroundMode, CommandItem[]>>({
     '2d': [{ id: 'init_2d', expression: 'sin(x)', color: '#0ea5e9', visible: true }],
     '3d': [{ id: 'init_3d', expression: 'z = sin(x)*cos(y)', color: '#f43f5e', visible: true }],
-    'geometry': [{ id: 'init_geom1', expression: 'A=(-2,0)', color: '#8b5cf6', visible: true }]
+    'geometry': [{ id: 'init_geom1', expression: 'A=(-2,0)', color: '#8b5cf6', visible: true }],
+    'mixed': []
   });
   
-  const activeMode = ref<EngineMode>('2d');
+  const activeMode = ref<PlaygroundMode>('2d');
 
   // 当前激活面板的数据映射门面
   const commands = computed(() => commandsMap.value[activeMode.value]);
@@ -66,7 +66,7 @@ export const useFormulaStore = defineStore('formula', () => {
     commandsMap.value[activeMode.value] = [];
   };
 
-  const injectDemo = (mode: EngineMode, demoCommands: (string | { expr: string, options?: any })[]) => {
+  const injectDemo = (mode: PlaygroundMode, demoCommands: (string | { expr: string, options?: any })[]) => {
     commandsMap.value[mode] = [];
     demoCommands.forEach((cmdRaw, idx) => {
       const colors = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#10b981', '#f59e0b'];
