@@ -132,9 +132,13 @@
       </aside>
 
       <!-- 图形处理层 -->
-      <main class="flex-1 relative bg-white flex items-center justify-center m-0 sm:m-4 shadow-sm border border-slate-200 overflow-hidden sm:rounded-xl z-0">
+      <main 
+        class="flex-1 relative bg-white flex items-center justify-center m-0 sm:m-4 shadow-sm border border-slate-200 overflow-hidden sm:rounded-xl z-0"
+        @dragover="onDragOver"
+        @drop="onDrop"
+      >
         <div id="vuegraphx-mount" class="w-full h-full jxgbox" ref="graphContainerRef"></div>
-        <ExternalCircleDesigner v-if="store.activeMode !== 'mixed'" :engine="engineRef" :active-mode="store.activeMode as EngineMode" />
+        <ExternalCircleDesigner v-if="store.activeMode === 'geometry' || store.activeMode === 'mixed'" :engine="engineRef" :active-mode="store.activeMode" />
         <ExternalCubeDesigner v-if="store.activeMode !== 'mixed'" :engine="engineRef" :active-mode="store.activeMode as EngineMode" />
       </main>
     </div>
@@ -153,6 +157,20 @@ import MixedModePanel from './components/MixedModePanel.vue';
 import { useMixedModeScene } from './composables/useMixedModeScene';
 import { registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
+
+const onDrop = (e: DragEvent) => {
+  e.preventDefault();
+  if (engineRef.value) {
+    engineRef.value.handleDropEvent(e);
+  }
+};
+
+const onDragOver = (e: DragEvent) => {
+  e.preventDefault();
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy';
+  }
+};
 
 // 顶部工具栏模式列表
 const availableModes: {id: PlaygroundMode, label: string, icon: string}[] = [

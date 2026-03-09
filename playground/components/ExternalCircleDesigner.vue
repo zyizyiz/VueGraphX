@@ -1,5 +1,5 @@
 <template>
-  <div v-if="activeMode === 'geometry'" data-designer-ui="true" class="pointer-events-none absolute inset-0 z-30">
+  <div v-if="activeMode === 'geometry' || activeMode === 'mixed'" data-designer-ui="true" class="pointer-events-none absolute inset-0 z-30">
     <div data-designer-ui="true" class="pointer-events-auto absolute left-4 top-4 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
       <div
         draggable="true"
@@ -106,13 +106,14 @@
 </template>
 
 <script setup lang="ts">
-import type { EngineMode, GraphXEngine } from 'vuegraphx';
+import type { GraphXEngine } from 'vuegraphx';
+import type { PlaygroundMode } from '../types/mode';
 import { useCircleDesigner } from '../composables/useCircleDesigner';
 import AnimationTracksPanel from './AnimationTracksPanel.vue';
 
 const props = defineProps<{
   engine: GraphXEngine | null;
-  activeMode: EngineMode;
+  activeMode: PlaygroundMode;
 }>();
 
 const palette = ['#0ea5e9', '#ef4444', '#f59e0b', '#22c55e', '#8b5cf6', '#334155', '#f97316', '#14b8a6'];

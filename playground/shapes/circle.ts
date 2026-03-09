@@ -156,6 +156,38 @@ const closeIntuitive = (api: GraphShapeApi<CircleState>) => {
   api.setState({ intuitive: null });
 };
 
+const refreshCircleBoard = (api: GraphShapeApi<CircleState>) => {
+  api.board?.update();
+};
+
+const createCircleVisual = (
+  api: GraphShapeApi<CircleState>,
+  center: any,
+  radiusPoint: any,
+  centerX: () => number,
+  centerY: () => number,
+  radius: () => number,
+  attributes: Record<string, unknown>
+) => {
+  if (!api.board) return null;
+
+  if (!api.engine.getView3D()) {
+    return api.trackObject(api.board.create('circle', [center, radiusPoint], attributes));
+  }
+
+  return api.trackObject(api.board.create('curve', [
+    (t: number) => centerX() + radius() * Math.cos(t),
+    (t: number) => centerY() + radius() * Math.sin(t),
+    0,
+    2 * Math.PI
+  ], {
+    ...attributes,
+    doAdvancedPlot: false,
+    numberPointsLow: 128,
+    numberPointsHigh: 128
+  }));
+};
+
 const updateToolbarPosition = (api: GraphShapeApi<CircleState>) => {
   if (!api.selected || !api.state.refs) {
     if (api.state.toolbarStyle.top !== 'calc(100% - 5rem)') {
@@ -273,23 +305,24 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       strokeColor: '#0ea5e9',
       fillColor: '#0ea5e9'
     }));
-    const circle = api.trackObject(api.board.create('circle', [center, radiusPoint], {
+    const radius = () => center.Dist(radiusPoint);
+    const centerX = () => center.X();
+    const centerY = () => center.Y();
+
+    const circle = createCircleVisual(api, center, radiusPoint, centerX, centerY, radius, {
       strokeColor: '#0ea5e9',
       fillColor: '#0ea5e9',
       fillOpacity: 0.12,
       strokeWidth: 2,
       highlight: false,
       hasInnerPoints: true
-    }));
+    });
     const radiusLine = api.trackObject(api.board.create('segment', [center, radiusPoint], {
       visible: false,
       strokeColor: '#64748b',
       strokeWidth: 1.5
     }));
 
-    const radius = () => center.Dist(radiusPoint);
-    const centerX = () => center.X();
-    const centerY = () => center.Y();
     api.createAnimationTrack({
       id: 'pulse',
       label: '脉冲',
@@ -312,18 +345,20 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       () => centerX() + radius() * (1 + getPulseAmount(api) * 0.18),
       () => centerY()
     ], { visible: false }));
-    const pulseCircle = api.trackObject(api.board.create('circle', [center, pulsePoint], {
-      visible: false,
-      strokeColor: '#38bdf8',
-      fillColor: '#38bdf8',
-      fillOpacity: 0,
-      strokeOpacity: 0,
-      strokeWidth: 1.5,
-      dash: 2,
-      highlight: false,
-      fixed: true,
-      hasInnerPoints: false
-    }));
+    const pulseCircle = api.engine.getView3D()
+      ? undefined
+      : createCircleVisual(api, center, pulsePoint, centerX, centerY, () => radius() * (1 + getPulseAmount(api) * 0.18), {
+          visible: false,
+          strokeColor: '#38bdf8',
+          fillColor: '#38bdf8',
+          fillOpacity: 0,
+          strokeOpacity: 0,
+          strokeWidth: 1.5,
+          dash: 2,
+          highlight: false,
+          fixed: true,
+          hasInnerPoints: false
+        });
     const bbox = api.trackObject(api.board.create('polygon', [p1, p2, p3, p4], {
       fillOpacity: 0,
       borders: { strokeColor: '#0ea5e9', strokeWidth: 1, visible: false },
@@ -360,7 +395,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     syncPulseVisual(api);
     attachInteractiveHandlers(api);
     updateToolbarPosition(api);
-    api.board.update();
+    refreshCircleBoard(api);
   },
   onSelectionChange(api, selected) {
     const refs = getRefs(api);
@@ -372,7 +407,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       api.setState({ showFeature: false, showColorPanel: false, activeTool: 'none' });
       syncPulseVisual(api);
       updateToolbarPosition(api);
-      api.board?.update();
+      refreshCircleBoard(api);
       return;
     }
 
@@ -381,7 +416,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     }
     syncPulseVisual(api);
     updateToolbarPosition(api);
-    api.board?.update();
+    refreshCircleBoard(api);
   },
   onBoardUpdate(api) {
     if (api.selected) updateToolbarPosition(api);
@@ -549,7 +584,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       }
       api.setState({ showColorPanel: false, activeTool: isSizeTool ? 'size' : 'none' });
       updateToolbarPosition(api);
-      api.board?.update();
+      refreshCircleBoard(api);
     };
 
     const applyRadiusInput = (value: number) => {
@@ -565,7 +600,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       const targetRadius = Math.max(0.2, Number(value) || 0.2);
       refs.radiusPoint.moveTo([centerX + (dx / length) * targetRadius, centerY + (dy / length) * targetRadius], 0);
       updateToolbarPosition(api);
-      api.board?.update();
+      refreshCircleBoard(api);
     };
 
     const startAssistMode = () => {
@@ -832,7 +867,7 @@ const createCirclePieceComposition = (payload: CirclePiecePayload): GraphShapeCo
 
 export const circleShapeDefinition = createComposedShapeDefinition<CirclePayload, CircleState>({
   type: 'circle',
-  supportedModes: ['2d', 'geometry'],
+  supportedModes: ['2d', 'geometry', '3d'],
   create(_context, payload) {
     if (!payload || !Number.isFinite(payload.x) || !Number.isFinite(payload.y)) return null;
     return createCircleComposition(payload);

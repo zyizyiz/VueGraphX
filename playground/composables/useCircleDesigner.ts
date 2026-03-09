@@ -57,10 +57,6 @@ export function useCircleDesigner(
   });
 
   let unsubscribeCapabilities: (() => void) | null = null;
-  let dragOverHandler: ((e: DragEvent) => void) | null = null;
-  let dropHandler: ((e: DragEvent) => void) | null = null;
-  let mountedDropTarget: HTMLElement | null = null;
-
   const runCapability = (capabilityId: string, payload?: unknown) => {
     const engine = getEngine();
     if (!engine) return false;
@@ -125,45 +121,7 @@ export function useCircleDesigner(
           animationTracks: animationTracksState.tracks.value
         };
       });
-
-      installDropListeners();
     }
-  };
-
-  const installDropListeners = () => {
-    if (mountedDropTarget && dragOverHandler) mountedDropTarget.removeEventListener('dragover', dragOverHandler);
-    if (mountedDropTarget && dropHandler) mountedDropTarget.removeEventListener('drop', dropHandler);
-
-    const tryMount = () => {
-      const mount = document.getElementById('vuegraphx-mount');
-      if (!mount) {
-        setTimeout(tryMount, 50);
-        return;
-      }
-
-      dragOverHandler = (e: DragEvent) => {
-        if (getActiveMode() !== 'geometry') return;
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-      };
-
-      dropHandler = (e: DragEvent) => {
-        if (getActiveMode() !== 'geometry') return;
-        if (!Array.from(e.dataTransfer?.types ?? []).includes('shape')) return;
-        e.preventDefault();
-
-        const engine = getEngine();
-        if (!engine) return;
-
-        engine.handleDropEvent(e);
-      };
-
-      mount.addEventListener('dragover', dragOverHandler);
-      mount.addEventListener('drop', dropHandler);
-      mountedDropTarget = mount;
-    };
-
-    tryMount();
   };
 
   watch(() => getEngine(), () => {
@@ -171,7 +129,7 @@ export function useCircleDesigner(
   }, { immediate: true });
 
   watch(() => getActiveMode(), (mode) => {
-    if (mode !== 'geometry') {
+    if (mode !== 'geometry' && mode !== 'mixed') {
       capabilitySnapshot.value = { selection: null, capabilities: [] };
     }
   });
@@ -182,8 +140,6 @@ export function useCircleDesigner(
 
   onBeforeUnmount(() => {
     if (unsubscribeCapabilities) unsubscribeCapabilities();
-    if (mountedDropTarget && dragOverHandler) mountedDropTarget.removeEventListener('dragover', dragOverHandler);
-    if (mountedDropTarget && dropHandler) mountedDropTarget.removeEventListener('drop', dropHandler);
   });
 
   const selected = computed<CircleModel | null>(() => {
