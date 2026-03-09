@@ -58,6 +58,16 @@
         <li>混合模式底层仍复用 3D 视图，但交互是固定正视角方案。</li>
       </ul>
     </section>
+
+    <section class="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h3 class="text-sm font-bold text-slate-800">拖拽手势</h3>
+      <ul class="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+        <li>直接拖拽三角形或四边形：整体移动对应的平面图形。</li>
+        <li>直接拖拽立方体或圆锥表面：整体移动对应的立体图形。</li>
+        <li>按住 Shift 再拖拽立方体或圆锥表面：旋转对应的立体图形。</li>
+        <li>拖拽空白工作平面：平移整张坐标系。</li>
+      </ul>
+    </section>
   </div>
 </template>
 
