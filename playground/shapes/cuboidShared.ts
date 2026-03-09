@@ -6,13 +6,15 @@ import {
   lerpPoint3D,
   rotatePointAroundX,
   rotatePointAroundY,
-  type GraphShapeApi,
   type GraphSolid2DScene,
   type GraphSolid2DToolbarState,
   type GraphSolidTopology,
   type GraphSolidPoint2D,
   type GraphSolidPoint3D,
   type GraphSolidPolygonPatch
+} from './solidInternals';
+import {
+  type GraphShapeApi,
 } from 'vuegraphx';
 
 export const cuboidFaceIds = ['front', 'top', 'right', 'left', 'bottom', 'back'] as const;

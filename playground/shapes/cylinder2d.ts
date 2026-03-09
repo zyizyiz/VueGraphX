@@ -1,11 +1,11 @@
+import { type GraphShapeApi } from 'vuegraphx';
 import {
   createCylinderSolidTopology,
   createSolid2DShapeDefinition,
   createSolidState,
   degToRad,
-  type GraphShapeApi,
   type GraphSolid2DToolbarState
-} from 'vuegraphx';
+} from './solidInternals';
 
 interface Cylinder2DState extends GraphSolid2DToolbarState {
   radius: number;

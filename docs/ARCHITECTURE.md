@@ -161,10 +161,11 @@ src/
 
 当前这层又向前推进了一步：
 
-- `src/architecture/solids/renderer2d.ts` 提供通用 `renderSolidTopology2D()`，统一把 `polygon`、`band`、`disk`、`sector` 四类 patch 渲染成 2D 轮廓。
+- `src/architecture/solids/renderer2d.ts` 提供通用 `renderSolidTopology2D()`，统一把 `polygon`、`band`、`disk`、`sector` 四类 patch 渲染成 2D 轮廓。这一层现在视为内部实现，不再通过公共入口直接暴露。
 - renderer 支持三种视图：`projected`、`net`、`hybrid`，其中 `hybrid` 会按 `unfoldProgress` 在折叠投影和展开净图之间插值。
 - renderer 也统一处理 `explodeProgress`，把面片沿整体包围盒中心向外分离，适合作为教学展示或结构拆解动画。
-- `src/architecture/solids/shape2d.ts` 提供 `createSolid2DScene()` 和 `createSolid2DShapeDefinition()`，把 renderer 输出接成 JSXGraph polygon 集合，并进一步把拖拽、工具栏定位、动画轨道和 capability 暴露收敛成通用 authoring API。
+- `src/architecture/solids/shape2d.ts` 提供 `createSolid2DScene()` 和 `createSolid2DShapeDefinition()`，把 renderer 输出接成 JSXGraph polygon 集合，并进一步把拖拽、工具栏定位、动画轨道和 capability 暴露收敛成通用 authoring API。这一层保留给仓库内部和 playground 复用，不再从公共包入口直接导出。
+- `src/architecture/solids/contracts.ts` 与 `src/architecture/solids/geometry.ts` 也同样降为内部基础设施：保留给仓库内部与 playground 复用，不再通过公共包入口承诺这套低层立体建模 API。
 
 ## 5. 推荐的外部接入方式
 

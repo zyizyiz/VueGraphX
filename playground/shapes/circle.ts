@@ -171,21 +171,23 @@ const createCircleVisual = (
 ) => {
   if (!api.board) return null;
 
-  if (!api.engine.getView3D()) {
+  const is3D = api.engine.getView3D();
+  // 如果是 3D，使用具有高采样率的 2D 曲线(curve)模拟参数绘制
+  if (is3D) {
+    return api.trackObject(api.board.create('curve', [
+      (t: number) => centerX() + radius() * Math.cos(t),
+      (t: number) => centerY() + radius() * Math.sin(t),
+      0,
+      2 * Math.PI
+    ], {
+      ...attributes,
+      doAdvancedPlot: false,
+      numberPointsLow: 128,
+      numberPointsHigh: 128
+    }));
+  } else {
     return api.trackObject(api.board.create('circle', [center, radiusPoint], attributes));
   }
-
-  return api.trackObject(api.board.create('curve', [
-    (t: number) => centerX() + radius() * Math.cos(t),
-    (t: number) => centerY() + radius() * Math.sin(t),
-    0,
-    2 * Math.PI
-  ], {
-    ...attributes,
-    doAdvancedPlot: false,
-    numberPointsLow: 128,
-    numberPointsHigh: 128
-  }));
 };
 
 const updateToolbarPosition = (api: GraphShapeApi<CircleState>) => {

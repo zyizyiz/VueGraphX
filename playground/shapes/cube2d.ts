@@ -1,4 +1,5 @@
-import { createSolid2DShapeDefinition, createSolidState, degToRad, type GraphShapeApi, type GraphSolid2DToolbarState } from 'vuegraphx';
+import { type GraphShapeApi } from 'vuegraphx';
+import { createSolid2DShapeDefinition, createSolidState, degToRad, type GraphSolid2DToolbarState } from './solidInternals';
 import {
   createCuboidFoldLikeScene2D,
   cuboidFaceIds,

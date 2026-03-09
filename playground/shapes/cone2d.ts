@@ -1,11 +1,11 @@
+import { type GraphShapeApi } from 'vuegraphx';
 import {
   createConeSolidTopology,
   createSolid2DShapeDefinition,
   createSolidState,
   degToRad,
-  type GraphShapeApi,
   type GraphSolid2DToolbarState
-} from 'vuegraphx';
+} from './solidInternals';
 
 interface Cone2DState extends GraphSolid2DToolbarState {
   radius: number;
