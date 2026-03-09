@@ -17,8 +17,7 @@ export const useFormulaStore = defineStore('formula', () => {
   const commandsMap = ref<Record<PlaygroundMode, CommandItem[]>>({
     '2d': [{ id: 'init_2d', expression: 'sin(x)', color: '#0ea5e9', visible: true }],
     '3d': [{ id: 'init_3d', expression: 'z = sin(x)*cos(y)', color: '#f43f5e', visible: true }],
-    'geometry': [{ id: 'init_geom1', expression: 'A=(-2,0)', color: '#8b5cf6', visible: true }],
-    'mixed': []
+    'geometry': [{ id: 'init_geom1', expression: 'A=(-2,0)', color: '#8b5cf6', visible: true }]
   });
   
   const activeMode = ref<PlaygroundMode>('2d');

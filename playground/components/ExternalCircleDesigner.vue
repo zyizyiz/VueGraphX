@@ -1,5 +1,5 @@
 <template>
-  <div v-if="activeMode === 'geometry' || activeMode === 'mixed'" data-designer-ui="true" class="pointer-events-none absolute inset-0 z-30">
+  <div v-if="activeMode === 'geometry'" data-designer-ui="true" class="pointer-events-none absolute inset-0 z-30">
     <div data-designer-ui="true" class="pointer-events-auto absolute left-4 top-4 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
       <div
         draggable="true"

@@ -129,7 +129,7 @@ export function useCircleDesigner(
   }, { immediate: true });
 
   watch(() => getActiveMode(), (mode) => {
-    if (mode !== 'geometry' && mode !== 'mixed') {
+    if (mode !== 'geometry') {
       capabilitySnapshot.value = { selection: null, capabilities: [] };
     }
   });

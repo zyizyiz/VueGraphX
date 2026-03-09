@@ -33,7 +33,7 @@
       <aside class="w-80 sm:w-96 bg-white border-r border-slate-200 shadow-[2px_0_8px_rgba(0,0,0,0.02)] flex flex-col z-10 shrink-0 h-full">
         
         <!-- 指令多行表单流列表 -->
-        <div v-if="store.activeMode !== 'mixed'" class="flex-1 overflow-y-auto overflow-x-hidden p-2">
+        <div class="flex-1 overflow-y-auto overflow-x-hidden p-2">
           <div 
             v-for="(cmd, index) in store.commands" :key="cmd.id"
             class="group relative border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors"
@@ -94,20 +94,8 @@
           </div>
         </div>
 
-        <MixedModePanel
-          v-else
-          :rotation-x="mixedRotationX"
-          :rotation-y="mixedRotationY"
-          :rotation-z="mixedRotationZ"
-          @update:rotation-x="mixedRotationX = $event"
-          @update:rotation-y="mixedRotationY = $event"
-          @update:rotation-z="mixedRotationZ = $event"
-          @reset-cube="mixedScene.resetCube()"
-          @reset-view="mixedScene.resetView()"
-        />
-
         <!-- Demo 示例区（多卡片可切换） -->
-        <div v-if="store.activeMode !== 'mixed'" class="border-t border-slate-100 bg-slate-50/80 shrink-0">
+        <div class="border-t border-slate-100 bg-slate-50/80 shrink-0">
           <div class="px-4 pt-3 pb-1 flex items-center justify-between">
             <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">📚 示例场景</span>
             <span class="text-xs text-slate-400">点击卡片一键载入</span>
@@ -138,8 +126,8 @@
         @drop="onDrop"
       >
         <div id="vuegraphx-mount" class="w-full h-full jxgbox" ref="graphContainerRef"></div>
-        <ExternalCircleDesigner v-if="store.activeMode === 'geometry' || store.activeMode === 'mixed'" :engine="engineRef" :active-mode="store.activeMode" />
-        <ExternalCubeDesigner v-if="store.activeMode !== 'mixed'" :engine="engineRef" :active-mode="store.activeMode as EngineMode" />
+        <ExternalCircleDesigner v-if="store.activeMode === 'geometry'" :engine="engineRef" :active-mode="store.activeMode" />
+        <ExternalCubeDesigner :engine="engineRef" :active-mode="store.activeMode as EngineMode" />
       </main>
     </div>
   </div>
@@ -153,8 +141,6 @@ import { GraphXEngine, type EngineMode } from 'vuegraphx';
 import { useFormulaStore, type CommandItem } from './stores/formula';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
-import MixedModePanel from './components/MixedModePanel.vue';
-import { useMixedModeScene } from './composables/useMixedModeScene';
 import { registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 
@@ -176,8 +162,7 @@ const onDragOver = (e: DragEvent) => {
 const availableModes: {id: PlaygroundMode, label: string, icon: string}[] = [
   { id: '2d', label: '二维画板', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>' },
   { id: '3d', label: '3D计算器', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' },
-  { id: 'geometry', label: '几何区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>' },
-  { id: 'mixed', label: '混合区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h7v7H4z"></path><path d="M13 13h7v7h-7z"></path><path d="M13 4l7 7"></path><path d="M4 20l7-7"></path></svg>' }
+  { id: 'geometry', label: '几何区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>' }
 ];
 
 // ===== 各模式的多 Demo 示例库 =====
@@ -188,7 +173,7 @@ interface DemoItem {
   commands: (string | { expr: string, options?: any })[];
 }
 
-const allDemos: Record<Exclude<PlaygroundMode, 'mixed'>, DemoItem[]> = {
+const allDemos: Record<PlaygroundMode, DemoItem[]> = {
   '2d': [
     {
       emoji: '🌊',
@@ -324,16 +309,9 @@ const graphContainerRef = ref<HTMLElement | null>(null);
 const activeDemo = ref<number>(-1);
 
 const engineRef = shallowRef<GraphXEngine | null>(null);
-const mixedScene = useMixedModeScene(
-  () => engineRef.value,
-  () => store.activeMode === 'mixed'
-);
-const mixedRotationX = mixedScene.rotationX;
-const mixedRotationY = mixedScene.rotationY;
-const mixedRotationZ = mixedScene.rotationZ;
 
 // 当前模式的 Demo 列表
-const currentDemos = computed(() => store.activeMode === 'mixed' ? [] : allDemos[store.activeMode]);
+const currentDemos = computed(() => allDemos[store.activeMode]);
 
 // LaTeX 实时渲染预览（支持剥离首尾常见的 $ 或者 $$ 包裹符号）
 const renderLatexPreview = (expr: string): string => {
@@ -396,13 +374,7 @@ onMounted(() => {
   if (graphContainerRef.value) {
     engineRef.value = new GraphXEngine('vuegraphx-mount', getBoardOptionsForCurrentMode(store.activeMode));
     registerPlaygroundShapes(engineRef.value);
-    
-    if (store.activeMode !== 'mixed') {
-      syncAllToEngine();
-    } else {
-      mixedScene.rebuildScene();
-    }
-    
+    syncAllToEngine();
     startResizeObserver();
   }
 });
@@ -426,11 +398,7 @@ const switchMode = async (mode: PlaygroundMode) => {
   if (engineRef.value) {
     engineRef.value.setMode(getEngineModeForPlayground(mode), getBoardOptionsForCurrentMode(mode));
     await nextTick();
-    if (mode !== 'mixed') {
-      syncAllToEngine();
-    } else {
-      mixedScene.rebuildScene();
-    }
+    syncAllToEngine();
     startResizeObserver();
   }
 };
@@ -466,18 +434,12 @@ const removeLine = (id: string) => {
 };
 
 const clearAll = () => {
-  if (store.activeMode === 'mixed') {
-    mixedScene.resetCube();
-    mixedScene.resetView();
-    return;
-  }
   store.clearCommands();
   if (engineRef.value) engineRef.value.clearBoard();
   activeDemo.value = -1;
 };
 
 const syncAllToEngine = () => {
-  if (store.activeMode === 'mixed') return;
   if (engineRef.value) engineRef.value.clearVariables();
   store.commands.forEach(cmd => executeSingle(cmd.id));
   // 批量创建图元后 JSXGraph 不会自动重绘，必须手动触发
@@ -486,7 +448,6 @@ const syncAllToEngine = () => {
 
 /** 加载点击的 Demo 卡片 */
 const loadSelectedDemo = (idx: number) => {
-  if (store.activeMode === 'mixed') return;
   const demo = currentDemos.value[idx];
   if (!demo) return;
   activeDemo.value = idx;
