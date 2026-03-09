@@ -51,6 +51,27 @@
         <span v-if="isAnyTrackPlaying" class="text-[10px] text-indigo-500 font-medium">动画运行中</span>
       </div>
 
+      <div class="mb-4">
+        <button
+          @click="runCapability('toggleManualRotation')"
+          class="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold transition-all duration-200 shadow-sm"
+          :class="fastState.isManualRotating 
+            ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-amber-200' 
+            : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+          "
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" :class="fastState.isManualRotating ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          {{ fastState.isManualRotating ? '正在手动旋转(点击关闭)' : '开启 3D 手动旋转' }}
+        </button>
+        <p v-if="fastState.isManualRotating" class="mt-2 text-[10px] text-center text-amber-600 font-bold bg-amber-50 py-1 rounded">
+          请在画布上拖拽立方体进行翻转
+        </p>
+      </div>
+
       <AnimationTracksPanel
         v-if="fastState.tracks.length > 0"
         :tracks="fastState.tracks"
@@ -64,6 +85,7 @@
         @toggle-loop="toggleTrackLoop"
         @toggle-yoyo="toggleTrackYoyo"
       />
+
     </div>
   </div>
 </template>
@@ -86,6 +108,7 @@ const {
   isAnyTrackPlaying,
   createCube,
   createGeometrySolid,
+  runCapability,
   onDragStart,
   setTrackProgress,
   playTrackForward,

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script type="text/javascript" src="https://jsxgraph.uni-bayreuth.de/distrib/jsxgraphcore.js"></script>
+</head>
+<body>
+<div id="box" class="jxgbox" style="width:500px; height:500px;"></div>
+<script>
+  var board = JXG.JSXGraph.initBoard('box', {boundingbox: [-5, 5, 5, -5], axis:true});
+  var p1 = board.create('polygon', [[0,0], [2,0], [2,2], [0,2]], {fillColor:'blue'});
+  var p2 = board.create('polygon', [[1,1], [3,1], [3,3], [1,3]], {fillColor:'red', layer: 0});
+  p1.setAttribute({layer: 9}); 
+</script>
+</body>
+</html>

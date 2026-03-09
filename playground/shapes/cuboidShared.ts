@@ -8,6 +8,7 @@ import {
   rotatePointAroundY,
   type GraphShapeApi,
   type GraphSolid2DScene,
+  type GraphSolid2DToolbarState,
   type GraphSolidTopology,
   type GraphSolidPoint2D,
   type GraphSolidPoint3D,
@@ -92,16 +93,24 @@ export const getCuboidFaceVertices3D = (
   edgeSize: number,
   unfoldProgress: number,
   rotateProgress: number,
-  faceId: CuboidFaceId
+  faceId: CuboidFaceId,
+  manualRotateX: number = 0,
+  manualRotateY: number = 0
 ): Array<[number, number, number]> => {
   const unfold = clampSolidProgress(unfoldProgress);
-  const rotateAngle = rotateProgress * Math.PI * 2;
+  const trackRotateY = rotateProgress * Math.PI * 2;
   const face = getCuboidFaceMap(edgeSize)[faceId];
 
   return face.folded.vertices.map((foldedPoint, index) => {
     const netPoint = toNetPlanePoint3D(face.net.vertices[index] ?? face.net.vertices[0], edgeSize);
     const unfoldedPoint = lerpPoint3D(foldedPoint, netPoint, unfold);
-    return toPoint3DTuple(rotatePointAroundY(unfoldedPoint, rotateAngle));
+    
+    // 旋转顺序：轨道旋转(Y) -> 手动偏航(Y) -> 手动俯仰(X)
+    const afterTrackY = rotatePointAroundY(unfoldedPoint, trackRotateY);
+    const afterManualY = rotatePointAroundY(afterTrackY, manualRotateY);
+    const fullyRotated = rotatePointAroundX(afterManualY, manualRotateX);
+    
+    return toPoint3DTuple(fullyRotated);
   });
 };
 
@@ -166,25 +175,25 @@ const faceNormals: Record<CuboidFaceId, [number, number, number]> = {
 };
 
 // 用于求三维法向量的光照工具函数
-const getLighting = (faceId: CuboidFaceId, rotateAngle: number): number => {
+const getLighting = (faceId: CuboidFaceId, rotateAngleY: number, rotateAngleX: number = 0): number => {
   const normal = faceNormals[faceId];
   
-  // 法线跟随模型做同样视角的旋转绕 Y 轴
-  const rotatedNormal = rotatePointAroundY(
+  // 法线跟随模型做同样视角的旋转。注意顺序要与顶点一致：Y轴 -> X轴
+  const afterY = rotatePointAroundY(
     { x: normal[0], y: normal[1], z: normal[2] },
-    rotateAngle
+    rotateAngleY
   );
+  const fullyRotatedNormal = rotatePointAroundX(afterY, rotateAngleX);
   
   // 虚拟阳光在左前方上面。设定 x(向左), y(向上), z(向前)
-  // 原色调特点：Top最亮(Y正), Left次之(X负), Front中等(Z正), Right偏暗(X正), Bottom最暗(Y负)
   let lx = -0.8, ly = 1.2, lz = 0.5;
   const llen = Math.sqrt(lx * lx + ly * ly + lz * lz);
   lx /= llen; ly /= llen; lz /= llen;
   
   // 表面法线跟光线点集作为亮度反射系数。向光为正，背光为负
-  const nx = rotatedNormal.x;
-  const ny = rotatedNormal.y;
-  const nz = rotatedNormal.z;
+  const nx = fullyRotatedNormal.x;
+  const ny = fullyRotatedNormal.y;
+  const nz = fullyRotatedNormal.z;
   
   return nx * lx + ny * ly + nz * lz;
 };
@@ -272,6 +281,8 @@ export const getCuboidFoldLikeTransformedFaceVertices2D = (options: {
   unfoldProgress: number;
   rotateProgress?: number;
   explodeProgress?: number;
+  manualRotateX?: number;
+  manualRotateY?: number;
   faceId: CuboidFaceId;
   patchOrder?: CuboidFaceId[];
   anchor?: GraphSolidPoint2D;
@@ -281,6 +292,8 @@ export const getCuboidFoldLikeTransformedFaceVertices2D = (options: {
     unfoldProgress,
     rotateProgress = 0,
     explodeProgress = 0,
+    manualRotateX = 0,
+    manualRotateY = 0,
     faceId,
     patchOrder = ['back', 'left', 'bottom', 'front', 'right', 'top'],
     anchor = { x: 0, y: 0 }
@@ -297,10 +310,10 @@ export const getCuboidFoldLikeTransformedFaceVertices2D = (options: {
 
   patchOrder.forEach((currentFaceId) => {
     // 100% 依赖最本源的带旋转支持的 3D 原点阵，摒弃一切 Proxy Delta 补丁！
-    const points3D = getCuboidFaceVertices3D(edgeSize, unfoldProgress, rotateProgress, currentFaceId);
+    const points3D = getCuboidFaceVertices3D(edgeSize, unfoldProgress, rotateProgress, currentFaceId, manualRotateX, manualRotateY);
     
     // 我们直接基于面ID和当前整个旋转角度施加光照模型，彻底规避点序列方向错误带来的阴阳乱相
-    const lighting = getLighting(currentFaceId, rotateAngle);
+    const lighting = getLighting(currentFaceId, rotateAngle + manualRotateY, manualRotateX);
     
     let avgDepthZ = 0;
     const projectedPoints = points3D.map((point) => {
@@ -335,7 +348,12 @@ export const getCuboidFoldLikeTransformedFaceVertices2D = (options: {
   return transformedOutlines.get(faceId) ?? { points: [], depthZ: 0 };
 };
 
-export const createCuboidFoldLikeScene2D = <StateType>(options: {
+export interface CuboidSceneState extends GraphSolid2DToolbarState {
+  manualRotateX?: number;
+  manualRotateY?: number;
+}
+
+export interface CreateCuboidFoldLikeScene2DOptions<StateType extends CuboidSceneState> {
   api: GraphShapeApi<StateType>;
   anchor: any;
   edgeSize: number;
@@ -343,7 +361,11 @@ export const createCuboidFoldLikeScene2D = <StateType>(options: {
   getRotateProgress?: () => number;
   getExplodeProgress?: () => number;
   patchOrder?: CuboidFaceId[];
-}): GraphSolid2DScene => {
+}
+
+export const createCuboidFoldLikeScene2D = <StateType extends CuboidSceneState>(
+  options: CreateCuboidFoldLikeScene2DOptions<StateType>
+): GraphSolid2DScene => {
   const {
     api,
     anchor,
@@ -360,6 +382,8 @@ export const createCuboidFoldLikeScene2D = <StateType>(options: {
     unfoldProgress: getUnfoldProgress(),
     rotateProgress: getRotateProgress(),
     explodeProgress: getExplodeProgress(),
+    manualRotateX: api.state.manualRotateX ? degToRad(api.state.manualRotateX) : 0,
+    manualRotateY: api.state.manualRotateY ? degToRad(api.state.manualRotateY) : 0,
     faceId,
     patchOrder,
     anchor: getAnchorPoint()

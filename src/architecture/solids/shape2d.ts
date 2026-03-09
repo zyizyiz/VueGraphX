@@ -73,6 +73,8 @@ export interface CreateSolid2DShapeDefinitionOptions<Payload, StateType extends 
   toolbarPadding?: GraphViewportPadding;
   createEntity?: (api: GraphShapeApi<StateType>, topology: GraphSolidTopology) => Record<string, unknown>;
   createFromDrop?: (context: GraphShapeContext, event: DragEvent) => Payload | null;
+  setup?: (api: GraphShapeApi<StateType>) => void | (() => void);
+  getCapabilityTarget?: (api: GraphShapeApi<StateType>) => Record<string, unknown>;
 }
 
 const toTuplePoints = (points: GraphSolidPoint2D[]): Array<[number, number]> => points.map((point) => [point.x, point.y]);
@@ -199,6 +201,7 @@ export const createSolid2DShapeDefinition = <Payload = unknown, StateType extend
     let dragOffset: [number, number] | null = null;
     let scene: GraphSolid2DScene | null = null;
     let topology: GraphSolidTopology | null = null;
+    let cleanup: void | (() => void) = undefined;
 
     return {
       entityType: options.entityType ?? options.type,
@@ -286,6 +289,11 @@ export const createSolid2DShapeDefinition = <Payload = unknown, StateType extend
           options.toolbarOffsetY ?? 22,
           options.toolbarPadding ?? { left: 160, right: 160, top: 16, bottom: 90 }
         );
+
+        if (options.setup) {
+          cleanup = options.setup(api);
+        }
+
         api.board.update();
       },
       onSelectionChange(api: GraphShapeApi<StateType>) {
@@ -312,6 +320,9 @@ export const createSolid2DShapeDefinition = <Payload = unknown, StateType extend
         options.tracks.forEach((track) => {
           api.removeAnimationTrack(track.id);
         });
+        if (typeof cleanup === 'function') {
+          cleanup();
+        }
       },
       getCapabilityTarget(api: GraphShapeApi<StateType>): ShapeCapabilityTarget | null {
         if (!api.selected || !topology) return null;
@@ -340,7 +351,8 @@ export const createSolid2DShapeDefinition = <Payload = unknown, StateType extend
           },
           animations: animationCapabilityTarget.animations,
           animation: animationCapabilityTarget.animation,
-          remove: () => api.remove()
+          remove: () => api.remove(),
+          ...(options.getCapabilityTarget ? options.getCapabilityTarget(api) : {})
         };
       }
     };

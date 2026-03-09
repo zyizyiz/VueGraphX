@@ -21,6 +21,7 @@ interface SolidPanelState {
 interface SolidPanelUIState {
   tracks: DesignerAnimationTrackState[];
   toolbarStyle: Record<string, string>;
+  isManualRotating: boolean;
 }
 
 interface GeometrySolidSpec {
@@ -71,6 +72,7 @@ export function useCubeDesigner(
 
   const fastState = shallowRef<SolidPanelUIState>({
     tracks: [],
+    isManualRotating: false,
     toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' }
   });
 
@@ -81,10 +83,24 @@ export function useCubeDesigner(
 
   let unsubscribeCapabilities: (() => void) | null = null;
 
-  const runCapability = (capabilityId: string, payload?: unknown) => {
+  const runCapability = (id: string, ...args: any[]) => {
     const engine = getEngine();
-    if (!engine) return false;
-    return engine.executeCapability(capabilityId, payload);
+    if (!engine || !capabilitySnapshot.value?.selection) return false;
+
+    // 先尝试通过标准的 engine.executeCapability 触发动画等内置能力
+    const success = engine.executeCapability(id, args.length > 0 ? args[0] : undefined);
+    
+    // 如果是自定义的 capability (如 toggleManualRotation)，则通过外部暴露的实例方法手动触发
+    // 在 shape2d.ts 中，这些是被合并到 selection 快照顶层的
+    const selection = capabilitySnapshot.value.selection as any;
+    if (!success && selection[id] && typeof selection[id] === 'function') {
+      selection[id](...args);
+      engine.notifyCapabilityChange();
+      return true;
+    }
+    
+    engine.notifyCapabilityChange();
+    return success;
   };
 
   const animationTracksState = useAnimationCapabilityTracks(
@@ -118,6 +134,7 @@ export function useCubeDesigner(
         };
         fastState.value = {
           tracks: animationTracksState.tracks.value,
+          isManualRotating: !!(snapshot.selection?.entity as any)?.isManualRotating,
           toolbarStyle: selectedType && snapshot.selection?.ui?.toolbarStyle
             ? snapshot.selection.ui.toolbarStyle as Record<string, string>
             : { left: '50%', top: 'calc(100% - 5rem)' }
@@ -162,6 +179,7 @@ export function useCubeDesigner(
 
     createCube,
     createGeometrySolid,
+    runCapability,
     onDragStart,
     setTrackProgress: animationTracksState.setTrackProgress,
     playTrackForward: animationTracksState.playTrackForward,

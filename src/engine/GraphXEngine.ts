@@ -117,6 +117,7 @@ export class GraphXEngine {
     return {
       selection: target
         ? {
+            ...target,
             entityType: target.entityType,
             entityId: target.entityId,
             entity: target.entity,
