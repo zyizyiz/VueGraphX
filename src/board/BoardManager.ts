@@ -18,7 +18,13 @@ export class BoardManager {
   constructor(containerId: string, options?: GraphXOptions) {
     this.containerId = containerId;
     this.globalOptions = options;
+    this.applyGlobalJSXGraphOptions();
     this.injectCoreStyles();
+  }
+
+  private applyGlobalJSXGraphOptions(): void {
+    // 全局禁用高亮
+    JXG.Options.elements.highlight = false;
   }
 
   private injectCoreStyles(): void {
@@ -28,6 +34,7 @@ export class BoardManager {
     styleEl.id = styleId;
     styleEl.innerHTML = `
       .jxgbox { position: relative; overflow: hidden; touch-action: none; }
+      .jxgbox :focus { outline: none !important; }
       .JXGtext { position: absolute; white-space: nowrap; pointer-events: none; }
       .JXGimage { position: absolute; pointer-events: none; }
     `;
@@ -43,12 +50,20 @@ export class BoardManager {
       this.view3d = null;
     }
 
+    const dragEnabled = this.globalOptions?.drag?.enabled !== false;
+    const defaultMoveTarget = dragEnabled ? document : null;
+
     const defaultOptions = {
       boundingbox: [-10, 10, 10, -10] as [number, number, number, number],
       axis: true,
       showNavigation: true,
       keepaspectratio: true,
       showCopyright: false,
+      moveTarget: defaultMoveTarget,
+      selection: {
+        enabled: false,
+        needShift: true
+      }
     };
 
     if (this.mode === '3d') {

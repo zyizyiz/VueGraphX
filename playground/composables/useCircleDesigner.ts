@@ -11,6 +11,8 @@ interface CircleModel {
   intuitive: unknown | null;
   cutDraft: unknown | null;
   cutConfirmed?: boolean;
+  isDragging?: boolean;
+  isRadiusDragging?: boolean;
 }
 
 interface CirclePanelState {
@@ -111,7 +113,7 @@ export function useCircleDesigner(
           showColorPanel: !!styleCapability?.active,
           activeTool: getActiveTool(),
           selectedColor: typeof styleCapability?.meta?.selectedColor === 'string' ? styleCapability.meta.selectedColor : '#0ea5e9',
-          isRadiusDragging: false
+          isRadiusDragging: !!selected?.isDragging || !!selected?.isRadiusDragging
         };
 
         fastState.value = {

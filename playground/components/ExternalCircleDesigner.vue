@@ -1,6 +1,10 @@
 <template>
   <div v-if="activeMode === 'geometry'" data-designer-ui="true" class="pointer-events-none absolute inset-0 z-30">
-    <div data-designer-ui="true" class="pointer-events-auto absolute left-4 top-4 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+    <div
+      v-if="showDragSource"
+      data-designer-ui="true"
+      class="pointer-events-auto absolute left-4 top-4 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur"
+    >
       <div
         draggable="true"
         @dragstart="onDragStart"
@@ -12,7 +16,7 @@
     </div>
 
     <div
-      v-if="selected"
+      v-if="selected && !state.isRadiusDragging"
       class="pointer-events-auto absolute -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur w-max max-w-[95vw]"
       :style="fastState.toolbarStyle"
       data-designer-ui="true"
@@ -71,7 +75,7 @@
     </div>
 
     <div
-      v-if="selected && state.activeTool === 'size'"
+      v-if="selected && state.activeTool === 'size' && !state.isRadiusDragging"
       class="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-md bg-white/90 p-1 shadow-md backdrop-blur border border-sky-200 flex items-center gap-1 z-40"
       :style="fastState.sizeInputStyle"
       data-designer-ui="true"
@@ -111,10 +115,13 @@ import type { PlaygroundMode } from '../types/mode';
 import { useCircleDesigner } from '../composables/useCircleDesigner';
 import AnimationTracksPanel from './AnimationTracksPanel.vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   engine: GraphXEngine | null;
   activeMode: PlaygroundMode;
-}>();
+  showDragSource?: boolean;
+}>(), {
+  showDragSource: true
+});
 
 const palette = ['#0ea5e9', '#ef4444', '#f59e0b', '#22c55e', '#8b5cf6', '#334155', '#f97316', '#14b8a6'];
 

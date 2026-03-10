@@ -33,7 +33,7 @@
       <aside class="w-80 sm:w-96 bg-white border-r border-slate-200 shadow-[2px_0_8px_rgba(0,0,0,0.02)] flex flex-col z-10 shrink-0 h-full">
         
         <!-- 指令多行表单流列表 -->
-        <div class="flex-1 overflow-y-auto overflow-x-hidden p-2">
+        <div v-if="store.activeMode !== 'dual-layer'" class="flex-1 overflow-y-auto overflow-x-hidden p-2">
           <div 
             v-for="(cmd, index) in store.commands" :key="cmd.id"
             class="group relative border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors"
@@ -94,6 +94,12 @@
           </div>
         </div>
 
+        <DualLayerPanel 
+          v-else-if="store.activeMode === 'dual-layer'"
+          @add-shape="handleAddDualLayerShape"
+        />
+
+
         <!-- Demo 示例区（多卡片可切换） -->
         <div class="border-t border-slate-100 bg-slate-50/80 shrink-0">
           <div class="px-4 pt-3 pb-1 flex items-center justify-between">
@@ -125,9 +131,66 @@
         @dragover="onDragOver"
         @drop="onDrop"
       >
-        <div id="vuegraphx-mount" class="w-full h-full jxgbox" ref="graphContainerRef"></div>
+        <div class="h-full w-full relative" id="dual-layer-container">
+          <!-- 底层 3D 层 -->
+          <div
+            id="vuegraphx-mount"
+            :class="[
+              'absolute inset-0 z-[5] jxgbox',
+              store.activeMode === 'dual-layer' ? 'dual-layer-pass-through' : ''
+            ]"
+            ref="graphContainerRef"
+          ></div>
+          <!-- 顶层 2D 层：仅在 dual-layer 模式下显示 -->
+          <div 
+            v-if="store.activeMode === 'dual-layer'" 
+            id="vuegraphx-mount-2d" 
+            class="absolute inset-0 jxgbox z-10 pointer-events-none" 
+            ref="graphContainerRef2d"
+          ></div>
+          <div
+            v-if="store.activeMode === 'dual-layer'"
+            class="pointer-events-auto absolute inset-x-4 bottom-4 z-0 mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur"
+            data-pass-through-ui="true"
+          >
+            <button
+              type="button"
+              class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
+              @click="dualLayerPassClicks += 1"
+            >
+              穿透按钮 {{ dualLayerPassClicks }}
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+              @click="dualLayerPassEnabled = !dualLayerPassEnabled"
+            >
+              {{ dualLayerPassEnabled ? '已启用透传标记' : '启用透传标记' }}
+            </button>
+            <input
+              v-model="dualLayerPassText"
+              type="text"
+              class="min-w-[180px] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 outline-none transition-colors focus:border-sky-400"
+              placeholder="在这里输入，验证顶层 2D 和 3D 不会吞掉事件"
+            />
+            <label class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+              <input v-model="dualLayerPassChecked" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+              复选框可点击
+            </label>
+            <span class="rounded-lg bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700">
+              状态：{{ dualLayerPassEnabled ? '透传正常' : '等待点击' }} / {{ dualLayerPassChecked ? '勾选中' : '未勾选' }} / {{ dualLayerPassText || '未输入' }}
+            </span>
+          </div>
+        </div>
         <ExternalCircleDesigner v-if="store.activeMode === 'geometry'" :engine="engineRef" :active-mode="store.activeMode" />
         <ExternalCubeDesigner :engine="engineRef" :active-mode="store.activeMode as EngineMode" />
+        <component
+          v-if="store.activeMode === 'dual-layer'"
+          :is="ExternalCircleDesigner"
+          :engine="engineRef2d"
+          :active-mode="'geometry'"
+          :show-drag-source="false"
+        />
       </main>
     </div>
   </div>
@@ -141,8 +204,9 @@ import { GraphXEngine, type EngineMode } from 'vuegraphx';
 import { useFormulaStore, type CommandItem } from './stores/formula';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
-import { registerPlaygroundShapes } from './shapes';
-import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
+import DualLayerPanel from './components/DualLayerPanel.vue';
+import { registerDualLayerBottomShapes, registerDualLayerTopShapes, registerPlaygroundShapes } from './shapes';
+import { getBoardOptionsForPlaygroundMode, type PlaygroundMode } from './types/mode';
 
 const onDrop = (e: DragEvent) => {
   e.preventDefault();
@@ -162,7 +226,8 @@ const onDragOver = (e: DragEvent) => {
 const availableModes: {id: PlaygroundMode, label: string, icon: string}[] = [
   { id: '2d', label: '二维画板', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>' },
   { id: '3d', label: '3D计算器', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' },
-  { id: 'geometry', label: '几何区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>' }
+  { id: 'geometry', label: '几何区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>' },
+  { id: 'dual-layer', label: '双层区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>' }
 ];
 
 // ===== 各模式的多 Demo 示例库 =====
@@ -301,7 +366,8 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       desc: '一条直线穿过两点，配合圆形演示',
       commands: ['A = (-3, -1)', 'B = (3, 1)', 'O = (0, 3)', 'R = (2, 3)', 'Line(A, B)', 'Circle(O, R)']
     },
-  ]
+  ],
+  'dual-layer': []
 };
 
 const store = useFormulaStore();
@@ -309,6 +375,12 @@ const graphContainerRef = ref<HTMLElement | null>(null);
 const activeDemo = ref<number>(-1);
 
 const engineRef = shallowRef<GraphXEngine | null>(null);
+const engineRef2d = shallowRef<GraphXEngine | null>(null);
+const graphContainerRef2d = ref<HTMLElement | null>(null);
+const dualLayerPassClicks = ref(0);
+const dualLayerPassText = ref('');
+const dualLayerPassEnabled = ref(false);
+const dualLayerPassChecked = ref(false);
 
 // 当前模式的 Demo 列表
 const currentDemos = computed(() => allDemos[store.activeMode]);
@@ -362,28 +434,53 @@ const startResizeObserver = () => {
     if (modeResizeRaf !== null) cancelAnimationFrame(modeResizeRaf);
     modeResizeRaf = requestAnimationFrame(() => {
       modeResizeRaf = null;
-      if (engineRef.value) {
-        engineRef.value.resize();
-      }
+      if (engineRef.value) engineRef.value.resize();
+      if (engineRef2d.value) engineRef2d.value.resize();
     });
   });
   modeResizeObserver.observe(graphContainerRef.value);
 };
 
 onMounted(() => {
+  initEngines();
+});
+
+const initEngines = async () => {
   if (graphContainerRef.value) {
     engineRef.value = new GraphXEngine('vuegraphx-mount', getBoardOptionsForCurrentMode(store.activeMode));
-    registerPlaygroundShapes(engineRef.value);
+    if (store.activeMode === 'dual-layer') {
+      engineRef.value.setMode('3d');
+    }
+    if (store.activeMode === 'dual-layer') {
+      registerDualLayerBottomShapes(engineRef.value);
+    } else {
+      registerPlaygroundShapes(engineRef.value);
+    }
+    
+    if (store.activeMode === 'dual-layer' && graphContainerRef2d.value) {
+      engineRef2d.value = new GraphXEngine('vuegraphx-mount-2d', {
+        axis: false,
+        showNavigation: false,
+        showCopyright: false
+      });
+      engineRef2d.value.setMode('2d');
+      registerDualLayerTopShapes(engineRef2d.value);
+    }
+    
     syncAllToEngine();
     startResizeObserver();
   }
-});
+};
 
 onUnmounted(() => {
   stopResizeObserver();
   if (engineRef.value) {
     engineRef.value.destroy();
     engineRef.value = null;
+  }
+  if (engineRef2d.value) {
+    engineRef2d.value.destroy();
+    engineRef2d.value = null;
   }
 });
 
@@ -393,13 +490,24 @@ const switchMode = async (mode: PlaygroundMode) => {
   activeDemo.value = -1;
 
   stopResizeObserver();
-  await waitForUiPaint();
   
   if (engineRef.value) {
-    engineRef.value.setMode(getEngineModeForPlayground(mode), getBoardOptionsForCurrentMode(mode));
-    await nextTick();
-    syncAllToEngine();
-    startResizeObserver();
+    engineRef.value.destroy();
+    engineRef.value = null;
+  }
+  if (engineRef2d.value) {
+    engineRef2d.value.destroy();
+    engineRef2d.value = null;
+  }
+
+  await waitForUiPaint();
+  initEngines();
+};
+
+const handleAddDualLayerShape = (layer: '2d' | '3d', type: string) => {
+  const targetEngine = layer === '3d' ? engineRef.value : engineRef2d.value;
+  if (targetEngine) {
+    targetEngine.createShape(type, undefined, { select: false });
   }
 };
 
@@ -484,5 +592,36 @@ textarea::-webkit-scrollbar {
 .demo-card {
   min-width: 128px;
 }
-</style>
+#dual-layer-container .jxgbox {
+  position: absolute !important;
+  outline: none !important;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
 
+#dual-layer-container .jxgbox canvas {
+  will-change: contents;
+}
+
+#vuegraphx-mount.dual-layer-pass-through {
+  pointer-events: none;
+}
+
+#vuegraphx-mount.dual-layer-pass-through > svg {
+  pointer-events: none;
+}
+
+#vuegraphx-mount.dual-layer-pass-through > svg > * {
+  pointer-events: auto;
+}
+
+#vuegraphx-mount-2d > svg {
+  pointer-events: none;
+}
+
+#vuegraphx-mount-2d > svg > * {
+  pointer-events: auto;
+}
+
+</style>

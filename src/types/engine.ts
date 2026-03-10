@@ -35,6 +35,32 @@ export interface GraphXOptions {
   showCopyright?: boolean;
 
   /**
+   * JSXGraph 渲染器类型。
+   */
+  renderer?: 'svg' | 'canvas' | 'vml';
+
+  /**
+   * JSXGraph 拖拽 move 事件的监听目标。默认会在支持拖拽时使用 document。
+   */
+  moveTarget?: Document | HTMLElement | null;
+
+  /**
+   * JSXGraph 画板级拖拽开关。
+   */
+  drag?: {
+    enabled?: boolean;
+  };
+
+  /**
+   * JSXGraph 画板平移开关。双层区会关闭它，避免与图元自定义拖拽冲突。
+   */
+  pan?: {
+    enabled?: boolean;
+    needShift?: boolean;
+    needTwoFingers?: boolean;
+  };
+
+  /**
    * 3D 视图的布局与属性配置。仅在 3D 画板模式下生效。
    */
   view3D?: {

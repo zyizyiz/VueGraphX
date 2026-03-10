@@ -50,6 +50,7 @@ interface CircleState {
   showColorPanel: boolean;
   activeTool: ActiveToolType;
   selectedColor: string;
+  isDragging: boolean;
   isRadiusDragging: boolean;
   helpers: HelperLine[];
   intuitive: IntuitiveView | null;
@@ -85,6 +86,7 @@ const createBaseState = (isPiece: boolean): CircleState => ({
   showColorPanel: false,
   activeTool: 'none',
   selectedColor: '#0ea5e9',
+  isDragging: false,
   isRadiusDragging: false,
   helpers: [],
   intuitive: null,
@@ -102,6 +104,12 @@ const getRefs = (api: GraphShapeApi<CircleState>): CircleVisualRefs => {
     throw new Error('Circle shape refs are not initialized');
   }
   return api.state.refs;
+};
+
+const mergeRefs = (api: GraphShapeApi<CircleState>, patch: Partial<CircleVisualRefs>): CircleVisualRefs => {
+  const refs = { ...getRefs(api), ...patch };
+  api.setState({ refs });
+  return refs;
 };
 
 const getPulseTrack = (api: GraphShapeApi<CircleState>) => api.getAnimationTrack('pulse');
@@ -248,6 +256,54 @@ const updateToolbarPosition = (api: GraphShapeApi<CircleState>) => {
   api.scheduleUiChange();
 };
 
+const ensureCircleSelectionRefs = (api: GraphShapeApi<CircleState>): CircleVisualRefs => {
+  const refs = getRefs(api);
+  const patch: Partial<CircleVisualRefs> = {};
+  const centerX = () => refs.center.X();
+  const centerY = () => refs.center.Y();
+  const radius = () => (refs.radiusPoint ? refs.center.Dist(refs.radiusPoint) : 1);
+
+  if (!refs.pulsePoint) {
+    patch.pulsePoint = api.trackObject(api.board.create('point', [
+      () => centerX() + radius() * (1 + getPulseAmount(api) * 0.18),
+      () => centerY()
+    ], { visible: false }));
+  }
+
+  if (!refs.pulseCircle && !api.engine.getView3D()) {
+    const pulsePoint = patch.pulsePoint ?? refs.pulsePoint;
+    if (pulsePoint) {
+      patch.pulseCircle = createCircleVisual(api, refs.center, pulsePoint, centerX, centerY, () => radius() * (1 + getPulseAmount(api) * 0.18), {
+        visible: false,
+        strokeColor: '#38bdf8',
+        fillColor: '#38bdf8',
+        fillOpacity: 0,
+        strokeOpacity: 0,
+        strokeWidth: 1.5,
+        dash: 2,
+        highlight: false,
+        fixed: true,
+        hasInnerPoints: false
+      }) ?? undefined;
+    }
+  }
+
+  if (!refs.bbox) {
+    const p1 = api.trackObject(api.board.create('point', [() => centerX() - radius(), () => centerY() + radius()], { visible: false }));
+    const p2 = api.trackObject(api.board.create('point', [() => centerX() + radius(), () => centerY() + radius()], { visible: false }));
+    const p3 = api.trackObject(api.board.create('point', [() => centerX() + radius(), () => centerY() - radius()], { visible: false }));
+    const p4 = api.trackObject(api.board.create('point', [() => centerX() - radius(), () => centerY() - radius()], { visible: false }));
+    patch.bbox = api.trackObject(api.board.create('polygon', [p1, p2, p3, p4], {
+      fillOpacity: 0,
+      borders: { strokeColor: '#0ea5e9', strokeWidth: 1, visible: false },
+      vertices: { visible: false },
+      hasInnerPoints: false
+    }));
+  }
+
+  return Object.keys(patch).length > 0 ? mergeRefs(api, patch) : refs;
+};
+
 const attachInteractiveHandlers = (api: GraphShapeApi<CircleState>) => {
   const { circle, center, radiusPoint, radiusLine } = getRefs(api);
 
@@ -270,20 +326,32 @@ const attachInteractiveHandlers = (api: GraphShapeApi<CircleState>) => {
     Promise.resolve().then(() => api.select());
   });
 
+  api.bindDrag(circle, {
+    selectOnStart: true,
+    onStart: () => {
+      api.setState({ isDragging: true });
+    },
+    onEnd: () => {
+      api.setState({ isDragging: false });
+      updateToolbarPosition(api);
+      api.scheduleUiChange();
+    }
+  });
+
   if (radiusPoint) {
     api.bindDrag(radiusPoint, {
       selectOnStart: true,
       onStart: () => {
-        api.setState({ isRadiusDragging: true });
-      },
-      onMove: () => {
-        api.setState({ radiusValue: parseFloat(center.Dist(radiusPoint).toFixed(2)) });
-        api.scheduleUiChange();
+        api.setState({ isDragging: true, isRadiusDragging: true });
       },
       onEnd: () => {
-        api.setState({ radiusValue: center.Dist(radiusPoint) });
+        api.setState({
+          isDragging: false,
+          radiusValue: parseFloat(center.Dist(radiusPoint).toFixed(2)),
+          isRadiusDragging: false
+        });
+        updateToolbarPosition(api);
         api.scheduleUiChange();
-        setTimeout(() => api.setState({ isRadiusDragging: false }), 0);
       }
     });
   }
@@ -339,58 +407,20 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       }
     });
 
-    const p1 = api.trackObject(api.board.create('point', [() => centerX() - radius(), () => centerY() + radius()], { visible: false }));
-    const p2 = api.trackObject(api.board.create('point', [() => centerX() + radius(), () => centerY() + radius()], { visible: false }));
-    const p3 = api.trackObject(api.board.create('point', [() => centerX() + radius(), () => centerY() - radius()], { visible: false }));
-    const p4 = api.trackObject(api.board.create('point', [() => centerX() - radius(), () => centerY() - radius()], { visible: false }));
-    const pulsePoint = api.trackObject(api.board.create('point', [
-      () => centerX() + radius() * (1 + getPulseAmount(api) * 0.18),
-      () => centerY()
-    ], { visible: false }));
-    const pulseCircle = api.engine.getView3D()
-      ? undefined
-      : createCircleVisual(api, center, pulsePoint, centerX, centerY, () => radius() * (1 + getPulseAmount(api) * 0.18), {
-          visible: false,
-          strokeColor: '#38bdf8',
-          fillColor: '#38bdf8',
-          fillOpacity: 0,
-          strokeOpacity: 0,
-          strokeWidth: 1.5,
-          dash: 2,
-          highlight: false,
-          fixed: true,
-          hasInnerPoints: false
-        });
-    const bbox = api.trackObject(api.board.create('polygon', [p1, p2, p3, p4], {
-      fillOpacity: 0,
-      borders: { strokeColor: '#0ea5e9', strokeWidth: 1, visible: false },
-      vertices: { visible: false },
-      hasInnerPoints: false
-    }));
     const geometryGroup = api.createGroup({
       center,
       radiusPoint,
       circle,
-      pulsePoint,
-      pulseCircle,
-      radiusLine,
-      bbox,
-      bboxP1: p1,
-      bboxP2: p2,
-      bboxP3: p3,
-      bboxP4: p4
+      radiusLine
     }, { createNativeGroup: false });
-    geometryGroup.hide(['radiusPoint', 'radiusLine', 'pulsePoint', 'pulseCircle']);
+    geometryGroup.hide(['radiusPoint', 'radiusLine']);
 
     api.setState({
       refs: {
         circle: geometryGroup.getObject('circle') ?? circle,
         center: geometryGroup.getObject('center') ?? center,
         radiusPoint: geometryGroup.getObject('radiusPoint') ?? radiusPoint,
-        radiusLine: geometryGroup.getObject('radiusLine') ?? radiusLine,
-        bbox: geometryGroup.getObject('bbox') ?? bbox,
-        pulsePoint: geometryGroup.getObject('pulsePoint') ?? pulsePoint,
-        pulseCircle: geometryGroup.getObject('pulseCircle') ?? pulseCircle
+        radiusLine: geometryGroup.getObject('radiusLine') ?? radiusLine
       },
       radiusValue: 2
     });
@@ -400,7 +430,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     refreshCircleBoard(api);
   },
   onSelectionChange(api, selected) {
-    const refs = getRefs(api);
+    const refs = selected ? ensureCircleSelectionRefs(api) : getRefs(api);
     if (!selected) {
       closeIntuitive(api);
       refs.radiusPoint?.setAttribute({ visible: false });
@@ -421,7 +451,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     refreshCircleBoard(api);
   },
   onBoardUpdate(api) {
-    if (api.selected) updateToolbarPosition(api);
+    if (api.selected && !api.state.isDragging) updateToolbarPosition(api);
   },
   onBoardUp(api, event, isClickingObject) {
     if (!api.selected) return;
@@ -573,15 +603,16 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     };
 
     const toggleSizeMode = () => {
-      if (!refs.radiusPoint) return;
+      const ensuredRefs = ensureCircleSelectionRefs(api);
+      if (!ensuredRefs.radiusPoint) return;
       const isSizeTool = api.state.activeTool !== 'size';
       if (isSizeTool && api.state.intuitive) closeIntuitive(api);
 
-      refs.radiusPoint.setAttribute({ visible: isSizeTool });
-      refs.radiusLine?.setAttribute({ visible: isSizeTool });
-      refs.bbox?.borders.forEach((border: any) => border.setAttribute({ visible: isSizeTool }));
+      ensuredRefs.radiusPoint.setAttribute({ visible: isSizeTool });
+      ensuredRefs.radiusLine?.setAttribute({ visible: isSizeTool });
+      ensuredRefs.bbox?.borders.forEach((border: any) => border.setAttribute({ visible: isSizeTool }));
       if (isSizeTool) {
-        api.setState({ radiusValue: parseFloat(refs.center.Dist(refs.radiusPoint).toFixed(2)) });
+        api.setState({ radiusValue: parseFloat(ensuredRefs.center.Dist(ensuredRefs.radiusPoint).toFixed(2)) });
         api.scheduleUiChange();
       }
       api.setState({ showColorPanel: false, activeTool: isSizeTool ? 'size' : 'none' });
@@ -734,7 +765,14 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
     const target: ShapeCapabilityTarget = {
       entityType: api.entityType,
       entityId: api.id,
-      entity: { id: api.id, isPiece: api.state.isPiece, intuitive: api.state.intuitive, cutDraft: api.state.cutDraft },
+      entity: {
+        id: api.id,
+        isPiece: api.state.isPiece,
+        intuitive: api.state.intuitive,
+        cutDraft: api.state.cutDraft,
+        isDragging: api.state.isDragging,
+        isRadiusDragging: api.state.isRadiusDragging
+      },
       ui: {
         toolbarStyle: { ...api.state.toolbarStyle },
         sizeInputStyle: { ...api.state.sizeInputStyle }
@@ -858,7 +896,7 @@ const createCirclePieceComposition = (payload: CirclePiecePayload): GraphShapeCo
     }
   },
   onBoardUpdate(api) {
-    if (api.selected) updateToolbarPosition(api);
+    if (api.selected && !api.state.isDragging) updateToolbarPosition(api);
   },
   onDestroy() {},
   getCapabilityTarget(api) {
@@ -869,10 +907,10 @@ const createCirclePieceComposition = (payload: CirclePiecePayload): GraphShapeCo
 
 export const circleShapeDefinition = createComposedShapeDefinition<CirclePayload, CircleState>({
   type: 'circle',
-  supportedModes: ['2d', 'geometry', '3d'],
+  supportedModes: 'all',
   create(_context, payload) {
-    if (!payload || !Number.isFinite(payload.x) || !Number.isFinite(payload.y)) return null;
-    return createCircleComposition(payload);
+    const coords = payload || { x: 0, y: 0 };
+    return createCircleComposition(coords);
   },
   createFromDrop(context, event) {
     if (event.dataTransfer?.getData('shape') !== 'circle') return null;

@@ -33,6 +33,10 @@ export type {
 export type { GraphShapeContext, GraphShapeDefinition, GraphShapeInstance } from '../architecture/shapes/contracts';
 export type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
 
+export interface GraphCreateShapeOptions {
+  select?: boolean;
+}
+
 /**
  * 面向使用方的公共引擎门面，负责画板生命周期、指令渲染、图形注册与能力执行。
  */
@@ -47,6 +51,8 @@ export class GraphXEngine {
   private selectedShapeId: string | null = null;
   private isClickingObject = false;
   private capabilityListeners: GraphCapabilityListener[] = [];
+  private mutationBatchDepth = 0;
+  private pendingCapabilityNotification = false;
 
   /** 创建一个绑定到指定 DOM 容器 id 的引擎实例。containerId 指向目标 DOM 容器，该容器应当已经具备明确的宽高，options 会在初始化画板时透传给 JSXGraph。 */
   constructor(containerId: string, options?: GraphXOptions) {
@@ -150,62 +156,77 @@ export class GraphXEngine {
     return capability ? capability.execute(target, payload) : false;
   }
 
-  /** 根据已注册的图形类型创建一个实例。entityType 对应注册时 definition.type，payload 会透传给图形定义的 createShape；返回 true 表示创建成功，否则表示当前类型不存在、当前模式不可用或定义主动拒绝创建。 */
-  public createShape(entityType: string, payload?: unknown): boolean {
+  /** 根据已注册的图形类型创建一个实例。entityType 对应注册时 definition.type，payload 会透传给图形定义的 createShape；返回 true 表示创建成功，否则表示当前类型不存在、当前模式不可用或定义主动拒绝创建。options.select 默认为 true，可用于关闭创建后自动选中。 */
+  public createShape(entityType: string, payload?: unknown, options?: GraphCreateShapeOptions): boolean {
     const definition = this.shapeDefinitions.get(entityType);
     if (!definition || !this.isShapeAvailable(definition)) return false;
-    const instance = definition.createShape(this.createShapeContext(), payload);
-    if (!instance) return false;
-    this.addShapeInstance(instance, true);
-    return true;
+    return this.runInMutationBatch(() => {
+      const instance = definition.createShape(this.createShapeContext(), payload);
+      if (!instance) return false;
+      this.addShapeInstance(instance, options?.select ?? true);
+      return true;
+    });
   }
 
   /** 主动通知能力订阅者拉取一份新的快照。一般由引擎内部在状态变化后自动调用，图形作者通常通过 context.notifyChange 或 api.notifyChange 间接触发。 */
   public notifyCapabilityChange(): void {
-    const snapshot = this.getCapabilitySnapshot();
-    this.capabilityListeners.forEach(listener => listener(snapshot));
+    if (this.capabilityListeners.length === 0) return;
+    if (this.mutationBatchDepth > 0) {
+      this.pendingCapabilityNotification = true;
+      return;
+    }
+    this.dispatchCapabilityChange();
   }
 
   private addShapeInstance(instance: GraphShapeInstance, select = false): void {
-    this.shapeInstances.set(instance.id, instance);
-    if (select) {
-      this.selectShape(instance.id);
-      return;
-    }
-    this.notifyCapabilityChange();
+    this.runInMutationBatch(() => {
+      this.shapeInstances.set(instance.id, instance);
+      if (select) {
+        this.selectShape(instance.id);
+        return;
+      }
+      this.notifyCapabilityChange();
+    });
   }
 
   private removeShapeInstance(shapeId: string): void {
-    const instance = this.shapeInstances.get(shapeId);
-    if (!instance) return;
-    if (this.selectedShapeId === shapeId) {
-      this.selectedShapeId = null;
-      instance.setSelected(false);
-    }
-    instance.destroy();
-    this.shapeInstances.delete(shapeId);
-    this.notifyCapabilityChange();
+    this.runInMutationBatch(() => {
+      const instance = this.shapeInstances.get(shapeId);
+      if (!instance) return;
+      if (this.selectedShapeId === shapeId) {
+        this.selectedShapeId = null;
+        instance.setSelected(false);
+      }
+      instance.destroy();
+      this.shapeInstances.delete(shapeId);
+      this.notifyCapabilityChange();
+    });
   }
 
   private clearShapeInstances(): void {
-    this.shapeInstances.forEach((instance) => instance.destroy());
-    this.shapeInstances.clear();
-    this.selectedShapeId = null;
+    this.runInMutationBatch(() => {
+      this.shapeInstances.forEach((instance) => instance.destroy());
+      this.shapeInstances.clear();
+      this.selectedShapeId = null;
+      this.notifyCapabilityChange();
+    });
   }
 
   private selectShape(shapeId: string | null): void {
-    if (this.selectedShapeId === shapeId) return;
+    this.runInMutationBatch(() => {
+      if (this.selectedShapeId === shapeId) return;
 
-    const previous = this.selectedShapeId ? this.shapeInstances.get(this.selectedShapeId) : null;
-    this.selectedShapeId = shapeId;
-    previous?.setSelected(false);
+      const previous = this.selectedShapeId ? this.shapeInstances.get(this.selectedShapeId) : null;
+      this.selectedShapeId = shapeId;
+      previous?.setSelected(false);
 
-    if (shapeId) {
-      this.shapeInstances.get(shapeId)?.setSelected(true);
-      return;
-    }
+      if (shapeId) {
+        this.shapeInstances.get(shapeId)?.setSelected(true);
+        return;
+      }
 
-    this.notifyCapabilityChange();
+      this.notifyCapabilityChange();
+    });
   }
 
   private getSelectedCapabilityTarget(): ShapeCapabilityTarget | null {
@@ -247,13 +268,15 @@ export class GraphXEngine {
 
   /** 让已注册图形有机会基于拖拽事件创建实例。第一个返回非空实例的图形定义会接管这次拖拽创建。 */
   public handleDropEvent(e: DragEvent): void {
-    for (const definition of this.shapeDefinitions.values()) {
-      if (!this.isShapeAvailable(definition) || !definition.createFromDrop) continue;
-      const instance = definition.createFromDrop(this.createShapeContext(), e);
-      if (!instance) continue;
-      this.addShapeInstance(instance, true);
-      return;
-    }
+    this.runInMutationBatch(() => {
+      for (const definition of this.shapeDefinitions.values()) {
+        if (!this.isShapeAvailable(definition) || !definition.createFromDrop) continue;
+        const instance = definition.createFromDrop(this.createShapeContext(), e);
+        if (!instance) continue;
+        this.addShapeInstance(instance, true);
+        return;
+      }
+    });
   }
 
   /** 切换引擎模式，并在需要时重建画板。切换模式会清空当前 shape 实例、命令渲染结果以及数学变量；如果传入 options，则会替换当前全局画板配置。 */
@@ -264,7 +287,6 @@ export class GraphXEngine {
       this.entityMgr.clearAll();
       this.clearVariables();
       this.setupGlobalEvents();
-      this.notifyCapabilityChange();
     }
   }
 
@@ -275,7 +297,6 @@ export class GraphXEngine {
     this.entityMgr.clearAll();
     this.clearVariables();
     this.setupGlobalEvents();
-    this.notifyCapabilityChange();
   }
 
   /** 清空共享数学作用域中的变量。 */
@@ -333,7 +354,6 @@ export class GraphXEngine {
     this.stopAnimationLoop();
     this.boardMgr.destroy();
     this.entityMgr.clearAll();
-    this.notifyCapabilityChange();
   }
 
   /** 触发一次完整的 JSXGraph 画板刷新。 */
@@ -479,6 +499,37 @@ export class GraphXEngine {
       width: right - left,
       height: bottom - top
     };
+  }
+
+  private dispatchCapabilityChange(): void {
+    const snapshot = this.getCapabilitySnapshot();
+    this.capabilityListeners.forEach(listener => listener(snapshot));
+  }
+
+  private runInMutationBatch<T>(operation: () => T): T {
+    const board = this.boardMgr.board;
+    const isOutermostBatch = this.mutationBatchDepth === 0;
+
+    if (isOutermostBatch) {
+      board?.suspendUpdate?.();
+    }
+
+    this.mutationBatchDepth += 1;
+
+    try {
+      return operation();
+    } finally {
+      this.mutationBatchDepth -= 1;
+
+      if (isOutermostBatch) {
+        board?.unsuspendUpdate?.();
+
+        if (this.pendingCapabilityNotification) {
+          this.pendingCapabilityNotification = false;
+          this.dispatchCapabilityChange();
+        }
+      }
+    }
   }
 
   private ensureAnimationLoop(): void {

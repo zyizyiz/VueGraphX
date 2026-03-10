@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JSXGraph Dual Layer Benchmark</title>
+  <script src="./node_modules/jsxgraph/distrib/jsxgraphcore.js"></script>
+  <link rel="stylesheet" href="./node_modules/jsxgraph/distrib/jsxgraph.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+    .panel {
+      border-right: 1px solid #e2e8f0;
+      background: #ffffff;
+      padding: 20px;
+    }
+    .panel h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+    .panel p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+      font-size: 14px;
+      color: #475569;
+    }
+    .button-list {
+      display: grid;
+      gap: 10px;
+    }
+    .section-title {
+      margin: 20px 0 10px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+    button {
+      appearance: none;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 12px 14px;
+      text-align: left;
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #eef2ff;
+      border-color: #818cf8;
+    }
+    button.is-active {
+      background: #dbeafe;
+      border-color: #2563eb;
+      color: #1d4ed8;
+    }
+    .tips {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #475569;
+    }
+    .stage-wrap {
+      padding: 20px;
+    }
+    .stage {
+      position: relative;
+      width: min(100%, 1100px);
+      height: min(78vh, 760px);
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid #dbeafe;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+    }
+    .layer {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      overflow: hidden !important;
+    }
+    #board2d {
+      z-index: 10;
+      background: transparent !important;
+      pointer-events: none;
+    }
+    #board2d > svg {
+      background: transparent !important;
+      pointer-events: none;
+    }
+    #board2d > svg > * {
+      pointer-events: auto;
+    }
+    .footer {
+      width: min(100%, 1100px);
+      margin: 12px auto 0;
+      font-size: 13px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <h1>JSXGraph 双层测试</h1>
+      <p>这个页面不经过当前项目引擎封装，只保留双层 JSXGraph 和基础交互，用来判断卡顿是不是来自 JSXGraph 本身。</p>
+      <div class="section-title">图层显示</div>
+      <div class="button-list">
+        <button id="showBoth" class="is-active">同时展示 2D + 3D</button>
+        <button id="show2dOnly">只展示 2D</button>
+        <button id="show3dOnly">只展示 3D</button>
+      </div>
+      <div class="section-title">添加图元</div>
+      <div class="button-list">
+        <button id="addTriangle">添加 2D 三角形</button>
+        <button id="addCircle">添加 2D 圆形</button>
+        <button id="addCube">添加 3D 正方体</button>
+      </div>
+      <div class="tips">
+        普通拖拽正方体: 平移<br />
+        <code>Alt + 拖拽</code> 正方体: 旋转<br />
+        顶层 2D 空白区会穿透到底层 3D
+      </div>
+    </aside>
+
+    <main class="stage-wrap">
+      <div class="stage" id="dual-layer-stage">
+        <div id="board3d" class="jxgbox layer"></div>
+        <div id="board2d" class="jxgbox layer"></div>
+      </div>
+      <div class="footer">文件: <code>test-dual-layer-jsxgraph.html</code></div>
+    </main>
+  </div>
+
+  <script>
+    let board3d = null;
+    let board2d = null;
+    let view3d = null;
+
+    const layerButtons = {
+      both: document.getElementById('showBoth'),
+      only2d: document.getElementById('show2dOnly'),
+      only3d: document.getElementById('show3dOnly')
+    };
+
+    function createBoard3d() {
+      board3d = JXG.JSXGraph.initBoard('board3d', {
+        boundingbox: [-8, 8, 8, -8],
+        axis: true,
+        keepaspectratio: true,
+        moveTarget: document,
+        showInfobox: false,
+        showNavigation: false,
+        showCopyright: false
+      });
+      board3d.reducedUpdate = true;
+
+      view3d = board3d.create('view3d', [
+        [-6, -3],
+        [8, 8],
+        [[-5, 5], [-5, 5], [-5, 5]]
+      ], {
+        xPlaneElements: { visible: false },
+        yPlaneElements: { visible: false }
+      });
+    }
+
+    function createBoard2d() {
+      board2d = JXG.JSXGraph.initBoard('board2d', {
+        boundingbox: [-10, 10, 10, -10],
+        axis: false,
+        keepaspectratio: true,
+        moveTarget: document,
+        showInfobox: false,
+        showNavigation: false,
+        showCopyright: false
+      });
+      board2d.reducedUpdate = true;
+    }
+
+    function destroyBoards() {
+      if (board2d) {
+        JXG.JSXGraph.freeBoard(board2d);
+        board2d = null;
+      }
+      if (board3d) {
+        JXG.JSXGraph.freeBoard(board3d);
+        board3d = null;
+        view3d = null;
+      }
+      document.getElementById('board2d').innerHTML = '';
+      document.getElementById('board3d').innerHTML = '';
+    }
+
+    function setLayerMode(mode) {
+      destroyBoards();
+      overlayIndex = 0;
+      cubeIndex = 0;
+
+      if (mode !== 'only3d') {
+        createBoard2d();
+      }
+      if (mode !== 'only2d') {
+        createBoard3d();
+      }
+
+      layerButtons.both.classList.toggle('is-active', mode === 'both');
+      layerButtons.only2d.classList.toggle('is-active', mode === 'only2d');
+      layerButtons.only3d.classList.toggle('is-active', mode === 'only3d');
+    }
+
+    let overlayIndex = 0;
+    let cubeIndex = 0;
+
+    function getUserPoint(board, evt) {
+      if (!evt) return null;
+      let clientX = evt.clientX;
+      let clientY = evt.clientY;
+      if (clientX === undefined) {
+        const touch = evt.changedTouches && evt.changedTouches[0]
+          ? evt.changedTouches[0]
+          : evt.touches && evt.touches[0]
+            ? evt.touches[0]
+            : null;
+        if (!touch) return null;
+        clientX = touch.clientX;
+        clientY = touch.clientY;
+      }
+      const rect = board.containerObj.getBoundingClientRect();
+      const dx = clientX - rect.left - (board.containerObj.clientLeft || 0);
+      const dy = clientY - rect.top - (board.containerObj.clientTop || 0);
+      const coords = new JXG.Coords(JXG.COORDS_BY_SCREEN, [dx, dy], board);
+      return [coords.usrCoords[1], coords.usrCoords[2]];
+    }
+
+    function nextOverlayPosition() {
+      const index = overlayIndex++;
+      const col = index % 4;
+      const row = Math.floor(index / 4) % 3;
+      return {
+        x: (col - 1.5) * 2.4,
+        y: (1 - row) * 2.3
+      };
+    }
+
+    function scheduleFrame(fn) {
+      let frameId = null;
+      let queued = false;
+      return {
+        request() {
+          queued = true;
+          if (frameId !== null) return;
+          frameId = requestAnimationFrame(() => {
+            frameId = null;
+            if (!queued) return;
+            queued = false;
+            fn();
+          });
+        },
+        flush() {
+          if (frameId !== null) {
+            cancelAnimationFrame(frameId);
+            frameId = null;
+          }
+          if (!queued) return;
+          queued = false;
+          fn();
+        }
+      };
+    }
+
+    function addTriangle() {
+      if (!board2d) return;
+      const { x, y } = nextOverlayPosition();
+      const size = 3;
+      const p1 = board2d.create('point', [x, y + size / Math.sqrt(3)], { visible: false });
+      const p2 = board2d.create('point', [x - size / 2, y - size / (2 * Math.sqrt(3))], { visible: false });
+      const p3 = board2d.create('point', [x + size / 2, y - size / (2 * Math.sqrt(3))], { visible: false });
+      board2d.create('polygon', [p1, p2, p3], {
+        fillColor: '#6366f1',
+        fillOpacity: 0.26,
+        strokeColor: '#4f46e5',
+        strokeWidth: 2,
+        highlight: false,
+        hasInnerPoints: true,
+        vertices: { visible: false, highlight: false }
+      });
+    }
+
+    function addCircle() {
+      if (!board2d) return;
+      const { x, y } = nextOverlayPosition();
+      const center = board2d.create('point', [x, y], { visible: false });
+      const radiusPoint = board2d.create('point', [x + 1.6, y], { visible: false });
+      board2d.create('circle', [center, radiusPoint], {
+        strokeColor: '#0ea5e9',
+        strokeWidth: 2,
+        fillColor: '#38bdf8',
+        fillOpacity: 0.2,
+        highlight: false,
+        hasInnerPoints: true
+      });
+    }
+
+    function addCube() {
+      if (!board3d || !view3d) return;
+      const offset = (cubeIndex++ % 4 - 1.5) * 1.8;
+      const transform = {
+        center: [offset, 0, 0],
+        rotationX: -0.45,
+        rotationY: 0.55
+      };
+      const vertices = [
+        [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+        [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]
+      ];
+      const edges = [
+        [0, 1], [1, 2], [2, 3], [3, 0],
+        [4, 5], [5, 6], [6, 7], [7, 4],
+        [0, 4], [1, 5], [2, 6], [3, 7]
+      ];
+
+      function rotateX(point, angle) {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        return [point[0], point[1] * cos - point[2] * sin, point[1] * sin + point[2] * cos];
+      }
+
+      function rotateY(point, angle) {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        return [point[0] * cos + point[2] * sin, point[1], -point[0] * sin + point[2] * cos];
+      }
+
+      function projectVertex(vertex) {
+        const scaled = [vertex[0], vertex[1], vertex[2]];
+        const rotated = rotateY(rotateX(scaled, transform.rotationX), transform.rotationY);
+        return [
+          rotated[0] + transform.center[0],
+          rotated[1] + transform.center[1],
+          rotated[2] + transform.center[2]
+        ];
+      }
+
+      const points = vertices.map((vertex, index) => (
+        view3d.create('point3d', projectVertex(vertex), { visible: false, name: 'cp' + cubeIndex + '_' + index })
+      ));
+
+      const lines = edges.map(([from, to]) => (
+        view3d.create('line3d', [points[from], points[to]], {
+          strokeColor: '#475569',
+          strokeWidth: 2,
+          fixed: false,
+          highlight: false
+        })
+      ));
+
+      let dragStart = null;
+      let startCenter = null;
+      let lastPointer = null;
+      let isRotating = false;
+
+      const frame = scheduleFrame(() => {
+        board3d.suspendUpdate();
+        vertices.forEach((vertex, index) => {
+          points[index].moveTo(projectVertex(vertex), 0);
+        });
+        board3d.unsuspendUpdate();
+      });
+
+      lines.forEach((line) => {
+        line.on('down', (evt) => {
+          dragStart = getUserPoint(board3d, evt);
+          startCenter = transform.center.slice();
+          lastPointer = evt && typeof evt.clientX === 'number' ? { x: evt.clientX, y: evt.clientY } : null;
+          isRotating = !!(evt && evt.altKey);
+        });
+        line.on('drag', (evt) => {
+          if (isRotating) {
+            if (!evt || typeof evt.clientX !== 'number' || !lastPointer) return;
+            const dx = evt.clientX - lastPointer.x;
+            const dy = evt.clientY - lastPointer.y;
+            lastPointer = { x: evt.clientX, y: evt.clientY };
+            transform.rotationY += dx * 0.01;
+            transform.rotationX += dy * 0.01;
+            frame.request();
+            return;
+          }
+
+          const current = getUserPoint(board3d, evt);
+          if (!dragStart || !current || !startCenter) return;
+          transform.center = [
+            startCenter[0] + (current[0] - dragStart[0]),
+            startCenter[1] + (current[1] - dragStart[1]),
+            startCenter[2]
+          ];
+          frame.request();
+        });
+        line.on('up', () => {
+          frame.flush();
+          dragStart = null;
+          startCenter = null;
+          lastPointer = null;
+          isRotating = false;
+        });
+      });
+
+      frame.flush();
+    }
+
+    document.getElementById('addTriangle').addEventListener('click', addTriangle);
+    document.getElementById('addCircle').addEventListener('click', addCircle);
+    document.getElementById('addCube').addEventListener('click', addCube);
+    layerButtons.both.addEventListener('click', () => setLayerMode('both'));
+    layerButtons.only2d.addEventListener('click', () => setLayerMode('only2d'));
+    layerButtons.only3d.addEventListener('click', () => setLayerMode('only3d'));
+
+    setLayerMode('both');
+  </script>
+</body>
+</html>
