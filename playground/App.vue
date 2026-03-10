@@ -206,7 +206,7 @@ import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 import DualLayerPanel from './components/DualLayerPanel.vue';
 import { registerDualLayerBottomShapes, registerDualLayerTopShapes, registerPlaygroundShapes } from './shapes';
-import { getBoardOptionsForPlaygroundMode, type PlaygroundMode } from './types/mode';
+import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 
 const onDrop = (e: DragEvent) => {
   e.preventDefault();
@@ -448,9 +448,7 @@ onMounted(() => {
 const initEngines = async () => {
   if (graphContainerRef.value) {
     engineRef.value = new GraphXEngine('vuegraphx-mount', getBoardOptionsForCurrentMode(store.activeMode));
-    if (store.activeMode === 'dual-layer') {
-      engineRef.value.setMode('3d');
-    }
+    engineRef.value.setMode(getEngineModeForPlayground(store.activeMode));
     if (store.activeMode === 'dual-layer') {
       registerDualLayerBottomShapes(engineRef.value);
     } else {

@@ -1,4 +1,5 @@
 import JXG from 'jsxgraph';
+import type { GraphHiddenLineOptions } from '../rendering/hiddenLine/contracts';
 
 /**
  * 引擎对外暴露的画板模式。
@@ -78,6 +79,11 @@ export interface GraphXOptions {
      * 透传给 JSXGraph view3d 的属性。
      */
     attributes?: Record<string, any>;
+
+    /**
+     * 3D 隐线/遮挡虚线渲染配置。
+     */
+    hiddenLine?: GraphHiddenLineOptions;
   };
 }
 

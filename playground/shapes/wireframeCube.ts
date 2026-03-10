@@ -1,7 +1,19 @@
 import { createComposedShapeDefinition, type GraphShapeApi } from 'vuegraphx';
+import type {
+  GraphHiddenLineEdgeStyle,
+  GraphHiddenLineMeshSourceData,
+  GraphHiddenLineSourceHandle
+} from 'vuegraphx';
 
 interface WireframeCubeState {
   size: number;
+}
+
+interface WireframeCubePayload {
+  hiddenLine?: {
+    visible?: GraphHiddenLineEdgeStyle;
+    hidden?: GraphHiddenLineEdgeStyle;
+  };
 }
 
 type Point3D = [number, number, number];
@@ -98,16 +110,17 @@ const getPointerLikeArg = (args: any[]): { clientX?: number; clientY?: number; s
   return null;
 };
 
-export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, WireframeCubeState>({
+export const wireframeCubeShapeDefinition = createComposedShapeDefinition<WireframeCubePayload, WireframeCubeState>({
   type: 'wireframe-cube',
   supportedModes: 'all',
-  create() {
+  create(_context, payload) {
     let cleanupKeyListeners = () => undefined;
     let cleanupInteractionListeners = () => undefined;
     let cleanupHitListeners = () => undefined;
     let frameId: number | null = null;
     const spawnCenter = getWireframeCubeSpawnCenter(wireframeCubeSpawnIndex++);
     let instanceId: string | null = null;
+    let hiddenLineHandle: GraphHiddenLineSourceHandle | null = null;
 
     return {
       entityType: 'wireframe-cube',
@@ -119,6 +132,7 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, 
         instanceId = api.id;
         const view3d = api.engine.getView3D() as any;
         if (!view3d || !api.board) return;
+        const hiddenLineEnabled = api.engine.getHiddenLineOptions().enabled === true;
 
         const transform = {
           center: [...spawnCenter] as Point3D,
@@ -149,6 +163,7 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, 
           edgeObjects[`edge_${index}`] = api.trackObject(view3d.create('line3d', [points[from], points[to]], {
             strokeColor: '#475569',
             strokeWidth: 2,
+            strokeOpacity: hiddenLineEnabled ? 0 : 1,
             fixed: true,
             highlight: false
           }));
@@ -177,6 +192,34 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, 
           });
           api.board.unsuspendUpdate?.();
         };
+
+        const hiddenLineVisible = payload?.hiddenLine?.visible ?? { strokeColor: '#475569', strokeWidth: 2 };
+        const hiddenLineHidden = payload?.hiddenLine?.hidden ?? { strokeColor: '#475569', strokeWidth: 1.6, dash: 2, dashScale: true };
+
+        hiddenLineHandle = api.registerHiddenLineSource({
+          role: 'both',
+          style: {
+            visible: hiddenLineVisible,
+            hidden: hiddenLineHidden
+          },
+          resolve: (): GraphHiddenLineMeshSourceData => {
+            const vertices = CUBE_VERTICES_LOCAL.map((vertex) => {
+              const p = projectVertex(vertex);
+              return { x: p[0], y: p[1], z: p[2] };
+            });
+            return {
+              kind: 'mesh',
+              vertices,
+              faces: CUBE_FACES.map((indices) => ({ indices: [...indices] })),
+              edges: CUBE_EDGES.map(([from, to]) => ({
+                points: [
+                  { x: vertices[from].x, y: vertices[from].y, z: vertices[from].z },
+                  { x: vertices[to].x, y: vertices[to].y, z: vertices[to].z }
+                ]
+              }))
+            };
+          }
+        });
 
         const scheduleGeometryUpdate = () => {
           if (frameId !== null) return;
@@ -227,8 +270,9 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, 
             const dy = pointer.clientY - lastPointer.y;
             lastPointer = { x: pointer.clientX, y: pointer.clientY };
 
-            transform.rotationY += dx * ROTATION_SPEED;
-            transform.rotationX += dy * ROTATION_SPEED;
+            // 反向匹配最初的拖拽手感（向右拖使立方体朝左转、向上拖使顶部远离）
+            transform.rotationY -= dx * ROTATION_SPEED;
+            transform.rotationX -= dy * ROTATION_SPEED;
             scheduleGeometryUpdate();
             return;
           }
@@ -367,6 +411,7 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, 
         if (activeWireframeCubeInteractionId === instanceId) {
           activeWireframeCubeInteractionId = null;
         }
+        hiddenLineHandle?.dispose();
         cleanupInteractionListeners();
         if (frameId !== null) {
           cancelAnimationFrame(frameId);

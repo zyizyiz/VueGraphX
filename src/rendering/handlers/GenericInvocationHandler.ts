@@ -3,6 +3,60 @@ import { InstructionParser } from '../../parsing/InstructionParser';
 import { RenderContext, RenderHandler } from '../types';
 import { evaluateInvocationArg, normalizeAndRegister } from '../utils';
 import { resolve2DElementType, resolve3DElementType } from '../jsxgraphCommandCatalog';
+import type { GraphHiddenLineMeshSourceData, GraphHiddenLinePolylineSetSourceData } from '../hiddenLine/contracts';
+
+const toPoint3D = (value: any): [number, number, number] | null => {
+  if (Array.isArray(value) && value.length >= 3 && value.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+    return [value[0], value[1], value[2]];
+  }
+
+  const usrCoords = value?.coords?.usrCoords;
+  if (Array.isArray(usrCoords) && usrCoords.length >= 4) {
+    const [_, x, y, z] = usrCoords;
+    if ([x, y, z].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+      return [x, y, z];
+    }
+  }
+
+  if (typeof value?.X === 'function' && typeof value?.Y === 'function' && typeof value?.Z === 'function') {
+    const x = value.X();
+    const y = value.Y();
+    const z = value.Z();
+    if ([x, y, z].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+      return [x, y, z];
+    }
+  }
+
+  return null;
+};
+
+const buildPolylineSource = (args: any[]): GraphHiddenLinePolylineSetSourceData | null => {
+  const points = args.map((arg) => toPoint3D(arg)).filter((p): p is [number, number, number] => !!p);
+  if (points.length < 2) return null;
+  return {
+    kind: 'polyline-set',
+    polylines: [
+      {
+        points: points.map(([x, y, z]) => ({ x, y, z }))
+      }
+    ]
+  };
+};
+
+const buildPolygonMeshSource = (args: any[]): GraphHiddenLineMeshSourceData | null => {
+  const points = args.map((arg) => toPoint3D(arg)).filter((p): p is [number, number, number] => !!p);
+  if (points.length < 3) return null;
+
+  return {
+    kind: 'mesh',
+    vertices: points.map(([x, y, z]) => ({ x, y, z })),
+    faces: [
+      {
+        indices: points.map((_, index) => index)
+      }
+    ]
+  };
+};
 
 export class GenericInvocationHandler implements RenderHandler {
   public name = 'generic-invocation';
@@ -70,7 +124,30 @@ export class GenericInvocationHandler implements RenderHandler {
       for (const candidateType of candidateTypes) {
         try {
           const shape = view3d.create(candidateType, parsedArgs, attrs);
-          return normalizeAndRegister(shape, name, ctx.entityMgr);
+          const elements = normalizeAndRegister(shape, name, ctx.entityMgr);
+
+          const lowerType = resolved3DType.toLowerCase();
+          if (ctx.hiddenLine && ctx.hiddenLine.registerSource) {
+            if (lowerType === 'line3d' || lowerType === 'curve3d' || lowerType === 'functiongraph3d') {
+              const polySource = buildPolylineSource(parsedArgs);
+              if (polySource) {
+                ctx.hiddenLine.registerSource({
+                  role: 'edge',
+                  resolve: () => polySource
+                });
+              }
+            } else if (lowerType === 'polygon3d') {
+              const meshSource = buildPolygonMeshSource(parsedArgs);
+              if (meshSource) {
+                ctx.hiddenLine.registerSource({
+                  role: 'both',
+                  resolve: () => meshSource
+                });
+              }
+            }
+          }
+
+          return elements;
         } catch {
         }
       }

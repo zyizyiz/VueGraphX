@@ -27,6 +27,9 @@ export const getBoardOptionsForPlaygroundMode = (mode: PlaygroundMode, viewport?
       view3D: {
         fitToBoard: true,
         rect: [[-8, -8], [16, 16], [[-5, 5], [-5, 5], [-5, 5]]],
+        hiddenLine: {
+          enabled: true
+        },
         attributes: {
           projection: 'parallel',
           trackball: { enabled: false },
@@ -62,5 +65,13 @@ export const getBoardOptionsForPlaygroundMode = (mode: PlaygroundMode, viewport?
     };
   }
 
-  return { axis: true, showNavigation: true };
+  return {
+    axis: true,
+    showNavigation: true,
+    view3D: {
+      hiddenLine: {
+        enabled: true
+      }
+    }
+  };
 };

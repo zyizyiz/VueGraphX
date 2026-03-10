@@ -1,5 +1,6 @@
 import * as math from 'mathjs';
 import { RenderContext, RenderHandler } from '../types';
+import type { GraphHiddenLineSurfaceSourceData } from '../hiddenLine/contracts';
 
 export class Expression3DHandler implements RenderHandler {
   public name = 'expression-3d';
@@ -49,6 +50,25 @@ export class Expression3DHandler implements RenderHandler {
       };
       const attrs = Object.assign({}, baseAttrs, ctx.extraOptions);
 
+      const buildHiddenLineSource = (): GraphHiddenLineSurfaceSourceData => ({
+        kind: 'surface',
+        uRange: [-5, 5],
+        vRange: [-5, 5],
+        stepsU: attrs.stepsU,
+        stepsV: attrs.stepsV,
+        evaluate: (u: number, v: number) => {
+          try {
+            return {
+              x: u,
+              y: v,
+              z: code.evaluate({ ...ctx.mathScope.data, x: u, y: v, e: Math.E, pi: Math.PI })
+            };
+          } catch {
+            return null;
+          }
+        }
+      });
+
       const surface = view3d.create('parametricsurface3d', [
         (u: number, _v: number) => u,
         (_u: number, v: number) => v,
@@ -62,6 +82,15 @@ export class Expression3DHandler implements RenderHandler {
         [-5, 5],
         [-5, 5]
       ], attrs);
+
+      ctx.hiddenLine.registerSource({
+        role: 'both',
+        style: {
+          visible: { strokeColor: attrs.strokeColor, strokeWidth: 1.2 },
+          hidden: { strokeColor: attrs.strokeColor }
+        },
+        resolve: () => buildHiddenLineSource()
+      });
 
       els.push(surface);
       return els;

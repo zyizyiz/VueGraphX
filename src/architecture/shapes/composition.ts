@@ -4,6 +4,10 @@ import type {
   ShapeCapabilityTarget
 } from '../capabilities/contracts';
 import type {
+  GraphHiddenLineSourceDescriptor,
+  GraphHiddenLineSourceHandle
+} from '../../rendering/hiddenLine/contracts';
+import type {
   GraphAnimationTrack,
   GraphAnimationTrackConfig,
   GraphShapeDragOptions,
@@ -93,6 +97,15 @@ export interface GraphShapeApi<StateType> {
 
   /** 创建一条交由引擎统一调度的动画轨道。适合把图形几何变化和播放控制拆开，让外部 UI 通过能力接口驱动它。 */
   createAnimationTrack(config: GraphAnimationTrackConfig): GraphAnimationTrack;
+
+  /** 注册一个参与 3D 隐线计算的数据源。ownerId 会自动绑定为当前图形实例 id。 */
+  registerHiddenLineSource(source: GraphHiddenLineSourceDescriptor): GraphHiddenLineSourceHandle;
+
+  /** 移除当前图形之前注册的一个隐线数据源。 */
+  removeHiddenLineSource(sourceId: string): boolean;
+
+  /** 移除当前图形绑定的全部隐线数据源。 */
+  clearHiddenLineSources(): void;
 
   /**
    * 根据 id 获取动画轨道。
@@ -371,6 +384,15 @@ class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
       },
       createAnimationTrack(config) {
         return thisRef.createAnimationTrack(config);
+      },
+      registerHiddenLineSource(source) {
+        return thisRef.engine.registerHiddenLineSource(thisRef.id, source);
+      },
+      removeHiddenLineSource(sourceId) {
+        return thisRef.engine.removeHiddenLineSource(sourceId);
+      },
+      clearHiddenLineSources() {
+        thisRef.engine.clearHiddenLineSources(thisRef.id);
       },
       getAnimationTrack(id) {
         return thisRef.getAnimationTrack(id);

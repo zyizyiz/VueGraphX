@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,37 +8,46 @@
   <script src="./node_modules/jsxgraph/distrib/jsxgraphcore.js"></script>
   <link rel="stylesheet" href="./node_modules/jsxgraph/distrib/jsxgraph.css" />
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #f8fafc;
       color: #0f172a;
     }
+
     .app {
       display: grid;
       grid-template-columns: 280px 1fr;
       min-height: 100vh;
     }
+
     .panel {
       border-right: 1px solid #e2e8f0;
       background: #ffffff;
       padding: 20px;
     }
+
     .panel h1 {
       margin: 0 0 8px;
       font-size: 20px;
     }
+
     .panel p {
       margin: 0 0 16px;
       line-height: 1.6;
       font-size: 14px;
       color: #475569;
     }
+
     .button-list {
       display: grid;
       gap: 10px;
     }
+
     .section-title {
       margin: 20px 0 10px;
       font-size: 12px;
@@ -46,6 +56,7 @@
       text-transform: uppercase;
       color: #64748b;
     }
+
     button {
       appearance: none;
       border: 1px solid #cbd5e1;
@@ -58,15 +69,18 @@
       color: #1e293b;
       cursor: pointer;
     }
+
     button:hover {
       background: #eef2ff;
       border-color: #818cf8;
     }
+
     button.is-active {
       background: #dbeafe;
       border-color: #2563eb;
       color: #1d4ed8;
     }
+
     .tips {
       margin-top: 18px;
       padding: 12px 14px;
@@ -77,9 +91,11 @@
       line-height: 1.7;
       color: #475569;
     }
+
     .stage-wrap {
       padding: 20px;
     }
+
     .stage {
       position: relative;
       width: min(100%, 1100px);
@@ -91,6 +107,7 @@
       overflow: hidden;
       box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
     }
+
     .layer {
       position: absolute !important;
       inset: 0 !important;
@@ -98,18 +115,22 @@
       height: 100% !important;
       overflow: hidden !important;
     }
+
     #board2d {
       z-index: 10;
       background: transparent !important;
       pointer-events: none;
     }
-    #board2d > svg {
+
+    #board2d>svg {
       background: transparent !important;
       pointer-events: none;
     }
-    #board2d > svg > * {
+
+    #board2d>svg>* {
       pointer-events: auto;
     }
+
     .footer {
       width: min(100%, 1100px);
       margin: 12px auto 0;
@@ -118,11 +139,11 @@
     }
   </style>
 </head>
+
 <body>
   <div class="app">
     <aside class="panel">
       <h1>JSXGraph 双层测试</h1>
-      <p>这个页面不经过当前项目引擎封装，只保留双层 JSXGraph 和基础交互，用来判断卡顿是不是来自 JSXGraph 本身。</p>
       <div class="section-title">图层显示</div>
       <div class="button-list">
         <button id="showBoth" class="is-active">同时展示 2D + 3D</button>
@@ -437,4 +458,5 @@
     setLayerMode('both');
   </script>
 </body>
+
 </html>

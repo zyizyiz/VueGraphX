@@ -3,6 +3,7 @@ export type { EngineMode, GraphXOptions } from '../types/engine';
 import { BoardManager } from '../board/BoardManager';
 import { EntityManager } from '../entities/EntityManager';
 import { Renderer } from '../rendering/Renderer';
+import { GraphHiddenLineManager } from '../rendering/hiddenLine';
 import JXG from 'jsxgraph';
 import { capabilityRegistry } from '../architecture/capabilities/registry';
 import type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
@@ -22,6 +23,12 @@ import type {
   GraphCapabilitySnapshot,
   GraphSelectionSnapshot
 } from '../types/capabilities';
+import type {
+  GraphHiddenLineOptions,
+  GraphHiddenLineSceneSnapshot,
+  GraphHiddenLineSourceDescriptor,
+  GraphHiddenLineSourceHandle
+} from '../rendering/hiddenLine/contracts';
 
 export type {
   GraphCapabilityDescriptor,
@@ -29,6 +36,12 @@ export type {
   GraphCapabilitySnapshot,
   GraphSelectionSnapshot
 } from '../types/capabilities';
+export type {
+  GraphHiddenLineOptions,
+  GraphHiddenLineSceneSnapshot,
+  GraphHiddenLineSourceDescriptor,
+  GraphHiddenLineSourceHandle
+} from '../rendering/hiddenLine/contracts';
 
 export type { GraphShapeContext, GraphShapeDefinition, GraphShapeInstance } from '../architecture/shapes/contracts';
 export type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
@@ -43,6 +56,7 @@ export interface GraphCreateShapeOptions {
 export class GraphXEngine {
   private boardMgr: BoardManager;
   private entityMgr: EntityManager;
+  private hiddenLineMgr: GraphHiddenLineManager;
   private renderer: Renderer;
   private shapeDefinitions: Map<string, GraphShapeDefinition> = new Map();
   private shapeInstances: Map<string, GraphShapeInstance> = new Map();
@@ -60,9 +74,45 @@ export class GraphXEngine {
     this.boardMgr.initBoard();
 
     this.entityMgr = new EntityManager();
-    this.renderer = new Renderer(this.boardMgr, this.entityMgr);
+    this.hiddenLineMgr = new GraphHiddenLineManager(this.boardMgr, options?.view3D?.hiddenLine);
+    this.renderer = new Renderer(this.boardMgr, this.entityMgr, {
+      isEnabled: () => this.hiddenLineMgr.isEnabled(),
+      getOptions: () => this.hiddenLineMgr.getOptions(),
+      registerSource: (ownerId, source) => this.hiddenLineMgr.registerSource(ownerId, source),
+      clearOwnerSources: (ownerId) => {
+        this.hiddenLineMgr.clearOwnerSources(ownerId);
+      }
+    });
 
     this.setupGlobalEvents();
+  }
+
+  public registerHiddenLineSource(
+    ownerId: string,
+    source: GraphHiddenLineSourceDescriptor
+  ): GraphHiddenLineSourceHandle {
+    return this.hiddenLineMgr.registerSource(ownerId, source);
+  }
+
+  public removeHiddenLineSource(sourceId: string): boolean {
+    return this.hiddenLineMgr.removeSource(sourceId);
+  }
+
+  public clearHiddenLineSources(ownerId?: string): void {
+    if (ownerId) {
+      this.hiddenLineMgr.clearOwnerSources(ownerId);
+      return;
+    }
+
+    this.hiddenLineMgr.clearAllSources();
+  }
+
+  public getHiddenLineSceneSnapshot(): GraphHiddenLineSceneSnapshot {
+    return this.hiddenLineMgr.getSnapshot();
+  }
+
+  public getHiddenLineOptions(): GraphHiddenLineOptions {
+    return this.hiddenLineMgr.getOptions();
   }
 
   /** 按公共类型注册一个图形定义。definition.type 会作为 createShape 的调用入口。 */
@@ -198,6 +248,7 @@ export class GraphXEngine {
         instance.setSelected(false);
       }
       instance.destroy();
+      this.hiddenLineMgr.clearOwnerSources(shapeId);
       this.shapeInstances.delete(shapeId);
       this.notifyCapabilityChange();
     });
@@ -205,7 +256,10 @@ export class GraphXEngine {
 
   private clearShapeInstances(): void {
     this.runInMutationBatch(() => {
-      this.shapeInstances.forEach((instance) => instance.destroy());
+      this.shapeInstances.forEach((instance) => {
+        instance.destroy();
+        this.hiddenLineMgr.clearOwnerSources(instance.id);
+      });
       this.shapeInstances.clear();
       this.selectedShapeId = null;
       this.notifyCapabilityChange();
@@ -257,6 +311,7 @@ export class GraphXEngine {
       Array.from(this.shapeInstances.values()).forEach((instance) => {
         instance.onBoardUpdate?.();
       });
+      this.hiddenLineMgr.update();
     });
   }
 
@@ -283,7 +338,11 @@ export class GraphXEngine {
   public setMode(mode: EngineMode, options?: GraphXOptions): void {
     const isRestarted = this.boardMgr.setMode(mode, options);
     if (isRestarted) {
+      if (options) {
+        this.hiddenLineMgr.setOptions(options.view3D?.hiddenLine);
+      }
       this.clearShapeInstances();
+      this.hiddenLineMgr.clearAllSources();
       this.entityMgr.clearAll();
       this.clearVariables();
       this.setupGlobalEvents();
@@ -294,6 +353,10 @@ export class GraphXEngine {
   public resetBoard(options?: GraphXOptions): void {
     this.clearShapeInstances();
     this.boardMgr.resetBoard(options);
+    if (options) {
+      this.hiddenLineMgr.setOptions(options.view3D?.hiddenLine);
+    }
+    this.hiddenLineMgr.clearAllSources();
     this.entityMgr.clearAll();
     this.clearVariables();
     this.setupGlobalEvents();
@@ -312,7 +375,7 @@ export class GraphXEngine {
     const pureExp = expression.trim();
 
     try {
-      const elements = this.renderer.render(this.boardMgr.mode, pureExp, color, extraOptions);
+      const elements = this.renderer.render(this.boardMgr.mode, pureExp, color, extraOptions, id);
       this.entityMgr.registerCommandElements(id, elements);
     } catch (e: any) {
       console.warn(`[GraphXEngine] 解析指令失败: ${pureExp}`, e);
@@ -322,6 +385,7 @@ export class GraphXEngine {
 
   /** 移除某个指令 id 关联的全部渲染元素。 */
   public removeCommand(id: string): void {
+    this.hiddenLineMgr.clearOwnerSources(id);
     if (!this.boardMgr.board) return;
     this.entityMgr.removeCommandElements(id, this.boardMgr.board);
   }
@@ -352,6 +416,7 @@ export class GraphXEngine {
     this.clearShapeInstances();
     this.shapeDefinitions.clear();
     this.stopAnimationLoop();
+    this.hiddenLineMgr.clearAllSources();
     this.boardMgr.destroy();
     this.entityMgr.clearAll();
   }

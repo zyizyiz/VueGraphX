@@ -1,6 +1,7 @@
 import * as math from 'mathjs';
 import { InstructionParser } from '../../parsing/InstructionParser';
 import { RenderContext, RenderHandler } from '../types';
+import type { GraphHiddenLineSurfaceSourceData } from '../hiddenLine/contracts';
 
 export class Surface3DHandler implements RenderHandler {
   public name = 'surface-3d';
@@ -51,6 +52,25 @@ export class Surface3DHandler implements RenderHandler {
     };
     const attrs = Object.assign({}, baseAttrs, ctx.extraOptions);
 
+    const buildHiddenLineSource = (): GraphHiddenLineSurfaceSourceData => ({
+      kind: 'surface',
+      uRange: [rangeU[0], rangeU[1]],
+      vRange: [rangeV[0], rangeV[1]],
+      stepsU: attrs.stepsU,
+      stepsV: attrs.stepsV,
+      evaluate: (u: number, v: number) => {
+        try {
+          return {
+            x: xCode.evaluate(Object.assign({ u, v, e: Math.E, pi: Math.PI }, ctx.mathScope.data)),
+            y: yCode.evaluate(Object.assign({ u, v, e: Math.E, pi: Math.PI }, ctx.mathScope.data)),
+            z: zCode.evaluate(Object.assign({ u, v, e: Math.E, pi: Math.PI }, ctx.mathScope.data))
+          };
+        } catch {
+          return null;
+        }
+      }
+    });
+
     const surface = view3d.create('parametricsurface3d', [
       (u: number, v: number) => {
         try {
@@ -76,6 +96,15 @@ export class Surface3DHandler implements RenderHandler {
       rangeU,
       rangeV
     ], attrs);
+
+    ctx.hiddenLine.registerSource({
+      role: 'both',
+      style: {
+        visible: { strokeColor: attrs.strokeColor, strokeWidth: 1.2 },
+        hidden: { strokeColor: attrs.strokeColor }
+      },
+      resolve: () => buildHiddenLineSource()
+    });
 
     return [surface];
   }

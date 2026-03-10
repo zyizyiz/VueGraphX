@@ -1,10 +1,22 @@
 import { createComposedShapeDefinition, type GraphShapeApi } from 'vuegraphx';
 import type { ShapeCapabilityTarget } from 'vuegraphx';
+import type {
+  GraphHiddenLineMeshSourceData,
+  GraphHiddenLineSourceHandle,
+  GraphHiddenLineEdgeStyle
+} from 'vuegraphx';
 
 interface CubeState {
   toolbarStyle: Record<string, string>;
   rafId: number | null;
   halfEdge: number;
+}
+
+interface CubePayload {
+  hiddenLine?: {
+    visible?: GraphHiddenLineEdgeStyle;
+    hidden?: GraphHiddenLineEdgeStyle;
+  };
 }
 
 const notifyFastChange = (api: GraphShapeApi<CubeState>) => {
@@ -102,10 +114,12 @@ const createFacePoints = (api: GraphShapeApi<CubeState>, name: string): Array<()
   return getCubeVertices(getUnfoldProgress(api), getRotateProgress(api), api.state.halfEdge, name)[index] ?? [0, 0, 0];
 });
 
-export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState>({
+export const cubeShapeDefinition = createComposedShapeDefinition<CubePayload, CubeState>({
   type: 'cube',
   supportedModes: '3d',
-  create() {
+  create(_context, payload) {
+    let hiddenLineHandle: GraphHiddenLineSourceHandle | null = null;
+
     return {
       entityType: 'cube',
       initialState: {
@@ -116,6 +130,7 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
       setup(api) {
         const view3d = api.engine.getView3D();
         if (!api.board || !view3d) return;
+        const hiddenLineEnabled = api.engine.getHiddenLineOptions().enabled === true;
         api.createAnimationTrack({
           id: 'unfold',
           label: '展开',
@@ -154,7 +169,11 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
           const polygon = api.trackObject(view3d.create('polygon3d', [p1, p2, p3, p4], {
             fillColor: colors[index],
             fillOpacity: 0.8,
-            borders: { strokeWidth: 1.5, strokeColor: '#1e293b' }
+            borders: {
+              strokeWidth: 1.5,
+              strokeColor: '#1e293b',
+              strokeOpacity: hiddenLineEnabled ? 0 : 1
+            }
           }));
           const faceGroup = api.createGroup({ p1, p2, p3, p4, face: polygon }, { id: `cube_face_${index}`, createNativeGroup: false });
           faceGroup.hide(['p1', 'p2', 'p3', 'p4']);
@@ -167,6 +186,37 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
 
         api.createGroup(groupedObjects, { createNativeGroup: false });
         api.board.update();
+
+        const hiddenLineVisible = payload?.hiddenLine?.visible ?? { strokeColor: '#1e293b', strokeWidth: 1.5 };
+        const hiddenLineHidden = payload?.hiddenLine?.hidden ?? { strokeColor: '#1e293b', strokeWidth: 1.2, dash: 2, dashScale: true };
+
+        hiddenLineHandle = api.registerHiddenLineSource({
+          role: 'both',
+          style: {
+            visible: hiddenLineVisible,
+            hidden: hiddenLineHidden
+          },
+          resolve: (): GraphHiddenLineMeshSourceData => {
+            const vertices: Array<{ x: number; y: number; z: number }> = [];
+            const faces: Array<{ indices: number[] }> = [];
+
+            faceNames.forEach((name) => {
+              const facePointFns = createFacePoints(api, name);
+              const startIndex = vertices.length;
+              facePointFns.forEach((fn) => {
+                const [x, y, z] = fn();
+                vertices.push({ x, y, z });
+              });
+              faces.push({ indices: [startIndex, startIndex + 1, startIndex + 2, startIndex + 3] });
+            });
+
+            return {
+              kind: 'mesh',
+              vertices,
+              faces
+            };
+          }
+        });
       },
       onSelectionChange(api) {
         updateToolbarPosition(api);
@@ -178,6 +228,7 @@ export const cubeShapeDefinition = createComposedShapeDefinition<void, CubeState
         api.removeAnimationTrack('unfold');
         api.removeAnimationTrack('rotate');
         if (api.state.rafId !== null) cancelAnimationFrame(api.state.rafId);
+        hiddenLineHandle?.dispose();
       },
       getCapabilityTarget(api): ShapeCapabilityTarget | null {
         if (!api.selected) return null;

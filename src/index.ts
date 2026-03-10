@@ -4,5 +4,6 @@ export * from './architecture/shapes/contracts';
 export * from './architecture/capabilities/contracts';
 export * from './board/BoardManager';
 export * from './math/MathScope';
+export * from './rendering/hiddenLine';
 export * from './types/capabilities';
 export * from './types/engine';
