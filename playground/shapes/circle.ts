@@ -122,12 +122,28 @@ const getPulseAmount = (api: GraphShapeApi<CircleState>) => {
 
 const syncPulseVisual = (api: GraphShapeApi<CircleState>) => {
   if (!api.state.refs || api.state.isPiece) return;
+  const refs = api.selected ? ensureCircleSelectionRefs(api) : getRefs(api);
   const pulseTrack = getPulseTrack(api);
-  const pulseCircle = getRefs(api).pulseCircle;
+  const pulseCircle = refs.pulseCircle;
   if (!pulseTrack || !pulseCircle) return;
 
   const amount = getPulseAmount(api);
   const visible = api.selected && (pulseTrack.isAnimating || amount > 0.001);
+  const radiusPoint = refs.radiusPoint;
+
+  if (refs.pulsePoint && radiusPoint) {
+    const centerX = refs.center.X();
+    const centerY = refs.center.Y();
+    const dx = radiusPoint.X() - centerX;
+    const dy = radiusPoint.Y() - centerY;
+    const length = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nextRadius = length * (1 + amount * 0.18);
+
+    refs.pulsePoint.moveTo([
+      centerX + (dx / length) * nextRadius,
+      centerY + (dy / length) * nextRadius
+    ], 0);
+  }
 
   pulseCircle.setAttribute({
     visible,
@@ -135,6 +151,15 @@ const syncPulseVisual = (api: GraphShapeApi<CircleState>) => {
     fillOpacity: visible ? 0.02 + amount * 0.08 : 0,
     strokeWidth: 1.5 + amount * 4
   });
+};
+
+const bringPulseCircleToFront = (api: GraphShapeApi<CircleState>) => {
+  if (!api.state.refs || api.state.isPiece) return;
+  const pulseCircle = getRefs(api).pulseCircle;
+  const svgNode = pulseCircle?.rendNode;
+  if (svgNode?.parentNode) {
+    svgNode.parentNode.appendChild(svgNode);
+  }
 };
 
 const applyColorIfNeeded = (api: GraphShapeApi<CircleState>, target: any, kind: 'stroke' | 'fill' | 'both') => {
@@ -265,8 +290,8 @@ const ensureCircleSelectionRefs = (api: GraphShapeApi<CircleState>): CircleVisua
 
   if (!refs.pulsePoint) {
     patch.pulsePoint = api.trackObject(api.board.create('point', [
-      () => centerX() + radius() * (1 + getPulseAmount(api) * 0.18),
-      () => centerY()
+      centerX() + radius(),
+      centerY()
     ], { visible: false }));
   }
 
@@ -404,6 +429,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
       onProgress: () => {
         syncPulseVisual(api);
         api.board?.update();
+        bringPulseCircleToFront(api);
       }
     });
 
