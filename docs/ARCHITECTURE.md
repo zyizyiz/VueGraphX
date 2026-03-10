@@ -102,27 +102,28 @@ src/
 - 同一个删除、样式、缩放、动画能力可以跨图形复用。
 - 图形内部仍保留私有实现细节，不必把每种图形的专用操作暴露给外部。
 
-### 3.4 playground 的混合模式
+### 3.4 playground 的双层模式
 
-当前 playground 额外提供一个实验性的 `mixed` 模式，用来演示“平面对象与立体对象共处同一坐标系”的数学软件式交互。
+当前 playground 额外提供一个实验性的 `dual-layer` 模式，用来演示“2D 图层与 3D 场景分层协作”的数学软件式交互。
 
 这个模式有两个重要边界：
 
-- `mixed` 不是公共 `EngineMode`，不会进入库的公开类型；它在 playground 内部映射到引擎的 `3d` 模式。
-- 它不是第二套渲染引擎，而是基于现有 `view3d` 生命周期、固定视角配置和一层额外的 2D 底层坐标层组合出来的交互方案。
+- `dual-layer` 不是公共 `EngineMode`，不会进入库的公开类型；它在 playground 内部仍映射到底层引擎的 `3d` 模式，再组合第二个 2D board 实例。
+- 它不是第二套渲染引擎，而是基于现有 `view3d` 生命周期、固定视角配置和额外 2D 覆盖层组合出来的交互方案。
 
-当前 mixed 模式的组织方式：
+当前 dual-layer 模式的组织方式：
 
-1. 使用 `playground/types/mode.ts` 把 `mixed` 映射到引擎 `3d` 模式，并锁定正视角、平行投影与 `view3D` 可视区域。
-2. 使用 `playground/composables/useMixedModeScene.ts` 在 `z = 0` 上建立工作平面与 2D 语义对象。
+1. 使用 `playground/types/mode.ts` 把 `dual-layer` 映射到引擎 `3d` 模式，并通过 `view3D.fitToBoard` 让 3D 视窗随 board 自适应。
+2. 在 `playground/App.vue` 中挂载两个独立实例：底层 3D board 与顶层 2D board。
 3. 立体对象仍作为 3D 图元存在，但只允许对象级局部旋转，不旋转全局坐标轴。
-4. 坐标轴与网格作为独立 2D 底层覆盖生成，避免把它们作为普通 3D 图元参与遮挡与命中。
+4. 通过 CSS 层级与原生命中事件实现“空白区域穿透、图元本体接管”的交互规则。
 
 这样做的原因是：
 
 - 数学软件语义更接近“固定坐标系 + 对象局部旋转”，而不是整套场景跟随 trackball 自由翻转。
-- 轴与网格如果作为普通 3D 图元加入场景，会和面片共享遮挡、层级和命中规则，体验容易失真。
-- mixed 模式本质上是 playground 级实验能力，因此优先在消费侧组合，而不是过早扩张公共引擎模式集合。
+- 轴、网格、标注或操作层如果都作为普通 3D 图元加入场景，会和面片共享遮挡、层级和命中规则，体验容易失真。
+- dual-layer 模式本质上是 playground 级实验能力，因此优先在消费侧组合，而不是过早扩张公共引擎模式集合。
+- 但其中通用的基础设施，如 `view3D.fitToBoard`、`createGroup()`、`bindNativeEvent()`，应沉淀到 `src` 作为开源 API，而不是继续停留在示例层。
 
 ## 4. shape authoring 的共享基础设施
 
@@ -131,7 +132,7 @@ src/
 - 动画轨道：`createAnimationTrack()`、多轨 animation contract、共享帧调度器。
 - 点标注：`togglePointAnnotations()`、`clearPointAnnotations()` 以及 point / intersection / midpoint / computed 等来源。
 - 投影工具：`projectUserPoint()`、`projectPoint3D()`、`projectUserBounds()`、`project3DBounds()`、`getBoundsAnchor()`。
-- 受管分组：`createGroup()`、分组命中、批量拖拽、批量属性控制。
+- 受管分组：`createGroup()`、分组命中、批量拖拽、批量属性控制、原生渲染节点访问与 DOM 事件绑定。
 - UI 同步：`notifyChange()` 和 `scheduleUiChange()` 用于同步外部工具栏与悬浮 UI。
 
 这让图形作者只关注“几何如何变化”和“能力如何暴露”，而不必重复实现 requestAnimationFrame、命中批处理或投影换算。
@@ -177,7 +178,7 @@ src/
 - `removeCommand()` 清理指定命令结果
 - `setMode()` 在 2D / 3D / geometry 之间切换
 
-注意：如果你看到 playground 里的 `mixed` 模式，那是基于 `3d` 模式额外拼装出来的演示层，不代表引擎公开支持 `setMode('mixed')`。
+注意：如果你看到 playground 里的 `dual-layer` 模式，那是基于 `3d` 模式额外拼装出来的演示层，不代表引擎公开支持 `setMode('dual-layer')`。
 
 ### 5.2 如果你的需求是交互式图形编辑
 

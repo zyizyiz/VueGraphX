@@ -90,34 +90,36 @@ Principles:
 - concrete shapes should be composed with `createComposedShapeDefinition()`
 - external UI should integrate through the capability-first model whenever possible
 
-### 4. Extending the playground mixed mode
+### 4. Extending the playground dual-layer mode
 
 Use this path when you are:
 
-- adjusting the “plane + solid in one coordinate system” interaction model
-- changing the fixed camera, work plane, axis, or grid behavior used by mixed mode
-- adding mixed-specific controls, objects, or teaching demos
+- adjusting the “2D layers + 3D scene” interaction model
+- changing the fixed camera, layered mounting, work plane, axis, or grid behavior used by dual-layer mode
+- adding dual-layer-specific controls, objects, or teaching demos
 
 Main files:
 
 - `playground/App.vue`
 - `playground/types/mode.ts`
-- `playground/composables/useMixedModeScene.ts`
-- `playground/components/MixedModePanel.vue`
+- `playground/components/DualLayerPanel.vue`
+- `playground/shapes/index.ts`
 
 Implementation constraints:
 
-- `mixed` is currently a playground mode, not a public `EngineMode`; under the hood it still maps to engine `3d` mode.
+- `dual-layer` is currently a playground mode, not a public `EngineMode`; under the hood it still maps to engine `3d` mode.
 - 2D semantics should continue to be organized around the `z = 0` work plane rather than a separate coordinate system.
-- Axes and grids should preferably be implemented as an independent 2D bottom layer instead of ordinary 3D scene elements.
-- When rebuilding a large mixed scene, prefer wrapping creation/removal in `board.suspendUpdate()` / `board.unsuspendUpdate()` to avoid UI freezes when toggling controls.
+- Axes and grids should preferably be implemented as an independent 2D layer instead of ordinary 3D scene elements.
+- If a need can be generalized, prefer moving it into `src`, for example `view3D.fitToBoard`, `createGroup()`, or `bindNativeEvent()`, instead of keeping reusable infrastructure trapped in playground-only code.
+- When rebuilding a large dual-layer scene, prefer wrapping creation/removal in `board.suspendUpdate()` / `board.unsuspendUpdate()` to avoid UI freezes when toggling controls.
 
 Suggested workflow:
 
-1. Start in `playground/types/mode.ts` to define camera, projection, and `view3D` container behavior.
-2. Then implement the work plane, solid objects, and 2D bottom coordinate layer in `useMixedModeScene.ts`.
-3. Keep mixed-specific UI in `MixedModePanel.vue` instead of coupling it into the other playground modes.
-4. If the change affects how users should understand mixed mode, update the README and architecture docs as well.
+1. Start in `playground/types/mode.ts` to define camera, projection, and `view3D` behavior.
+2. Then implement dual mounting, layer ordering, and pass-through rules in `playground/App.vue`.
+3. Keep dual-layer-specific UI in `DualLayerPanel.vue` instead of coupling it into the other playground modes.
+4. If hit/drag behavior needs to bypass JSXGraph's default proxying, prefer `createGroup()` plus `bindNativeEvent()` over ad-hoc DOM hacks inside a demo shape.
+5. If the change affects how users should understand dual-layer mode, update the README and architecture docs as well.
 
 ## Recommended Shape Authoring Pattern
 
@@ -157,7 +159,7 @@ For more advanced shape behavior, prefer the shared primitives:
 
 - `createAnimationTrack()` for playback
 - `togglePointAnnotations()` for point labels
-- `createGroup()` for hit areas and bulk drag behavior
+- `createGroup()` for hit areas, bulk drag behavior, render-node lookup, and native DOM event binding
 - `projectUserBounds()` / `project3DBounds()` for floating UI placement
 - `notifyChange()` / `scheduleUiChange()` for syncing external capability UI
 

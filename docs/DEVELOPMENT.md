@@ -92,34 +92,36 @@ npm install
 - 具体图形通过 `createComposedShapeDefinition()` 在消费侧组合。
 - 图形交互尽量通过 capability-first 模式暴露给外部 UI。
 
-### 4. 扩展 playground 的混合模式
+### 4. 扩展 playground 的双层模式
 
 适用场景：
 
-- 调整“平面 + 立体同轴展示”的交互方式
-- 修改混合模式下的固定视角、工作平面、坐标轴或网格表现
-- 增加 mixed 专用的控制面板、对象或教学演示
+- 调整“2D 图层 + 3D 场景协作”的交互方式
+- 修改双层模式下的固定视角、分层挂载、工作平面、坐标轴或网格表现
+- 增加 dual-layer 专用的控制面板、对象或教学演示
 
 主要文件：
 
 - `playground/App.vue`
 - `playground/types/mode.ts`
-- `playground/composables/useMixedModeScene.ts`
-- `playground/components/MixedModePanel.vue`
+- `playground/components/DualLayerPanel.vue`
+- `playground/shapes/index.ts`
 
 实现约束：
 
-- `mixed` 当前是 playground 模式，不是公共 `EngineMode`；底层仍映射到引擎的 `3d` 模式。
-- 2D 语义对象应继续围绕 `z = 0` 工作平面组织，不要把 mixed 写成第二套独立坐标系。
-- 坐标轴和网格优先作为独立 2D 底层覆盖处理，而不是作为普通 3D 图元加入场景。
-- mixed 场景对象较多时，重建前后应优先使用 `board.suspendUpdate()` / `board.unsuspendUpdate()` 批量包裹，避免切换开关时卡顿。
+- `dual-layer` 当前是 playground 模式，不是公共 `EngineMode`；底层仍映射到引擎的 `3d` 模式。
+- 2D 语义对象应继续围绕 `z = 0` 工作平面组织，不要把 dual-layer 写成第二套独立坐标系。
+- 坐标轴和网格优先作为独立 2D 层处理，而不是作为普通 3D 图元加入场景。
+- 如果某个需求可以抽象为通用能力，优先沉淀到 `src`，例如 `view3D.fitToBoard`、`createGroup()`、`bindNativeEvent()`；不要把可复用基础设施长期留在 playground 私有代码里。
+- dual-layer 场景对象较多时，重建前后应优先使用 `board.suspendUpdate()` / `board.unsuspendUpdate()` 批量包裹，避免切换开关时卡顿。
 
 建议流程：
 
-1. 先在 `playground/types/mode.ts` 明确视角、投影和 `view3D` 容器配置。
-2. 再在 `useMixedModeScene.ts` 中处理工作平面、3D 对象和 2D 底层坐标层。
-3. mixed 专用 UI 放在 `MixedModePanel.vue`，避免把 playground 其余模式逻辑耦合进去。
-4. 如果改动影响用户对 mixed 模式的理解，记得同步更新 README 和架构文档。
+1. 先在 `playground/types/mode.ts` 明确视角、投影和 `view3D` 配置。
+2. 再在 `playground/App.vue` 中处理双实例挂载、层级关系与透传策略。
+3. dual-layer 专用 UI 放在 `DualLayerPanel.vue`，避免把 playground 其余模式逻辑耦合进去。
+4. 如果命中/拖拽需要绕开 JSXGraph 默认代理，优先通过 `createGroup()` 和 `bindNativeEvent()` 实现，而不是在示例里散落私有 DOM hack。
+5. 如果改动影响用户对 dual-layer 模式的理解，记得同步更新 README 和架构文档。
 
 ## 当前推荐的图形扩展方式
 
@@ -159,7 +161,7 @@ const shape = createComposedShapeDefinition<{ x: number; y: number }>({
 
 - `createAnimationTrack()` 管理动画播放。
 - `togglePointAnnotations()` 管理点标注。
-- `createGroup()` 管理命中区域和批量拖拽。
+- `createGroup()` 管理命中区域、批量拖拽、渲染节点访问和原生 DOM 事件绑定。
 - `projectUserBounds()` / `project3DBounds()` 定位悬浮 UI。
 - `notifyChange()` / `scheduleUiChange()` 同步外部能力 UI。
 

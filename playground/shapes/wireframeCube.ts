@@ -98,54 +98,6 @@ const getPointerLikeArg = (args: any[]): { clientX?: number; clientY?: number; s
   return null;
 };
 
-const getInteractiveRenderNode = (object: any): Element | null => {
-  const node = object?.element2D?.rendNode ?? object?.rendNode ?? null;
-  return node instanceof Element ? node : null;
-};
-
-const bindNativeStartListeners = (
-  objects: any[],
-  onStart: (event: PointerEvent | MouseEvent | TouchEvent) => void
-): { count: number; cleanup: () => void } => {
-  const disposers: Array<() => void> = [];
-  let count = 0;
-
-  objects.forEach((object) => {
-    const node = getInteractiveRenderNode(object);
-    if (!node || typeof node.addEventListener !== 'function') return;
-
-    count += 1;
-
-    if (node.tagName.toLowerCase() === 'polygon') {
-      node.setAttribute('pointer-events', 'all');
-    }
-
-    const handleStart = (event: Event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onStart(event as PointerEvent | MouseEvent | TouchEvent);
-    };
-
-    if (typeof window !== 'undefined' && 'PointerEvent' in window) {
-      node.addEventListener('pointerdown', handleStart as EventListener, { passive: false });
-      disposers.push(() => node.removeEventListener('pointerdown', handleStart as EventListener));
-      return;
-    }
-
-    node.addEventListener('mousedown', handleStart as EventListener);
-    node.addEventListener('touchstart', handleStart as EventListener, { passive: false });
-    disposers.push(() => node.removeEventListener('mousedown', handleStart as EventListener));
-    disposers.push(() => node.removeEventListener('touchstart', handleStart as EventListener));
-  });
-
-  return {
-    count,
-    cleanup: () => {
-      disposers.forEach((dispose) => dispose());
-    }
-  };
-};
-
 export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, WireframeCubeState>({
   type: 'wireframe-cube',
   supportedModes: 'all',
@@ -369,22 +321,44 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, 
           window.removeEventListener('keyup', onKeyUp);
         };
 
-        applyGeometry();
-
-        const interactiveObjects = [...Object.values(edgeObjects), ...Object.values(faceObjects)];
-        const nativeHitBindings = bindNativeStartListeners(interactiveObjects, (event) => {
-          startInteraction(event);
+        const group = api.createGroup({ ...edgeObjects, ...faceObjects }, { createNativeGroup: false });
+        group.forEach((member) => {
+          const node = group.getRenderNode(member.key);
+          if (node?.tagName.toLowerCase() === 'polygon') {
+            node.setAttribute('pointer-events', 'all');
+          }
         });
 
-        cleanupHitListeners = nativeHitBindings.cleanup;
+        applyGeometry();
 
-        if (nativeHitBindings.count === 0) {
-          const group = api.createGroup({ ...edgeObjects, ...faceObjects }, { createNativeGroup: false });
-          cleanupHitListeners = group.onHit((_member, ...args) => {
-            startInteraction(...args);
+        if (typeof window !== 'undefined' && 'PointerEvent' in window) {
+          cleanupHitListeners = group.bindNativeEvent('pointerdown', (_member, event) => {
+            startInteraction(event as PointerEvent);
           }, {
-            eventName: 'down'
+            preventDefault: true,
+            stopPropagation: true,
+            passive: false
           });
+        } else {
+          const removeMouseDown = group.bindNativeEvent('mousedown', (_member, event) => {
+            startInteraction(event as MouseEvent);
+          }, {
+            preventDefault: true,
+            stopPropagation: true
+          });
+
+          const removeTouchStart = group.bindNativeEvent('touchstart', (_member, event) => {
+            startInteraction(event as TouchEvent);
+          }, {
+            preventDefault: true,
+            stopPropagation: true,
+            passive: false
+          });
+
+          cleanupHitListeners = () => {
+            removeMouseDown();
+            removeTouchStart();
+          };
         }
 
         return;

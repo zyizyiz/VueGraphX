@@ -543,6 +543,41 @@ export interface GraphShapeGroupHitOptions {
 }
 
 /**
+ * 分组级原生 DOM 事件绑定配置。
+ */
+export interface GraphShapeGroupNativeEventOptions {
+  /**
+   * 仅针对指定 key 的成员绑定原生事件。
+   */
+  keys?: string | string[];
+
+  /**
+   * 绑定后是否自动调用 preventDefault。
+   */
+  preventDefault?: boolean;
+
+  /**
+   * 绑定后是否自动调用 stopPropagation。
+   */
+  stopPropagation?: boolean;
+
+  /**
+   * 原生 addEventListener 的 passive 选项。
+   */
+  passive?: boolean;
+
+  /**
+   * 原生 addEventListener 的 capture 选项。
+   */
+  capture?: boolean;
+
+  /**
+   * 原生 addEventListener 的 once 选项。
+   */
+  once?: boolean;
+}
+
+/**
  * 对一个或多个 JSXGraph 对象的受管分组封装。
  */
 export interface GraphShapeGroup {
@@ -570,6 +605,11 @@ export interface GraphShapeGroup {
    * 返回指定 key 对应的原始对象。
    */
   getObject(key: string): any | null;
+
+  /**
+   * 返回指定 key 成员对应的底层渲染节点。
+   */
+  getRenderNode(key: string): Element | null;
 
   /**
    * 判断分组中是否存在指定 key。
@@ -620,6 +660,16 @@ export interface GraphShapeGroup {
    * 绑定命中事件辅助逻辑并返回解绑函数。
    */
   onHit(handler: (member: GraphShapeGroupMember, ...args: any[]) => void, options?: GraphShapeGroupHitOptions): () => void;
+
+  /**
+   * 直接为成员的原生渲染节点绑定 DOM 事件。
+   * 适合多层透传、命中代理失效或需要更细粒度控制的场景。
+   */
+  bindNativeEvent(
+    eventName: string,
+    handler: (member: GraphShapeGroupMember, event: Event, node: Element) => void,
+    options?: GraphShapeGroupNativeEventOptions
+  ): () => void;
 
   /**
    * 绑定命中即选中的交互。

@@ -20,11 +20,11 @@ VueGraphX 提供两条互补的能力主线：
 - 表达式渲染：把 2D/3D 数学表达式、几何指令交给统一渲染管线执行。
 - 图形运行时：把具体图形实现收敛为 shape definition，再通过统一 capability API 暴露交互能力。
 
-当前 playground 还提供一个实验性的混合模式：
+当前 playground 还提供一个实验性的双层模式（dual-layer）：
 
 - 把 2D 对象理解为落在 `z = 0` 工作平面上的内容。
 - 把立体对象放在同一坐标系里，但仅允许对象局部旋转，不旋转全局坐标轴。
-- 用固定正视角的 `view3d` 承载 3D 场景，再叠加独立的 2D 坐标轴与网格层，用来模拟更接近数学软件的“平面 + 立体同轴展示”。
+- 用固定正视角的 `view3d` 承载 3D 场景，再叠加独立的 2D 顶层/底层覆盖，用来模拟更接近数学软件的“平面 + 立体同轴展示”。
 
 它适合两类场景：
 
@@ -39,7 +39,8 @@ VueGraphX 提供两条互补的能力主线：
 - 🧩 组合式图形定义：使用 `createComposedShapeDefinition()`、`GraphShapeApi` 和 `GraphShapeContext` 在业务侧组合自己的图形。
 - 🎬 共享动画与标注能力：动画轨道、点标注、命中分组、拖拽与悬浮 UI 投影工具都是通用基础设施。
 - 📐 统一 2D / 3D 渲染入口：表达式渲染和 view3d 生命周期都通过同一个引擎门面管理。
-- 🧪 playground 混合模式：以 `3d` 引擎模式为底座，在 `z = 0` 平面上组织 2D 语义内容，并通过对象级旋转查看立体结构。
+- 🧪 playground 双层模式：以 `3d` 引擎模式为底座，叠加独立的 2D 层，并通过对象级旋转查看立体结构。
+- 🧱 分层场景基础设施：内置 `view3D.fitToBoard` 和分组级 `bindNativeEvent()`，方便消费侧组合双层/多层交互。
 - 🛡️ 类型安全：公共类型、能力契约和 shape authoring API 都完整导出，适合二次封装和 IDE 自动提示。
 
 ## 📦 安装
@@ -133,20 +134,86 @@ engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
 engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
 
-### 5. 关于 playground 的混合模式
+### 5. 在业务侧实现分层 / 双层场景
 
-混合模式当前是 playground 层的组合能力，不是新的公共 `EngineMode`。它的目标是演示一种更接近数学软件的交互方式：
+如果你的应用要把多个交互层叠在一起，例如：
+
+- 顶层 2D 标注 / 命中层 + 底层 3D 场景
+- 底层 2D 坐标网格 + 顶层 3D 立体对象
+- 需要让“空白区域穿透、图元本体命中”的教学白板或几何编辑器
+
+当前版本建议优先使用两类公共能力，而不是直接依赖 playground 内部实现：
+
+#### 5.1 `view3D.fitToBoard`
+
+当容器宽高比变化、board 自身 bounding box 发生调整时，`view3d` 默认的固定矩形容易出现“3D 图元移动到边缘后被裁剪”的问题。可以启用：
+
+```typescript
+const engine = new GraphXEngine('box', {
+  axis: false,
+  showNavigation: false,
+  view3D: {
+    fitToBoard: true,
+    rect: [[-8, -8], [16, 16], [[-5, 5], [-5, 5], [-5, 5]]],
+    attributes: {
+      projection: 'parallel'
+    }
+  }
+});
+
+engine.setMode('3d');
+```
+
+启用后，运行时会：
+
+- 在初始化时把 `view3d` 同步到当前 board 的真实可视区域。
+- 在 `resize()` 后继续同步。
+- 在 board 的 `boundingbox` 变化后继续同步。
+
+这很适合响应式布局、分栏编辑器、嵌入式白板和任意比例的容器。
+
+#### 5.2 `createGroup()` + `bindNativeEvent()`
+
+在多层透传场景中，底层图元有时不能完全依赖 JSXGraph 自己的命中代理。这时可以直接对受管分组的渲染节点绑定原生 DOM 事件：
+
+```typescript
+const group = api.createGroup({ face, edge }, { createNativeGroup: false });
+
+const dispose = group.bindNativeEvent('pointerdown', (member, event, node) => {
+  event.preventDefault();
+  console.log('hit member:', member.key, node.tagName);
+}, {
+  stopPropagation: true,
+  passive: false
+});
+```
+
+这类 API 适合：
+
+- 双层 / 多层透传布局
+- 需要直接控制 `pointerdown` / `touchstart` 的图元
+- JSXGraph 默认命中代理不够稳定的组合场景
+
+同时你仍然可以继续使用：
+
+- `group.onHit()` 处理常规命中
+- `group.bindDrag()` 处理常规拖拽
+- `group.getRenderNode(key)` 获取成员对应的真实渲染节点
+
+### 6. 关于 playground 的双层模式
+
+双层模式当前是 playground 层的组合能力，不是新的公共 `EngineMode`。它的目标是演示一种更接近数学软件的交互方式：
 
 - 全局只有一套坐标系，平面对象按 `z = 0` 语义理解。
 - 立体对象和 2D 对象共处同一坐标系，但立体对象允许局部旋转以观察结构。
-- 坐标轴和网格使用独立的 2D 底层覆盖，而不是把它们也当成普通 3D 图元处理。
+- 顶层 2D 与底层 3D 可以同时存在，并通过 CSS / 原生命中事件实现“空白穿透、图元接管”。
 
 当前实现位于：
 
-- `playground/App.vue`：混合模式入口与模式切换。
-- `playground/types/mode.ts`：把 playground 的 `mixed` 映射到引擎 `3d` 模式，并配置固定视角的 `view3D`。
-- `playground/composables/useMixedModeScene.ts`：构建 `z = 0` 工作平面、立方体、底层 2D 坐标轴与网格。
-- `playground/components/MixedModePanel.vue`：混合模式专用控制面板。
+- `playground/App.vue`：双层模式入口、双实例挂载与层级透传样式。
+- `playground/types/mode.ts`：把 playground 的 `dual-layer` 映射到底层 3D 引擎配置，并启用 `view3D.fitToBoard`。
+- `playground/shapes/index.ts`：区分顶层 2D 图形与底层 3D 图形注册。
+- `playground/components/DualLayerPanel.vue`：双层模式专用控制面板。
 
 ## 🧠 推荐使用方式
 
@@ -193,12 +260,12 @@ npm run docs:api
 - `rendering/`: 表达式渲染器、指令目录和处理器。
 - `types/`: 对外基础类型与引擎配置。
 
-playground 中与混合模式直接相关的文件：
+playground 中与双层模式直接相关的文件：
 
-- `playground/App.vue`: playground 模式切换与 mixed 面板挂载。
-- `playground/types/mode.ts`: playground 模式到引擎模式的映射与 board 配置。
-- `playground/composables/useMixedModeScene.ts`: mixed 场景、2D 坐标层、对象级旋转与交互调度。
-- `playground/components/MixedModePanel.vue`: mixed 模式的显示与姿态控制。
+- `playground/App.vue`: playground 模式切换、双层容器挂载与事件透传样式。
+- `playground/types/mode.ts`: playground 模式到引擎模式的映射与 `view3D` 配置。
+- `playground/components/DualLayerPanel.vue`: 双层模式的添加图形与交互说明。
+- `playground/shapes/wireframeCube.ts`: 使用 `createGroup()` 与 `bindNativeEvent()` 的 3D 图形交互示例。
 
 ## 🧪 测试与校验
 

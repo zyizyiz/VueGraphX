@@ -20,11 +20,11 @@ VueGraphX exposes two complementary workflows:
 - Expression rendering for 2D/3D math expressions and geometry commands.
 - Shape runtime authoring built around shape definitions plus a capability-first interaction model.
 
-The playground also includes an experimental mixed mode:
+The playground also includes an experimental dual-layer mode:
 
 - 2D objects are treated as content living on the `z = 0` work plane.
 - Solid objects share the same coordinate system but rotate only at the object level, without rotating the global axes.
-- A fixed front-facing `view3d` hosts the 3D scene while an independent 2D axis/grid layer is rendered underneath to mimic math-software-style “plane + solid in one system” behavior.
+- A fixed front-facing `view3d` hosts the 3D scene while an independent 2D overlay / underlay can be composed around it to mimic math-software-style “plane + solid in one system” behavior.
 
 That makes it suitable both as a standalone rendering engine and as the runtime layer of an interactive geometry editor, education tool, or custom whiteboard.
 
@@ -36,7 +36,8 @@ That makes it suitable both as a standalone rendering engine and as the runtime 
 - 🧩 Composable shape authoring: build local shapes with `createComposedShapeDefinition()`, `GraphShapeApi`, and `GraphShapeContext`.
 - 🎬 Shared runtime utilities: animation tracks, point annotations, hit groups, drag helpers, and screen projection helpers are reusable across shapes.
 - 📐 Unified 2D / 3D entry point: expression rendering and `view3d` lifecycle are managed through the same engine facade.
-- 🧪 Experimental playground mixed mode: built on top of engine `3d` mode, but organized around a `z = 0` work plane plus object-local solid rotation.
+- 🧪 Experimental playground dual-layer mode: built on top of engine `3d` mode and composed with an independent 2D layer.
+- 🧱 Layered-scene primitives: public `view3D.fitToBoard` and group-level `bindNativeEvent()` make multi-layer interaction easier to build in consumer apps.
 - 🛡️ Type-safe public surface: engine options, capability contracts, and shape authoring interfaces are exported for downstream integrations.
 
 ## 📦 Installation
@@ -130,20 +131,86 @@ engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
 engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
 
-### 5. About the playground mixed mode
+### 5. Building layered / dual-layer scenes in your app
 
-Mixed mode is currently a playground-level composition, not a new public `EngineMode`. It demonstrates a math-software-oriented interaction model:
+If your application needs stacked interaction layers, for example:
+
+- a top 2D annotation layer over a 3D scene
+- a bottom 2D axis/grid layer under a 3D solid scene
+- whiteboards or geometry editors where empty space should pass through but shapes should still capture input
+
+the current recommended approach is to rely on public engine primitives rather than copying playground-only code.
+
+#### 5.1 `view3D.fitToBoard`
+
+When the container aspect ratio changes, a fixed `view3d` rectangle can cause 3D content to be clipped near the edges. Enable:
+
+```typescript
+const engine = new GraphXEngine('box', {
+  axis: false,
+  showNavigation: false,
+  view3D: {
+    fitToBoard: true,
+    rect: [[-8, -8], [16, 16], [[-5, 5], [-5, 5], [-5, 5]]],
+    attributes: {
+      projection: 'parallel'
+    }
+  }
+});
+
+engine.setMode('3d');
+```
+
+With this option enabled, the runtime keeps the `view3d` viewport synchronized with the board's actual visible region during:
+
+- initial setup
+- `resize()`
+- board `boundingbox` updates
+
+This is especially useful for responsive layouts, split panes, embeddable editors, and custom aspect ratios.
+
+#### 5.2 `createGroup()` + `bindNativeEvent()`
+
+In layered pass-through layouts, the bottom layer cannot always rely on JSXGraph's default hit proxying. In those cases you can bind directly to the actual render nodes of a managed group:
+
+```typescript
+const group = api.createGroup({ face, edge }, { createNativeGroup: false });
+
+const dispose = group.bindNativeEvent('pointerdown', (member, event, node) => {
+  event.preventDefault();
+  console.log('hit member:', member.key, node.tagName);
+}, {
+  stopPropagation: true,
+  passive: false
+});
+```
+
+This is useful for:
+
+- dual-layer / multi-layer pass-through layouts
+- shapes that need direct `pointerdown` / `touchstart` handling
+- cases where JSXGraph's default hit proxy is not enough for a composed interaction model
+
+You can still combine it with the higher-level helpers:
+
+- `group.onHit()` for regular hit handling
+- `group.bindDrag()` for regular drag behavior
+- `group.getRenderNode(key)` to inspect the actual render node of a member
+
+### 6. About the playground dual-layer mode
+
+Dual-layer mode is currently a playground-level composition, not a new public `EngineMode`. It demonstrates a math-software-oriented interaction model:
 
 - one shared coordinate system where planar objects keep `z = 0` semantics
 - solid objects that can be inspected through local rotation
-- an independent 2D axis/grid layer instead of treating axes as ordinary 3D scene elements
+- 2D and 3D layers that can coexist with “pass through empty space, capture actual shapes” behavior
 
 The current implementation lives in:
 
-- `playground/App.vue`: mixed-mode entry and mode switching
-- `playground/types/mode.ts`: mapping `mixed` to engine `3d` mode plus fixed-view `view3D` configuration
-- `playground/composables/useMixedModeScene.ts`: `z = 0` work plane, cube scene, and 2D bottom axis/grid layer
-- `playground/components/MixedModePanel.vue`: mixed-mode-specific controls
+- `playground/App.vue`: dual-layer entry, dual-engine mounting, and pass-through styling
+- `playground/types/mode.ts`: mapping `dual-layer` to the underlying 3D engine configuration and enabling `view3D.fitToBoard`
+- `playground/shapes/index.ts`: separate registration for top 2D and bottom 3D shapes
+- `playground/components/DualLayerPanel.vue`: dual-layer-specific controls
 
 ## 🧠 Recommended Mental Model
 
@@ -190,12 +257,12 @@ The library is organized under `src/`:
 - `rendering/`: renderer, command catalog, and render handlers.
 - `types/`: public engine and capability types.
 
-Playground files directly involved in mixed mode:
+Playground files directly involved in dual-layer mode:
 
-- `playground/App.vue`: playground mode switching and mixed panel mounting
-- `playground/types/mode.ts`: playground-to-engine mode mapping and board configuration
-- `playground/composables/useMixedModeScene.ts`: mixed scene, 2D coordinate layer, object-level rotation, and interaction scheduling
-- `playground/components/MixedModePanel.vue`: mixed-mode visibility and pose controls
+- `playground/App.vue`: playground mode switching, dual-layer mounting, and event pass-through styling
+- `playground/types/mode.ts`: playground-to-engine mode mapping and `view3D` configuration
+- `playground/components/DualLayerPanel.vue`: dual-layer-specific controls and interaction hints
+- `playground/shapes/wireframeCube.ts`: an example 3D shape using `createGroup()` and `bindNativeEvent()` for layered hit handling
 
 ## 🧪 Testing & Validation
 

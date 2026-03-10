@@ -8,7 +8,7 @@
 
 > **GraphAnimationEasing** = (`progress`) => `number`
 
-Defined in: [architecture/shapes/contracts.ts:279](https://github.com/zyizyiz/VueGraphX/blob/708b133750b40c4618f980ee3f1e94c99bc50898/src/architecture/shapes/contracts.ts#L279)
+Defined in: [architecture/shapes/contracts.ts:279](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L279)
 
 动画轨道使用的缓动函数。
 

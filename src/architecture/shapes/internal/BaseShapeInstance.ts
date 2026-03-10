@@ -5,6 +5,7 @@ import type {
   GraphAnimationTrack,
   GraphAnimationTrackConfig,
   GraphShapeDragOptions,
+  GraphShapeGroupNativeEventOptions,
   GraphShapeGroupDragOptions,
   GraphPointAnnotationOptions,
   GraphPointAnnotationSpec,
@@ -154,6 +155,13 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
     return () => {
       disposers.forEach((dispose) => dispose());
     };
+  }
+
+  protected getRenderNode(target: any): Element | null {
+    const candidate = target?.object ?? target;
+    const node = candidate?.element2D?.rendNode ?? candidate?.rendNode ?? null;
+    if (typeof Element === 'undefined') return null;
+    return node instanceof Element ? node : null;
   }
 
   protected createGroup(groupInput: GraphShapeGroupInput, options?: { id?: string; createNativeGroup?: boolean }): GraphShapeGroup {
@@ -640,6 +648,7 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
       nativeGroup,
       getMember: (key: string) => memberMap.get(key) ?? null,
       getObject: (key: string) => memberMap.get(key)?.object ?? null,
+      getRenderNode: (key: string) => this.getRenderNode(memberMap.get(key)?.object),
       has: (key: string) => memberMap.has(key),
       keys: () => members.map((member) => member.key),
       pick: (keys: string | string[]) => {
@@ -709,6 +718,33 @@ export abstract class BaseShapeInstance<StateType = Record<string, never>> imple
           },
           options?.keys
         );
+      },
+      bindNativeEvent: (eventName: string, handler, options?: GraphShapeGroupNativeEventOptions) => {
+        const targetMembers = resolveMembers(options?.keys);
+        const disposers: Array<() => void> = [];
+        const listenerOptions = {
+          capture: options?.capture,
+          once: options?.once,
+          passive: options?.passive
+        };
+
+        targetMembers.forEach((member) => {
+          const node = this.getRenderNode(member.object);
+          if (!node) return;
+
+          const wrappedHandler = (event: Event) => {
+            if (options?.preventDefault) event.preventDefault();
+            if (options?.stopPropagation) event.stopPropagation();
+            handler(member, event, node);
+          };
+
+          node.addEventListener(eventName, wrappedHandler, listenerOptions);
+          disposers.push(() => node.removeEventListener(eventName, wrappedHandler, listenerOptions));
+        });
+
+        return () => {
+          disposers.forEach((dispose) => dispose());
+        };
       },
       bindSelectOnHit: (options) => {
         return this.createGroupView(groupId, members, nativeGroup, listenerEntries).onHit(

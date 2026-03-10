@@ -102,27 +102,28 @@ This is valuable because:
 - delete, style, resize, split, annotation, and animation behavior can be reused across shapes.
 - shapes keep their private implementation details while still exposing a stable public interaction model.
 
-### 3.4 Playground mixed mode
+### 3.4 Playground dual-layer mode
 
-The playground currently includes an experimental `mixed` mode that demonstrates a math-software-style interaction model where planar objects and solids live in one shared coordinate system.
+The playground currently includes an experimental `dual-layer` mode that demonstrates a math-software-style interaction model where 2D layers and a 3D scene cooperate in one composed runtime.
 
 This mode has two important boundaries:
 
-- `mixed` is not a public `EngineMode` and is not part of the exported engine type surface; inside the playground it is mapped to engine `3d` mode.
-- It is not a separate renderer. It is composed from the existing `view3d` lifecycle, a fixed front-facing camera configuration, and an additional 2D bottom coordinate layer.
+- `dual-layer` is not a public `EngineMode` and is not part of the exported engine type surface; inside the playground it is still mapped to the engine's `3d` mode and then combined with a second 2D board instance.
+- It is not a separate renderer. It is composed from the existing `view3d` lifecycle, a fixed front-facing camera configuration, and additional 2D overlay / underlay boards.
 
-The current mixed-mode structure is:
+The current dual-layer structure is:
 
-1. `playground/types/mode.ts` maps `mixed` to engine `3d` mode and locks projection, camera, and `view3D` viewport behavior.
-2. `playground/composables/useMixedModeScene.ts` builds the `z = 0` work plane and the planar semantics on top of it.
+1. `playground/types/mode.ts` maps `dual-layer` to engine `3d` mode and enables `view3D.fitToBoard` so the 3D viewport follows the board.
+2. `playground/App.vue` mounts two independent board instances: a bottom 3D board and a top 2D board.
 3. Solid objects remain true 3D elements, but only object-local rotation is allowed; the global axes do not rotate.
-4. Axes and grids are rendered as an independent 2D bottom layer rather than ordinary 3D scene elements, so they do not share the same occlusion and hit-testing semantics as faces.
+4. CSS layering plus native DOM event binding are used to achieve “pass through empty space, capture actual shapes”.
 
 Why this design exists:
 
 - math-software interaction is closer to “fixed coordinate system + local object inspection” than full scene trackball rotation
-- if axes and grids are added as normal 3D elements, they inherit face occlusion, layering, and hit behavior that feels wrong for a coordinate system
-- mixed mode is intentionally treated as a playground-level experiment before expanding the public engine mode surface
+- if axes, grids, annotations, or controls are added as normal 3D elements, they inherit face occlusion, layering, and hit behavior that feels wrong for a coordinate system
+- dual-layer mode is intentionally treated as a playground-level experiment before expanding the public engine mode surface
+- the reusable parts of this experiment, such as `view3D.fitToBoard`, `createGroup()`, and `bindNativeEvent()`, should live in `src` as public API rather than remaining hidden in playground-only code
 
 ## 4. Shared Infrastructure for Shape Authors
 
@@ -131,7 +132,7 @@ The current runtime provides several reusable authoring primitives:
 - Animation tracks via `createAnimationTrack()` and multi-track animation contracts.
 - Point annotations via `togglePointAnnotations()` and point / intersection / midpoint / computed sources.
 - Projection helpers such as `projectUserPoint()`, `projectPoint3D()`, `projectUserBounds()`, `project3DBounds()`, and `getBoundsAnchor()`.
-- Managed groups via `createGroup()` for hit detection, bulk drag behavior, and shared attribute updates.
+- Managed groups via `createGroup()` for hit detection, bulk drag behavior, shared attribute updates, render-node lookup, and native DOM event binding.
 - UI synchronization utilities like `notifyChange()` and `scheduleUiChange()`.
 
 This keeps shape authors focused on geometry and capability exposure instead of rebuilding frame scheduling, hit batching, or screen projection logic.
@@ -146,7 +147,7 @@ Prefer:
 - `removeCommand()` to clean up a specific command
 - `setMode()` to switch between `2d`, `3d`, and `geometry`
 
-Note: if you see `mixed` in the playground UI, that is a composed demo layer built on top of `3d`, not a public engine mode exposed as `setMode('mixed')`.
+Note: if you see `dual-layer` in the playground UI, that is a composed demo layer built on top of `3d`, not a public engine mode exposed as `setMode('dual-layer')`.
 
 ### 5.2 If your use case is an interactive shape editor
 

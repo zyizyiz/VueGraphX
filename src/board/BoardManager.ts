@@ -121,6 +121,12 @@ export class BoardManager {
 
     this.board = JXG.JSXGraph.initBoard(this.containerId, { ...defaultOptions, ...boardOptions });
 
+    if (this.mode === '3d' && view3DOptions?.fitToBoard) {
+      this.board.on('boundingbox', () => {
+        this.syncView3DToBoard();
+      });
+    }
+
     if (this.mode === '3d') {
       const viewRect = cloneView3DRect(view3DOptions?.rect ?? DEFAULT_VIEW3D_RECT);
       this.baseView3DRect = cloneView3DRect(viewRect);
@@ -155,6 +161,7 @@ export class BoardManager {
     this.view3d.llftCorner = adaptiveRect[0];
     this.view3d.size = adaptiveRect[1];
     this.view3d.bbox3D = adaptiveRect[2];
+    this.view3d.update?.();
   }
 
   /**

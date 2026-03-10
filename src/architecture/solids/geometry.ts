@@ -64,7 +64,6 @@ const createRectangleFace3D = (
   width: number,
   height: number,
   axisA: keyof GraphSolidPoint3D,
-  axisB: keyof GraphSolidPoint3D,
   fixedAxis: keyof GraphSolidPoint3D
 ): GraphSolidPoint3D[] => {
   const halfWidth = width / 2;
@@ -248,37 +247,37 @@ export const createCuboidSolidTopology = ({
   });
 
   const patches: GraphSolidPolygonPatch[] = [
-    makeFace('front', 'Front', createRectangleFace3D(frontCenter, width, height, 'x', 'y', 'z'), createRectangle2D(width, height, frontNetCenter), {
+    makeFace('front', 'Front', createRectangleFace3D(frontCenter, width, height, 'x', 'z'), createRectangle2D(width, height, frontNetCenter), {
       fillColor: '#818cf8',
       fillOpacity: 0.95,
       strokeColor: '#3730a3',
       strokeWidth: 2
     }),
-    makeFace('top', 'Top', createRectangleFace3D(topCenter, width, depth, 'x', 'z', 'y'), createRectangle2D(width, depth, topNetCenter), {
+    makeFace('top', 'Top', createRectangleFace3D(topCenter, width, depth, 'x', 'y'), createRectangle2D(width, depth, topNetCenter), {
       fillColor: '#c7d2fe',
       fillOpacity: 0.92,
       strokeColor: '#4338ca',
       strokeWidth: 2
     }),
-    makeFace('bottom', 'Bottom', createRectangleFace3D(bottomCenter, width, depth, 'x', 'z', 'y'), createRectangle2D(width, depth, bottomNetCenter), {
+    makeFace('bottom', 'Bottom', createRectangleFace3D(bottomCenter, width, depth, 'x', 'y'), createRectangle2D(width, depth, bottomNetCenter), {
       fillColor: '#cbd5e1',
       fillOpacity: 0.9,
       strokeColor: '#64748b',
       strokeWidth: 2
     }),
-    makeFace('left', 'Left', createRectangleFace3D(leftCenter, depth, height, 'z', 'y', 'x'), createRectangle2D(depth, height, leftNetCenter), {
+    makeFace('left', 'Left', createRectangleFace3D(leftCenter, depth, height, 'z', 'x'), createRectangle2D(depth, height, leftNetCenter), {
       fillColor: '#a5b4fc',
       fillOpacity: 0.92,
       strokeColor: '#4f46e5',
       strokeWidth: 2
     }),
-    makeFace('right', 'Right', createRectangleFace3D(rightCenter, depth, height, 'z', 'y', 'x'), createRectangle2D(depth, height, rightNetCenter), {
+    makeFace('right', 'Right', createRectangleFace3D(rightCenter, depth, height, 'z', 'x'), createRectangle2D(depth, height, rightNetCenter), {
       fillColor: '#4f46e5',
       fillOpacity: 0.92,
       strokeColor: '#312e81',
       strokeWidth: 2
     }),
-    makeFace('back', 'Back', createRectangleFace3D(backCenter, width, height, 'x', 'y', 'z'), createRectangle2D(width, height, backNetCenter), {
+    makeFace('back', 'Back', createRectangleFace3D(backCenter, width, height, 'x', 'z'), createRectangle2D(width, height, backNetCenter), {
       fillColor: '#e0e7ff',
       fillOpacity: 0.92,
       strokeColor: '#6366f1',
