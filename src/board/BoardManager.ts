@@ -1,6 +1,45 @@
 import JXG from 'jsxgraph';
 import { EngineMode, GraphXOptions, JXGView3D } from '../types/engine';
 
+type View3DRect = NonNullable<NonNullable<GraphXOptions['view3D']>['rect']>;
+
+const DEFAULT_VIEW3D_RECT: View3DRect = [[-6, -3], [8, 8], [[-5, 5], [-5, 5], [-5, 5]]];
+
+const cloneView3DRect = (rect: View3DRect): View3DRect => [
+  [...rect[0]] as [number, number],
+  [...rect[1]] as [number, number],
+  rect[2].map((range) => [...range] as [number, number]) as [[number, number], [number, number], [number, number]]
+];
+
+const scaleRangeAroundCenter = ([min, max]: [number, number], scale: number): [number, number] => {
+  const center = (min + max) / 2;
+  const halfSpan = ((max - min) / 2) * scale;
+  return [center - halfSpan, center + halfSpan];
+};
+
+export const buildAdaptiveView3DRect = (
+  boardBoundingBox: [number, number, number, number],
+  baseRect: View3DRect
+): View3DRect => {
+  const [left, top, right, bottom] = boardBoundingBox;
+  const width = right - left;
+  const height = top - bottom;
+  const baseWidth = baseRect[1][0];
+  const baseHeight = baseRect[1][1];
+  const scaleX = Math.abs(baseWidth) > 1e-6 ? width / baseWidth : 1;
+  const scaleY = Math.abs(baseHeight) > 1e-6 ? height / baseHeight : 1;
+
+  return [
+    [left, bottom],
+    [width, height],
+    [
+      scaleRangeAroundCenter(baseRect[2][0], scaleX),
+      scaleRangeAroundCenter(baseRect[2][1], scaleY),
+      [...baseRect[2][2]] as [number, number]
+    ]
+  ];
+};
+
 /**
  * 供公共引擎门面调用的底层画板生命周期管理器。
  */
@@ -11,6 +50,7 @@ export class BoardManager {
 
   private containerId: string;
   private globalOptions?: GraphXOptions;
+  private baseView3DRect: View3DRect = cloneView3DRect(DEFAULT_VIEW3D_RECT);
 
   /**
    * 创建一个绑定到指定 DOM 容器 id 的画板管理器。
@@ -82,7 +122,8 @@ export class BoardManager {
     this.board = JXG.JSXGraph.initBoard(this.containerId, { ...defaultOptions, ...boardOptions });
 
     if (this.mode === '3d') {
-      const viewRect = view3DOptions?.rect ?? [[-6, -3], [8, 8], [[-5, 5], [-5, 5], [-5, 5]]];
+      const viewRect = cloneView3DRect(view3DOptions?.rect ?? DEFAULT_VIEW3D_RECT);
+      this.baseView3DRect = cloneView3DRect(viewRect);
       const viewAttributes = {
         xPlaneElements: { visible: false },
         yPlaneElements: { visible: false },
@@ -93,7 +134,27 @@ export class BoardManager {
         viewRect,
         viewAttributes
       ) as JXGView3D;
+
+      this.syncView3DToBoard();
     }
+  }
+
+  public syncView3DToBoard(): void {
+    if (this.mode !== '3d' || !this.board || !this.view3d || !this.globalOptions?.view3D?.fitToBoard) {
+      return;
+    }
+
+    const boardBoundingBox = this.board.getBoundingBox();
+    if (!boardBoundingBox || boardBoundingBox.length < 4) return;
+
+    const adaptiveRect = buildAdaptiveView3DRect(
+      boardBoundingBox as [number, number, number, number],
+      this.baseView3DRect
+    );
+
+    this.view3d.llftCorner = adaptiveRect[0];
+    this.view3d.size = adaptiveRect[1];
+    this.view3d.bbox3D = adaptiveRect[2];
   }
 
   /**

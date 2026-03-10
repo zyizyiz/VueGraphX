@@ -98,12 +98,61 @@ const getPointerLikeArg = (args: any[]): { clientX?: number; clientY?: number; s
   return null;
 };
 
+const getInteractiveRenderNode = (object: any): Element | null => {
+  const node = object?.element2D?.rendNode ?? object?.rendNode ?? null;
+  return node instanceof Element ? node : null;
+};
+
+const bindNativeStartListeners = (
+  objects: any[],
+  onStart: (event: PointerEvent | MouseEvent | TouchEvent) => void
+): { count: number; cleanup: () => void } => {
+  const disposers: Array<() => void> = [];
+  let count = 0;
+
+  objects.forEach((object) => {
+    const node = getInteractiveRenderNode(object);
+    if (!node || typeof node.addEventListener !== 'function') return;
+
+    count += 1;
+
+    if (node.tagName.toLowerCase() === 'polygon') {
+      node.setAttribute('pointer-events', 'all');
+    }
+
+    const handleStart = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onStart(event as PointerEvent | MouseEvent | TouchEvent);
+    };
+
+    if (typeof window !== 'undefined' && 'PointerEvent' in window) {
+      node.addEventListener('pointerdown', handleStart as EventListener, { passive: false });
+      disposers.push(() => node.removeEventListener('pointerdown', handleStart as EventListener));
+      return;
+    }
+
+    node.addEventListener('mousedown', handleStart as EventListener);
+    node.addEventListener('touchstart', handleStart as EventListener, { passive: false });
+    disposers.push(() => node.removeEventListener('mousedown', handleStart as EventListener));
+    disposers.push(() => node.removeEventListener('touchstart', handleStart as EventListener));
+  });
+
+  return {
+    count,
+    cleanup: () => {
+      disposers.forEach((dispose) => dispose());
+    }
+  };
+};
+
 export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, WireframeCubeState>({
   type: 'wireframe-cube',
   supportedModes: 'all',
   create() {
     let cleanupKeyListeners = () => undefined;
     let cleanupInteractionListeners = () => undefined;
+    let cleanupHitListeners = () => undefined;
     let frameId: number | null = null;
     const spawnCenter = getWireframeCubeSpawnCenter(wireframeCubeSpawnIndex++);
     let instanceId: string | null = null;
@@ -320,14 +369,23 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, 
           window.removeEventListener('keyup', onKeyUp);
         };
 
-        const group = api.createGroup({ ...edgeObjects, ...faceObjects }, { createNativeGroup: false });
-        group.onHit((_member, ...args) => {
-          startInteraction(...args);
-        }, {
-          eventName: 'down'
+        applyGeometry();
+
+        const interactiveObjects = [...Object.values(edgeObjects), ...Object.values(faceObjects)];
+        const nativeHitBindings = bindNativeStartListeners(interactiveObjects, (event) => {
+          startInteraction(event);
         });
 
-        applyGeometry();
+        cleanupHitListeners = nativeHitBindings.cleanup;
+
+        if (nativeHitBindings.count === 0) {
+          const group = api.createGroup({ ...edgeObjects, ...faceObjects }, { createNativeGroup: false });
+          cleanupHitListeners = group.onHit((_member, ...args) => {
+            startInteraction(...args);
+          }, {
+            eventName: 'down'
+          });
+        }
 
         return;
       },
@@ -340,6 +398,7 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<void, 
           cancelAnimationFrame(frameId);
           frameId = null;
         }
+        cleanupHitListeners();
         cleanupKeyListeners();
       }
     };

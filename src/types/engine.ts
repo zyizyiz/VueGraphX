@@ -65,6 +65,11 @@ export interface GraphXOptions {
    */
   view3D?: {
     /**
+     * 是否让 3D 视窗自动铺满当前 board 的真实可视区域，并跟随 resize 同步更新。
+     */
+    fitToBoard?: boolean;
+
+    /**
      * view3d 的创建参数，格式为 [[left, bottom], [width, height], [[x1, x2], [y1, y2], [z1, z2]]]
      */
     rect?: [[number, number], [number, number], [[number, number], [number, number], [number, number]]];
@@ -84,6 +89,9 @@ export interface JXGView3D extends JXG.GeometryElement {
    * 在当前 3D 视图中创建一个 JSXGraph 3D 元素。
    */
   create: (type: string, parents: any[], attributes?: any) => JXG.GeometryElement;
+  llftCorner: [number, number];
+  size: [number, number];
+  bbox3D: [[number, number], [number, number], [number, number]];
 }
 
 /**

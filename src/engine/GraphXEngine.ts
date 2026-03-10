@@ -384,6 +384,7 @@ export class GraphXEngine {
 
     if (targetWidth !== undefined && targetHeight !== undefined) {
       board.resizeContainer(targetWidth, targetHeight, true);
+      this.boardMgr.syncView3DToBoard();
       board.update();
     }
   }
@@ -421,7 +422,12 @@ export class GraphXEngine {
     if (!board || !view3d) return null;
     const projected = view3d.project3DTo2D(point);
     if (!projected || projected.length < 2) return null;
-    return this.projectUserPoint([projected[0], projected[1]]);
+
+    const userPoint: [number, number] = projected.length >= 3
+      ? [projected[1], projected[2]]
+      : [projected[0], projected[1]];
+
+    return this.projectUserPoint(userPoint);
   }
 
   /** 投影一组二维点，并返回其屏幕包围盒。若没有有效投影点，则返回 null。 */

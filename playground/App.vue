@@ -604,6 +604,12 @@ textarea::-webkit-scrollbar {
   will-change: contents;
 }
 
+#dual-layer-container .JXGinfobox,
+#dual-layer-container .JXG_navigation,
+#dual-layer-container foreignObject {
+  pointer-events: none;
+}
+
 #vuegraphx-mount.dual-layer-pass-through {
   pointer-events: none;
 }
@@ -612,7 +618,7 @@ textarea::-webkit-scrollbar {
   pointer-events: none;
 }
 
-#vuegraphx-mount.dual-layer-pass-through > svg > * {
+#vuegraphx-mount.dual-layer-pass-through > svg * {
   pointer-events: auto;
 }
 
@@ -620,7 +626,7 @@ textarea::-webkit-scrollbar {
   pointer-events: none;
 }
 
-#vuegraphx-mount-2d > svg > * {
+#vuegraphx-mount-2d > svg * {
   pointer-events: auto;
 }
 

@@ -25,6 +25,8 @@ export const getBoardOptionsForPlaygroundMode = (mode: PlaygroundMode, viewport?
       pan: { enabled: false },
       // 3D 层的视角为 0 (正面)
       view3D: {
+        fitToBoard: true,
+        rect: [[-8, -8], [16, 16], [[-5, 5], [-5, 5], [-5, 5]]],
         attributes: {
           projection: 'parallel',
           trackball: { enabled: false },
