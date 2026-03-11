@@ -1,4 +1,11 @@
-import type { GraphHiddenLineEdgeStyle, GraphHiddenLineOptions } from './contracts';
+import type {
+  GraphHiddenLineBaseVisibility,
+  GraphHiddenLineEdgeStyle,
+  GraphHiddenLineNativeTargetSpec,
+  GraphHiddenLineOptions,
+  GraphHiddenLineOverlayBehavior,
+  GraphHiddenLinePoint3D
+} from './contracts';
 import {
   clamp,
   createTriangle2DBBox,
@@ -18,9 +25,16 @@ import type {
 export interface GraphHiddenLineRenderedPath {
   sourceId: string;
   ownerId: string;
+  polylineId?: string;
   hidden: boolean;
+  mode: 'draw' | 'mask';
   points: GraphHiddenLineScreenPoint[];
   style?: GraphHiddenLineEdgeStyle;
+  nativeTarget?: GraphHiddenLineNativeTargetSpec;
+  dashOffset?: number;
+  dashPathLength?: number;
+  dashReferenceLength?: number;
+  dashReferenceScreenLength?: number;
 }
 
 export interface GraphHiddenLineSolveResult {
@@ -39,10 +53,16 @@ interface ProjectedTriangleRecord {
 interface ProjectedPolylineRecord {
   sourceId: string;
   ownerId: string;
+  polylineId?: string;
   drawOrder: number;
   points: GraphHiddenLineProjectedPoint[];
+  worldPoints: GraphHiddenLinePoint3D[];
   visibleStyle?: GraphHiddenLineEdgeStyle;
   hiddenStyle?: GraphHiddenLineEdgeStyle;
+  overlay?: GraphHiddenLineOverlayBehavior;
+  nativeTarget?: GraphHiddenLineNativeTargetSpec;
+  ignoreOwnerOcclusion?: boolean;
+  sampleVisibility?: (point: GraphHiddenLinePoint3D) => GraphHiddenLineBaseVisibility | null | undefined;
 }
 
 const mergeStyle = (
@@ -83,16 +103,31 @@ const projectPolyline = (
   polyline: GraphHiddenLineResolvedPolyline,
   options: GraphHiddenLineOptions
 ): ProjectedPolylineRecord | null => {
-  const points = polyline.worldPoints.map((point) => projectWorldPoint(board, view3d, point)).filter((point): point is GraphHiddenLineProjectedPoint => !!point);
+  const points: GraphHiddenLineProjectedPoint[] = [];
+  const worldPoints: GraphHiddenLinePoint3D[] = [];
+
+  polyline.worldPoints.forEach((point) => {
+    const projected = projectWorldPoint(board, view3d, point);
+    if (!projected) return;
+    points.push(projected);
+    worldPoints.push({ ...point });
+  });
+
   if (points.length < 2) return null;
 
   return {
     sourceId: polyline.sourceId,
     ownerId: polyline.ownerId,
+    polylineId: polyline.polylineId,
     drawOrder: polyline.drawOrder,
     points,
+    worldPoints,
     visibleStyle: mergeStyle(options.visibleStyle, polyline.style?.visible),
-    hiddenStyle: mergeStyle(options.hiddenStyle, polyline.style?.hidden)
+    hiddenStyle: mergeStyle(options.hiddenStyle, polyline.style?.hidden),
+    overlay: polyline.overlay,
+    nativeTarget: polyline.nativeTarget,
+    ignoreOwnerOcclusion: polyline.ignoreOwnerOcclusion,
+    sampleVisibility: polyline.sampleVisibility
   };
 };
 
@@ -103,9 +138,14 @@ const isSampleHidden = (
   edgeDepth: number,
   triangles: ProjectedTriangleRecord[],
   compareDepth: DepthComparator,
-  polylineOrder: number
+  polylineOrder: number,
+  polylineOwnerId: string,
+  ignoreOwnerOcclusion: boolean
 ): boolean => {
   for (const triangleRecord of triangles) {
+    if (ignoreOwnerOcclusion && triangleRecord.ownerId === polylineOwnerId) {
+      continue;
+    }
     const triangle = triangleRecord.triangle;
     if (point.x < triangle.bbox.minX || point.x > triangle.bbox.maxX || point.y < triangle.bbox.minY || point.y > triangle.bbox.maxY) {
       continue;
@@ -114,21 +154,55 @@ const isSampleHidden = (
     const containment = pointInTriangleBarycentric(point, triangle);
     if (!containment.inside) continue;
 
-    if (triangleRecord.drawOrder > polylineOrder) {
-      // 后添加的图形优先级更高，直接判定遮挡，无需深度比较
+    const triangleDepth = interpolateTriangleDepth(triangle, containment.barycentric);
+    if (compareDepth(triangleDepth, edgeDepth)) {
       return true;
     }
 
-    if (triangleRecord.drawOrder === polylineOrder) {
-      const triangleDepth = interpolateTriangleDepth(triangle, containment.barycentric);
-      if (compareDepth(triangleDepth, edgeDepth)) {
-        return true;
-      }
+    if (Math.abs(triangleDepth - edgeDepth) <= 1e-3 && triangleRecord.drawOrder > polylineOrder) {
+      return true;
     }
   }
 
   return false;
 };
+
+const lerpWorldPoint = (from: GraphHiddenLinePoint3D, to: GraphHiddenLinePoint3D, progress: number): GraphHiddenLinePoint3D => ({
+  x: lerp(from.x, to.x, progress),
+  y: lerp(from.y, to.y, progress),
+  z: lerp(from.z, to.z, progress)
+});
+
+const distance3D = (from: GraphHiddenLinePoint3D, to: GraphHiddenLinePoint3D): number => Math.hypot(
+  to.x - from.x,
+  to.y - from.y,
+  to.z - from.z
+);
+
+const createRenderedPath = (
+  polyline: ProjectedPolylineRecord,
+  hidden: boolean,
+  mode: 'draw' | 'mask',
+  points: GraphHiddenLineScreenPoint[],
+  style?: GraphHiddenLineEdgeStyle,
+  dashOffset?: number,
+  dashPathLength?: number,
+  dashReferenceLength?: number,
+  dashReferenceScreenLength?: number
+): GraphHiddenLineRenderedPath => ({
+  sourceId: polyline.sourceId,
+  ownerId: polyline.ownerId,
+  polylineId: polyline.polylineId,
+  hidden,
+  mode,
+  points,
+  style,
+  nativeTarget: polyline.nativeTarget,
+  dashOffset,
+  dashPathLength,
+  dashReferenceLength,
+  dashReferenceScreenLength
+});
 
 const buildSegmentRuns = (
   polyline: ProjectedPolylineRecord,
@@ -136,17 +210,62 @@ const buildSegmentRuns = (
   compareDepth: DepthComparator
 ): GraphHiddenLineRenderedPath[] => {
   const rendered: GraphHiddenLineRenderedPath[] = [];
+  const overlay = polyline.overlay ?? {};
+  const totalWorldLength = polyline.worldPoints.reduce((accumulator, point, index) => {
+    if (index === 0) return accumulator;
+    const previous = polyline.worldPoints[index - 1];
+    return previous ? accumulator + distance3D(previous, point) : accumulator;
+  }, 0);
+  const totalScreenLength = polyline.points.reduce((accumulator, point, index) => {
+    if (index === 0) return accumulator;
+    const previous = polyline.points[index - 1];
+    return previous ? accumulator + Math.hypot(point.screen.x - previous.screen.x, point.screen.y - previous.screen.y) : accumulator;
+  }, 0);
+
+  const flushRun = (hidden: boolean, points: GraphHiddenLineScreenPoint[], runStartDistance: number, runEndDistance: number) => {
+    if (points.length < 2) return;
+    const runLength = Math.max(0, runEndDistance - runStartDistance);
+
+    if (!hidden && overlay.clipNativeVisible && polyline.nativeTarget) {
+      rendered.push(createRenderedPath(polyline, false, 'mask', points, polyline.visibleStyle, runStartDistance, runLength, totalWorldLength, totalScreenLength));
+    }
+
+    if (!hidden) {
+      if (overlay.renderVisible !== false) {
+        rendered.push(createRenderedPath(polyline, false, 'draw', points, polyline.visibleStyle, runStartDistance, runLength, totalWorldLength, totalScreenLength));
+      }
+      return;
+    }
+
+    if (overlay.renderHidden !== false) {
+      rendered.push(createRenderedPath(polyline, true, 'draw', points, polyline.hiddenStyle, runStartDistance, runLength, totalWorldLength, totalScreenLength));
+    }
+  };
+
+  const pushPoint = (points: GraphHiddenLineScreenPoint[], point: GraphHiddenLineScreenPoint) => {
+    const lastPoint = points[points.length - 1];
+    if (!lastPoint || Math.abs(lastPoint.x - point.x) > 1e-6 || Math.abs(lastPoint.y - point.y) > 1e-6) {
+      points.push(point);
+    }
+  };
+
+  let activeHidden: boolean | null = null;
+  let activePoints: GraphHiddenLineScreenPoint[] = [];
+  let activeRunStartDistance = 0;
+  let activeRunEndDistance = 0;
+  let traversedLength = 0;
 
   for (let index = 0; index < polyline.points.length - 1; index += 1) {
     const start = polyline.points[index];
     const end = polyline.points[index + 1];
+    const startWorld = polyline.worldPoints[index];
+    const endWorld = polyline.worldPoints[index + 1];
+    if (!startWorld || !endWorld) continue;
     const dx = end.screen.x - start.screen.x;
     const dy = end.screen.y - start.screen.y;
     const length = Math.hypot(dx, dy);
+    const worldLength = distance3D(startWorld, endWorld);
     const steps = clamp(Math.ceil(length / 10), 2, 64);
-
-    let activeHidden: boolean | null = null;
-    let activePoints: GraphHiddenLineScreenPoint[] = [];
 
     for (let step = 0; step < steps; step += 1) {
       const t0 = step / steps;
@@ -155,36 +274,43 @@ const buildSegmentRuns = (
       const startPoint = step === 0 ? start.screen : lerpScreenPoint(start.screen, end.screen, t0);
       const endPoint = lerpScreenPoint(start.screen, end.screen, t1);
       const midPoint = lerpScreenPoint(start.screen, end.screen, midT);
+      const midWorldPoint = lerpWorldPoint(startWorld, endWorld, midT);
+      const stepStartDistance = traversedLength + worldLength * t0;
+      const stepEndDistance = traversedLength + worldLength * t1;
       const edgeDepth = lerp(start.depth, end.depth, midT);
-      const hidden = isSampleHidden(midPoint, edgeDepth, triangles, compareDepth, polyline.drawOrder);
+      const externallyHidden = isSampleHidden(
+        midPoint,
+        edgeDepth,
+        triangles,
+        compareDepth,
+        polyline.drawOrder,
+        polyline.ownerId,
+        Boolean(polyline.ignoreOwnerOcclusion)
+      );
+      const baseVisibility = polyline.sampleVisibility?.(midWorldPoint) ?? 'auto';
+      const hidden = baseVisibility === 'hidden' || externallyHidden;
 
       if (activeHidden === null || activeHidden !== hidden) {
         if (activePoints.length >= 2 && activeHidden !== null) {
-          rendered.push({
-            sourceId: polyline.sourceId,
-            ownerId: polyline.ownerId,
-            hidden: activeHidden,
-            points: activePoints,
-            style: activeHidden ? polyline.hiddenStyle : polyline.visibleStyle
-          });
+          flushRun(activeHidden, activePoints, activeRunStartDistance, activeRunEndDistance);
         }
         activeHidden = hidden;
-        activePoints = [startPoint, endPoint];
+        activeRunStartDistance = stepStartDistance;
+        activeRunEndDistance = stepEndDistance;
+        activePoints = [startPoint];
+        pushPoint(activePoints, endPoint);
         continue;
       }
 
-      activePoints.push(endPoint);
+      activeRunEndDistance = stepEndDistance;
+      pushPoint(activePoints, endPoint);
     }
 
-    if (activePoints.length >= 2 && activeHidden !== null) {
-      rendered.push({
-        sourceId: polyline.sourceId,
-        ownerId: polyline.ownerId,
-        hidden: activeHidden,
-        points: activePoints,
-        style: activeHidden ? polyline.hiddenStyle : polyline.visibleStyle
-      });
-    }
+    traversedLength += worldLength;
+  }
+
+  if (activePoints.length >= 2 && activeHidden !== null) {
+    flushRun(activeHidden, activePoints, activeRunStartDistance, activeRunEndDistance);
   }
 
   return rendered;
@@ -220,7 +346,11 @@ export const solveHiddenLineScene = (
     renderedPaths = runWithComparator(compareDepthNearIsLarger);
   }
 
-  renderedPaths.sort((left, right) => Number(left.hidden) - Number(right.hidden));
+  const rank = (path: GraphHiddenLineRenderedPath) => {
+    if (path.mode === 'mask') return 0;
+    return path.hidden ? 2 : 1;
+  };
+  renderedPaths.sort((left, right) => rank(left) - rank(right));
 
   return {
     renderedPaths,

@@ -9,10 +9,14 @@ export interface GraphHiddenLineFace {
   indices: number[];
 }
 
+export type GraphHiddenLineBaseVisibility = 'visible' | 'hidden' | 'auto';
+
 export interface GraphHiddenLinePolyline {
   id?: string;
   points: GraphHiddenLinePoint3D[];
   closed?: boolean;
+  ignoreOwnerOcclusion?: boolean;
+  sampleVisibility?: (point: GraphHiddenLinePoint3D) => GraphHiddenLineBaseVisibility | null | undefined;
 }
 
 export interface GraphHiddenLineEdgeStyle {
@@ -27,6 +31,17 @@ export interface GraphHiddenLineEdgeStyle {
 export interface GraphHiddenLineStyleSpec {
   visible?: GraphHiddenLineEdgeStyle;
   hidden?: GraphHiddenLineEdgeStyle;
+}
+
+export interface GraphHiddenLineNativeTargetSpec {
+  getElement: () => SVGElement | null;
+  strokeWidth?: number;
+}
+
+export interface GraphHiddenLineOverlayBehavior {
+  renderVisible?: boolean;
+  renderHidden?: boolean;
+  clipNativeVisible?: boolean;
 }
 
 export interface GraphHiddenLineSamplingOptions {
@@ -64,6 +79,8 @@ export interface GraphHiddenLineCurveSourceData {
   range: [number, number];
   steps?: number;
   closed?: boolean;
+  ignoreOwnerOcclusion?: boolean;
+  sampleVisibility?: (point: GraphHiddenLinePoint3D) => GraphHiddenLineBaseVisibility | null | undefined;
   evaluate: (t: number) => GraphHiddenLinePoint3D | null;
 }
 
@@ -72,6 +89,8 @@ export interface GraphHiddenLineSurfaceFeatureCurve {
   range: [number, number];
   steps?: number;
   closed?: boolean;
+  ignoreOwnerOcclusion?: boolean;
+  sampleVisibility?: (point: GraphHiddenLinePoint3D) => GraphHiddenLineBaseVisibility | null | undefined;
   evaluate: (t: number) => GraphHiddenLinePoint3D | null;
 }
 
@@ -100,6 +119,8 @@ export interface GraphHiddenLineSourceDescriptor<TData extends GraphHiddenLineSo
   tags?: string[];
   role?: GraphHiddenLineOcclusionRole;
   style?: GraphHiddenLineStyleSpec;
+  overlay?: GraphHiddenLineOverlayBehavior;
+  nativeTargets?: Record<string, GraphHiddenLineNativeTargetSpec | (() => SVGElement | null)>;
   resolve: () => TData | null;
 }
 

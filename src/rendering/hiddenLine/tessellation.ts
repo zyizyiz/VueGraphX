@@ -1,7 +1,9 @@
 import type {
   GraphHiddenLineCurveSourceData,
   GraphHiddenLineMeshSourceData,
+  GraphHiddenLineNativeTargetSpec,
   GraphHiddenLineOptions,
+  GraphHiddenLineOverlayBehavior,
   GraphHiddenLinePoint3D,
   GraphHiddenLinePolyline,
   GraphHiddenLinePolylineSetSourceData,
@@ -22,9 +24,14 @@ export interface GraphHiddenLineResolvedTriangle {
 export interface GraphHiddenLineResolvedPolyline {
   sourceId: string;
   ownerId: string;
+  polylineId?: string;
   drawOrder: number;
   style?: GraphHiddenLineStyleSpec;
+  overlay?: GraphHiddenLineOverlayBehavior;
+  nativeTarget?: GraphHiddenLineNativeTargetSpec;
   worldPoints: GraphHiddenLinePoint3D[];
+  ignoreOwnerOcclusion?: boolean;
+  sampleVisibility?: GraphHiddenLinePolyline['sampleVisibility'];
 }
 
 export interface GraphHiddenLineResolvedSceneSource {
@@ -126,10 +133,31 @@ const sampleSurfaceGrid = (surface: GraphHiddenLineSurfaceSourceData, options: G
   return rows;
 };
 
+const normalizeNativeTargetSpec = (
+  entry: GraphHiddenLineNativeTargetSpec | (() => SVGElement | null) | undefined
+): GraphHiddenLineNativeTargetSpec | undefined => {
+  if (!entry) return undefined;
+  if (typeof entry === 'function') {
+    return { getElement: entry };
+  }
+  return entry;
+};
+
+const resolveNativeTarget = (
+  nativeTargets: Record<string, GraphHiddenLineNativeTargetSpec | (() => SVGElement | null)> | undefined,
+  polylineId?: string
+): GraphHiddenLineNativeTargetSpec | undefined => {
+  if (!nativeTargets) return undefined;
+  return normalizeNativeTargetSpec((polylineId ? nativeTargets[polylineId] : undefined) ?? nativeTargets.default);
+};
+
 const surfaceFeatureCurvesToPolylines = (
   sourceId: string,
   ownerId: string,
+  drawOrder: number,
   style: GraphHiddenLineStyleSpec | undefined,
+  overlay: GraphHiddenLineOverlayBehavior | undefined,
+  nativeTargets: Record<string, GraphHiddenLineNativeTargetSpec | (() => SVGElement | null)> | undefined,
   featureCurves: GraphHiddenLineSurfaceFeatureCurve[] | undefined,
   options: GraphHiddenLineOptions
 ): GraphHiddenLineResolvedPolyline[] => {
@@ -139,8 +167,14 @@ const surfaceFeatureCurvesToPolylines = (
     .map((featureCurve) => ({
       sourceId,
       ownerId,
+      polylineId: featureCurve.id ?? 'default',
+      drawOrder,
       style,
-      worldPoints: sampleCurve(featureCurve, options)
+      overlay,
+      nativeTarget: resolveNativeTarget(nativeTargets, featureCurve.id),
+      worldPoints: sampleCurve(featureCurve, options),
+      ignoreOwnerOcclusion: featureCurve.ignoreOwnerOcclusion,
+      sampleVisibility: featureCurve.sampleVisibility
     }))
     .filter((polyline) => polyline.worldPoints.length >= 2);
 };
@@ -152,7 +186,7 @@ const resolveMeshSource = (
 ): GraphHiddenLineResolvedSceneSource => {
   const triangles = (record.descriptor.role ?? 'both') === 'edge'
     ? []
-    : mesh.faces.flatMap((face) => triangulateFace(face.indices).map((triangle) => {
+    : mesh.faces.flatMap((face) => triangulateFace(face.indices).map((triangle): GraphHiddenLineResolvedTriangle | null => {
         const p0 = toPoint(mesh.vertices[triangle[0]]);
         const p1 = toPoint(mesh.vertices[triangle[1]]);
         const p2 = toPoint(mesh.vertices[triangle[2]]);
@@ -172,15 +206,21 @@ const resolveMeshSource = (
         .map((polyline) => ({
           sourceId: record.id,
           ownerId: record.ownerId,
+          polylineId: polyline.id ?? 'default',
           drawOrder: record.order,
           style: record.descriptor.style,
-          worldPoints: polyline.points.map((point) => ({ ...point }))
+          overlay: record.descriptor.overlay,
+          nativeTarget: resolveNativeTarget(record.descriptor.nativeTargets, polyline.id),
+          worldPoints: polyline.points.map((point) => ({ ...point })),
+          ignoreOwnerOcclusion: polyline.ignoreOwnerOcclusion,
+          sampleVisibility: polyline.sampleVisibility
         }))
         .filter((polyline) => polyline.worldPoints.length >= 2);
 
   return {
     sourceId: record.id,
     ownerId: record.ownerId,
+    drawOrder: record.order,
     edgeCount: polylines.length,
     faceCount: triangles.length,
     triangles,
@@ -202,9 +242,14 @@ const resolvePolylineSetSource = (
     .map((polyline) => ({
       sourceId: record.id,
       ownerId: record.ownerId,
+      polylineId: polyline.id ?? 'default',
       drawOrder: record.order,
       style: record.descriptor.style,
-      worldPoints: polyline.points.map((point) => ({ ...point }))
+      overlay: record.descriptor.overlay,
+      nativeTarget: resolveNativeTarget(record.descriptor.nativeTargets, polyline.id),
+      worldPoints: polyline.points.map((point) => ({ ...point })),
+      ignoreOwnerOcclusion: polyline.ignoreOwnerOcclusion,
+      sampleVisibility: polyline.sampleVisibility
     }))
     .filter((polyline) => polyline.worldPoints.length >= 2)
 });
@@ -218,6 +263,7 @@ const resolveCurveSource = (
   return {
     sourceId: record.id,
     ownerId: record.ownerId,
+    drawOrder: record.order,
     edgeCount: worldPoints.length >= 2 ? 1 : 0,
     faceCount: 0,
     triangles: [],
@@ -225,9 +271,14 @@ const resolveCurveSource = (
       ? [{
           sourceId: record.id,
           ownerId: record.ownerId,
+          polylineId: 'default',
           drawOrder: record.order,
           style: record.descriptor.style,
-          worldPoints
+          overlay: record.descriptor.overlay,
+          nativeTarget: resolveNativeTarget(record.descriptor.nativeTargets, 'default'),
+          worldPoints,
+          ignoreOwnerOcclusion: curve.ignoreOwnerOcclusion,
+          sampleVisibility: curve.sampleVisibility
         }]
       : []
   };
@@ -273,7 +324,16 @@ const resolveSurfaceSource = (
 
   const polylines = role === 'occluder'
     ? []
-    : surfaceFeatureCurvesToPolylines(record.id, record.ownerId, record.descriptor.style, surface.featureCurves, options);
+    : surfaceFeatureCurvesToPolylines(
+        record.id,
+        record.ownerId,
+        record.order,
+        record.descriptor.style,
+        record.descriptor.overlay,
+        record.descriptor.nativeTargets,
+        surface.featureCurves,
+        options
+      );
 
   return {
     sourceId: record.id,
