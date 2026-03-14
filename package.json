@@ -3,6 +3,13 @@
   "version": "1.1.0",
   "type": "module",
   "description": "The math and graphics engine core for VueGraphX",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zyizyiz/VueGraphX"
+  },
+  "homepage": "https://zyizyiz.github.io/VueGraphX/",
+  "bugs": "https://github.com/zyizyiz/VueGraphX/issues",
   "main": "./dist/vuegraphx.umd.cjs",
   "module": "./dist/vuegraphx.js",
   "types": "./dist/index.d.ts",

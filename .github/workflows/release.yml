@@ -90,7 +90,14 @@ jobs:
             echo "::error::Missing NPM_TOKEN secret."
             exit 1
           fi
-          npm publish --access public --provenance
+          set -euo pipefail
+          LOG="$(mktemp)"
+          if ! npm publish --access public --provenance 2>&1 | tee "$LOG"; then
+            if grep -q "code EOTP" "$LOG"; then
+              echo "::error::npm publish requires a one-time password (2FA for writes). Use an npm Automation token for CI (recommended) or configure npm Trusted Publishing for GitHub Actions."
+            fi
+            exit 1
+          fi
 
   deploy-pages:
     name: Deploy playground to Pages
