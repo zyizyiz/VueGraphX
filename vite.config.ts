@@ -7,6 +7,7 @@ export default defineConfig(({ command }) => {
   const isServe = command === 'serve';
   const isBuildPlayground = process.env.BUILD_MODE === 'playground';
   const isPlayground = isServe || isBuildPlayground;
+  const playgroundBase = process.env.VITE_BASE_PATH || '/VueGraphX/';
 
   return {
     plugins: [
@@ -24,7 +25,7 @@ export default defineConfig(({ command }) => {
     },
     // Playground 构建
     // 库构建：lib 模式输出 ESM + UMD
-    ...(isPlayground ? { base: '/VueGraphX/' } : {}),
+    ...(isBuildPlayground ? { base: playgroundBase } : {}),
     build: isPlayground
       ? {
           outDir: 'dist-playground',

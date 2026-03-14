@@ -114,9 +114,9 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<Wirefr
   type: 'wireframe-cube',
   supportedModes: 'all',
   create(_context, payload) {
-    let cleanupKeyListeners = () => undefined;
-    let cleanupInteractionListeners = () => undefined;
-    let cleanupHitListeners = () => undefined;
+    let cleanupKeyListeners: () => void = () => {};
+    let cleanupInteractionListeners: () => void = () => {};
+    let cleanupHitListeners: () => void = () => {};
     let frameId: number | null = null;
     const spawnCenter = getWireframeCubeSpawnCenter(wireframeCubeSpawnIndex++);
     let instanceId: string | null = null;

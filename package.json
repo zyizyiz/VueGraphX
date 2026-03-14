@@ -21,6 +21,8 @@
     "dev": "vite",
     "build": "vite build",
     "build:playground": "BUILD_MODE=playground vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "release:verify": "npm run typecheck && npm test && npm run build && npm run build:playground",
     "preview": "vite preview",
     "docs:api": "typedoc --options typedoc.json",
     "check:jsxgraph-3d": "node scripts/check-jsxgraph-3d-catalog.mjs",

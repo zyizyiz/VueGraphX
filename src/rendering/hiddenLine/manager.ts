@@ -42,6 +42,10 @@ const cloneOptions = (options: GraphHiddenLineOptions): GraphHiddenLineOptions =
   sampling: options.sampling ? { ...options.sampling } : undefined
 });
 
+type GraphHiddenLineBoardManagerContext =
+  Pick<BoardManager, 'mode'> &
+  Partial<Pick<BoardManager, 'board' | 'view3d'>>;
+
 const countMeshEdges = (data: GraphHiddenLineMeshSourceData): number => {
   if (data.edges && data.edges.length > 0) return data.edges.length;
 
@@ -153,7 +157,7 @@ export class GraphHiddenLineManager {
   private revision = 0;
   private snapshot: GraphHiddenLineSceneSnapshot;
 
-  constructor(private readonly boardMgr: Pick<BoardManager, 'mode' | 'board' | 'view3d'>, options?: GraphHiddenLineOptions) {
+  constructor(private readonly boardMgr: GraphHiddenLineBoardManagerContext, options?: GraphHiddenLineOptions) {
     this.options = normalizeGraphHiddenLineOptions(options);
     this.snapshot = this.buildSnapshot([]);
   }

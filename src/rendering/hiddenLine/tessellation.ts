@@ -181,8 +181,7 @@ const surfaceFeatureCurvesToPolylines = (
 
 const resolveMeshSource = (
   record: GraphHiddenLineSourceRecord,
-  mesh: GraphHiddenLineMeshSourceData,
-  options: GraphHiddenLineOptions
+  mesh: GraphHiddenLineMeshSourceData
 ): GraphHiddenLineResolvedSceneSource => {
   const triangles = (record.descriptor.role ?? 'both') === 'edge'
     ? []
@@ -353,7 +352,7 @@ export const resolveHiddenLineSceneSource = (
   const data = record.descriptor.resolve();
   if (!data) return null;
 
-  if (data.kind === 'mesh') return resolveMeshSource(record, data, options);
+  if (data.kind === 'mesh') return resolveMeshSource(record, data);
   if (data.kind === 'polyline-set') return resolvePolylineSetSource(record, data);
   if (data.kind === 'curve') return resolveCurveSource(record, data, options);
   return resolveSurfaceSource(record, data, options);
