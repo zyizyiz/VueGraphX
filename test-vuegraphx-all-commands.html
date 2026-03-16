@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VueGraphX 全指令示例目录</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #f6efe5 0%, #fbfaf7 100%);
+      color: #1f2937;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      padding: 24px;
+      border-right: 1px solid #e5dccf;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(14px);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+    }
+
+    .sidebar h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    .sidebar p {
+      margin: 0 0 12px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: #5b6472;
+    }
+
+    .stat {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 16px 0 18px;
+    }
+
+    .stat-card {
+      padding: 12px;
+      border: 1px solid #eadfce;
+      border-radius: 14px;
+      background: #fffdf9;
+    }
+
+    .stat-card strong {
+      display: block;
+      font-size: 18px;
+    }
+
+    .stat-card span {
+      font-size: 12px;
+      color: #7c8797;
+    }
+
+    .search {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #d8cbb7;
+      border-radius: 12px;
+      background: #fff;
+      font-size: 14px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0 16px;
+    }
+
+    .chip {
+      border: 1px solid #d8cbb7;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 12px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .chip.active {
+      background: #1f2937;
+      color: #fff;
+      border-color: #1f2937;
+    }
+
+    .note {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 14px;
+      background: #fffaf0;
+      border: 1px solid #eadfce;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #5b6472;
+    }
+
+    .main {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      flex: 0 0 auto;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid #eadfce;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 16px 40px rgba(58, 43, 22, 0.06);
+    }
+
+    .panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid #efe6d8;
+      background: #fffaf4;
+    }
+
+    .panel-header strong {
+      font-size: 14px;
+    }
+
+    .panel-header span {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      color: #7c8797;
+    }
+
+    .jxgbox {
+      width: 100%;
+      height: 320px;
+      background: radial-gradient(circle at top, #ffffff 0%, #f7f1e7 100%);
+    }
+
+    .content-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .prelude {
+      margin-bottom: 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .code-card {
+      background: #fffdf9;
+      border: 1px solid #eadfce;
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    .code-card .head {
+      padding: 12px 14px;
+      border-bottom: 1px solid #efe6d8;
+      font-size: 13px;
+      font-weight: 700;
+      background: #fffaf4;
+    }
+
+    .toolbar {
+      margin-bottom: 20px;
+      padding: 18px;
+    }
+
+    .toolbar-grid {
+      display: grid;
+      grid-template-columns: minmax(320px, 460px) 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .toolbar-block {
+      display: grid;
+      gap: 14px;
+    }
+
+    .toolbar-title {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .toolbar-subtitle {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #5b6472;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid #d8cbb7;
+      border-radius: 999px;
+      background: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .switch input {
+      margin: 0;
+      accent-color: #1f2937;
+    }
+
+    .action-btn {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid #d8cbb7;
+      border-radius: 12px;
+      background: #fff;
+      color: #1f2937;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .action-btn:hover {
+      background: #fff8ef;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .status-card {
+      padding: 12px;
+      border: 1px solid #eadfce;
+      border-radius: 14px;
+      background: #fffdf9;
+    }
+
+    .status-card span {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: #7c8797;
+    }
+
+    .status-card strong {
+      display: block;
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .status-pill.waiting {
+      background: #f3eadc;
+      color: #6b4f2c;
+    }
+
+    .status-pill.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-pill.error {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    .status-message {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #5b6472;
+    }
+
+    .active-code pre {
+      min-height: 158px;
+      max-height: 220px;
+    }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.7;
+      background: #fffdf9;
+      color: #243042;
+      white-space: pre-wrap;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid #eadfce;
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #fff8ef;
+      border-bottom: 1px solid #eadfce;
+      text-align: left;
+      font-size: 12px;
+      letter-spacing: 0.03em;
+      color: #5b6472;
+      padding: 12px;
+    }
+
+    tbody td {
+      padding: 12px;
+      border-bottom: 1px solid #f2ebdf;
+      vertical-align: top;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    tbody tr {
+      cursor: pointer;
+      transition: background 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    tbody tr:hover {
+      background: #fffaf2;
+    }
+
+    tbody tr.active {
+      background: #fef3c7;
+    }
+
+    code.inline {
+      background: #f5efe6;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .mode {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: #f3eadc;
+      color: #6b4f2c;
+    }
+
+    .mode.mode-3d {
+      background: #e1effe;
+      color: #1d4ed8;
+    }
+
+    .mode.mode-special {
+      background: #ede9fe;
+      color: #6d28d9;
+    }
+
+    .panel.active-panel {
+      box-shadow: 0 0 0 2px #f59e0b, 0 18px 42px rgba(58, 43, 22, 0.1);
+    }
+
+    .run-cell {
+      width: 88px;
+    }
+
+    .run-btn {
+      min-width: 64px;
+      min-height: 32px;
+      border: 1px solid #d8cbb7;
+      border-radius: 10px;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .run-btn:hover {
+      background: #fff8ef;
+    }
+
+    .plain-desc {
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 6px;
+    }
+
+    .tech-desc {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    body.capture-mode {
+      background: #ffffff;
+    }
+
+    body.capture-mode .sidebar,
+    body.capture-mode .prelude,
+    body.capture-mode table,
+    body.capture-mode .foot,
+    body.capture-mode .toolbar,
+    body.capture-mode .toolbar-actions,
+    body.capture-mode .active-code {
+      display: none;
+    }
+
+    body.capture-mode .app {
+      grid-template-columns: 1fr;
+    }
+
+    body.capture-mode .main {
+      height: 100vh;
+      overflow: hidden;
+      padding: 0;
+      gap: 0;
+    }
+
+    body.capture-mode .hero {
+      grid-template-columns: 1fr;
+      margin-bottom: 0;
+      width: 100vw;
+      height: 100vh;
+      gap: 0;
+    }
+
+    body.capture-mode .content-scroll {
+      display: none;
+    }
+
+    body.capture-mode .panel {
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    body.capture-mode .hero .panel:not(.active-panel) {
+      display: none;
+    }
+
+    body.capture-mode .panel-header {
+      display: none;
+    }
+
+    body.capture-mode .jxgbox {
+      width: 100vw;
+      height: 100vh;
+      border-radius: 0;
+    }
+
+    .foot {
+      margin-top: 16px;
+      font-size: 12px;
+      color: #7c8797;
+    }
+
+    @media (max-width: 1200px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid #e5dccf;
+      }
+
+      .main {
+        height: auto;
+        overflow: visible;
+      }
+
+      .content-scroll {
+        min-height: auto;
+        overflow: visible;
+      }
+
+      .hero,
+      .prelude,
+      .toolbar-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="captureReady" data-ready="0" hidden></div>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>VueGraphX 全指令示例</h1>
+      <p>这个页面直接引用 <code class="inline">./dist/vuegraphx.js</code>。顶部先初始化一个 2D 与一个 3D 引擎，下面再把全部指令的典型写法集中列出来。</p>
+      <div class="stat">
+        <div class="stat-card"><strong>118</strong><span>全部指令</span></div>
+        <div class="stat-card"><strong>21</strong><span>3D 指令</span></div>
+        <div class="stat-card"><strong>97</strong><span>2D/特殊</span></div>
+      </div>
+      <input id="search" class="search" placeholder="搜索指令名，比如 circle / plane3d / tangent" />
+      <div class="filters">
+        <button class="chip active" data-filter="all">全部</button>
+        <button class="chip" data-filter="2D/常规">2D/常规</button>
+        <button class="chip" data-filter="3D">3D</button>
+        <button class="chip" data-filter="别名/特殊">别名/特殊</button>
+      </div>
+      <div class="note">
+        <strong>说明</strong><br />
+        1. 下面“示例写法”以“能看懂这个指令怎么写”为主。<br />
+        2. 因为 VueGraphX 当前的 <code class="inline">executeCommand()</code> 只覆盖其中一部分，所以全量目录更多采用 <code
+          class="inline">engine.getBoard().create(...)</code> 或 <code
+          class="inline">engine.getView3D().create(...)</code>。<br />
+        3. 个别历史/实验性元素（如 <code class="inline">msector</code>）在不同 JSXGraph 版本里可能需要微调。<br />
+        4. 现在支持直接点击表格行或“运行”按钮，立即在上方 2D / 3D 画板执行对应示例。<br />
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="hero">
+        <div class="panel" id="panel2d">
+          <div class="panel-header">
+            <strong>2D 引擎</strong>
+            <span>通过 <code class="inline">new GraphXEngine('box2d')</code> 初始化</span>
+          </div>
+          <div id="box2d" class="jxgbox"></div>
+        </div>
+        <div class="panel" id="panel3d">
+          <div class="panel-header">
+            <strong>3D 引擎</strong>
+            <span>通过 <code class="inline">setMode('3d')</code> 切换</span>
+          </div>
+          <div id="box3d" class="jxgbox"></div>
+        </div>
+      </section>
+
+      <div class="content-scroll">
+        <section class="prelude">
+          <div class="code-card">
+            <div class="head">2D 例子默认约定的辅助对象</div>
+            <pre><code>const board = engine2d.getBoard();
+const A = board.create('point', [-4, 1], { name: 'A' });
+const B = board.create('point', [-1, 3], { name: 'B' });
+const C = board.create('point', [2, 1], { name: 'C' });
+const D = board.create('point', [1, -2], { name: 'D' });
+const E = board.create('point', [-2, -3], { name: 'E' });
+const O = board.create('point', [0, 0], { name: 'O' });
+const lAB = board.create('line', [A, B]);
+const lCD = board.create('line', [C, D]);
+const segAB = board.create('segment', [A, B]);
+const c1 = board.create('circle', [A, B]);
+const c2 = board.create('circle', [C, D]);
+const fg = board.create('functiongraph', [x => Math.sin(x)], { strokeColor: '#2563eb' });
+const G = board.create('glider', [0.5, 0.5, fg]);
+const tangentFg = board.create('tangent', [G]);
+const T = board.create('point', [() => G.X(), () => G.Y() + 1]);
+const I0 = board.create('intersection', [c1, c2, 0]);
+const poly1 = board.create('polygon', [[-5, -1], [-1, -1], [-1, 2], [-5, 2]]);
+const poly2 = board.create('polygon', [[-3, -2], [2, -2], [2, 1], [-3, 1]]);</code></pre>
+          </div>
+          <div class="code-card">
+            <div class="head">3D 例子默认约定的辅助对象</div>
+            <pre><code>const view = engine3d.getView3D();
+const Q1 = view.create('point3d', [0, 0, 0], { name: 'Q1' });
+const Q2 = view.create('point3d', [2, 0, 0], { name: 'Q2' });
+const Q3 = view.create('point3d', [0, 2, 0], { name: 'Q3' });
+const Q4 = view.create('point3d', [0, 0, 2], { name: 'Q4' });
+const Q5 = view.create('point3d', [2, 2, 2], { name: 'Q5' });
+const planeA = view.create('plane3d', [Q1, Q2, Q3, [-2, 2], [-2, 2]]);
+const planeB = view.create('plane3d', [[0, 0, 1], [1, 0, 0], [0, 1, 1], [-2, 2], [-2, 2]]);
+const sphereA = view.create('sphere3d', [Q1, 2]);
+const sphereB = view.create('sphere3d', [Q5, 1.8]);</code></pre>
+          </div>
+        </section>
+
+        <section class="panel toolbar">
+          <div class="toolbar-grid">
+            <div class="toolbar-block">
+              <div>
+                <h2 class="toolbar-title">点击即运行</h2>
+                <p class="toolbar-subtitle">默认开启“单条运行”，每次只保留当前指令的示例，便于观察。关闭后会在当前画板上继续叠加，方便做交互对比。</p>
+              </div>
+              <div class="toolbar-actions">
+                <label class="switch">
+                  <input id="singleRun" type="checkbox" checked />
+                  单条运行
+                </label>
+                <button id="clear2d" class="action-btn">清空 2D</button>
+                <button id="clear3d" class="action-btn">清空 3D</button>
+                <button id="resetAll" class="action-btn">清空全部</button>
+                <button id="restoreDemo" class="action-btn">恢复默认演示</button>
+              </div>
+              <div class="status-grid">
+                <div class="status-card">
+                  <span>当前指令</span>
+                  <strong id="activeCommand">未运行</strong>
+                </div>
+                <div class="status-card">
+                  <span>作用画板</span>
+                  <strong id="activeMode">-</strong>
+                </div>
+                <div class="status-card">
+                  <span>执行状态</span>
+                  <strong><span id="runStatus" class="status-pill waiting">待运行</span></strong>
+                  <div id="statusMessage" class="status-message">点击表格行或“运行”按钮后，会在这里反馈执行结果。</div>
+                </div>
+              </div>
+            </div>
+            <div class="code-card active-code">
+              <div class="head">当前示例代码</div>
+              <pre id="activeExample">点击任意指令行或右侧“运行”按钮后，这里会显示实际执行的示例代码。</pre>
+            </div>
+          </div>
+        </section>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 88px;">操作</th>
+              <th style="width: 120px;">指令</th>
+              <th style="width: 92px;">类型</th>
+              <th style="width: 320px;">说明</th>
+              <th style="width: 210px;">常见参数</th>
+              <th style="width: 220px;">推荐入口</th>
+              <th style="width: 440px;">示例写法</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="foot">文件：<code class="inline">test-vuegraphx-all-commands.html</code></div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import { GraphXEngine } from './dist/vuegraphx.js';
+    import './node_modules/jsxgraph/distrib/jsxgraph.css';
+
+    const options2d = {
+      boundingbox: [-8, 8, 8, -8],
+      axis: true,
+      showNavigation: false,
+      showCopyright: false
+    };
+    const options3d = {
+      boundingbox: [-8, 8, 8, -8],
+      axis: false,
+      showNavigation: false,
+      showCopyright: false,
+      view3D: {
+        fitToBoard: true,
+        rect: [[-6, -3], [8, 8], [[-5, 5], [-5, 5], [-5, 5]]],
+        attributes: { projection: 'parallel' }
+      }
+    };
+
+    const engine2d = new GraphXEngine('box2d', options2d);
+    const engine3d = new GraphXEngine('box3d', options3d);
+    engine3d.setMode('3d', options3d);
+
+    let sceneCache2d = null;
+    let sceneCache3d = null;
+
+    const data = [{ name: "angle", mode: "2D/常规", params: "三点 `[p1, p2, p3]`；或两条线 + 两个方向/坐标 + 半径", desc: "创建角对象，用三个点定义顶点与两条边；也可基于两条线构造带半径的角。", api: "engine.getBoard().create(...)", example: "board.create('angle', [A, B, C], { radius: 1.2 });" },
+    { name: "arc", mode: "2D/常规", params: "三点 `[center, radiusPoint, anglePoint]`", desc: "创建圆弧，第一点是圆心，第二点确定半径，第三点确定终止角度。", api: "engine.getBoard().create(...)", example: "board.create('arc', [A, B, C]);" },
+    { name: "arrow", mode: "2D/常规", params: "两点 `[p1, p2]`；或直线系数 `[a, b, c]`", desc: "创建带箭头的线段/直线表示，常用于向量或方向标记。", api: "engine.getBoard().create(...)", example: "board.create('arrow', [A, B]);" },
+    { name: "arrowparallel", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建一条经过 `p3` 且与 `p1-p2` 平行的箭头线段。", api: "engine.getBoard().create(...)", example: "board.create('arrowparallel', [A, B, C]);" },
+    { name: "axes3d", mode: "3D", params: "通常由 `view3d` 内部生成", desc: "创建 3D 坐标轴及相关背景平面容器，一般不单独手工使用。", api: "engine.getView3D().create(...)", example: "// 通常由 view3d 内部管理\nconst view = engine3d.getView3D();" },
+    { name: "axis", mode: "2D/常规", params: "两点 `[p1, p2]`；或系数 `[a, b, c]`", desc: "创建二维坐标轴，本质上是带刻度和标签的直线。", api: "engine.getBoard().create(...)", example: "board.create('axis', [[0, 0], [1, 0]]);" },
+    { name: "axis3d", mode: "3D", params: "起点与终点 `[[x1, y1, z1], [x2, y2, z2]]`", desc: "创建三维坐标轴线，可带 3D 刻度与标签。", api: "engine.getView3D().create(...)", example: "view.create('axis3d', [[0, 0, 0], [4, 0, 0]]);" },
+    { name: "bisector", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建角平分线，平分由三点确定的夹角。", api: "engine.getBoard().create(...)", example: "board.create('bisector', [A, B, C]);" },
+    { name: "bisectorlines", mode: "2D/常规", params: "两条线 `[l1, l2]`", desc: "创建两条线形成角后的角平分线组合。", api: "engine.getBoard().create(...)", example: "board.create('bisectorlines', [lAB, lCD]);" },
+    { name: "boxplot", mode: "2D/常规", params: "分位数数组 + 轴位置 + 宽度", desc: "创建箱线图，用于统计数据的分位数可视化。", api: "engine.getBoard().create(...)", example: "board.create('boxplot', [[1, 3, 4, 6, 8], 1, 0.8], { dir: 'vertical' });" },
+    { name: "button", mode: "2D/常规", params: "`[x, y, label, handler]`", desc: "创建 HTML 按钮控件，点击后执行回调函数。", api: "engine.getBoard().create(...)", example: "board.create('button', [-7, 7, '点我', () => alert('clicked')]);" },
+    { name: "cardinalspline", mode: "2D/常规", params: "点数组 + 张力 `tau` + 类型", desc: "创建 Cardinal 样条曲线，用一组点平滑插值。", api: "engine.getBoard().create(...)", example: "board.create('cardinalspline', [[A, B, C, D], 0.6, 'uniform']);" },
+    { name: "chart", mode: "2D/常规", params: "`x` 数组 + `y` 数组；也可只传 `y`", desc: "创建图表，可用于折线、柱状、饼图、样条等数据展示。", api: "engine.getBoard().create(...)", example: "board.create('chart', [[1, 2, 3, 4], [2, 1, 3, 2]], { chartStyle: 'line,point' });" },
+    { name: "checkbox", mode: "2D/常规", params: "`[x, y, label]`", desc: "创建 HTML 复选框控件。", api: "engine.getBoard().create(...)", example: "board.create('checkbox', [-7, 6, '显示辅助线']);" },
+    { name: "circle", mode: "2D/常规", params: "圆心 + 半径/点/线/圆", desc: "创建二维圆，半径可以来自数值、点距、线长或另一个圆。", api: "可直接参考 executeCommand / 或 raw create", example: "board.create('circle', [A, B]);" },
+    { name: "circle3d", mode: "3D", params: "中心点 + 法向量 + 半径", desc: "创建三维圆。", api: "可直接参考 executeCommand / 或 raw create", example: "view.create('circle3d', [Q5, [1, 1, 1], 1.4], { strokeColor: '#ef4444', strokeWidth: 3 });" },
+    { name: "circumcenter", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建三角形的外心，不额外创建外接圆本体。", api: "engine.getBoard().create(...)", example: "board.create('circumcenter', [A, B, C]);" },
+    { name: "circumcircle", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建经过三点的外接圆。", api: "engine.getBoard().create(...)", example: "board.create('circumcircle', [A, B, C]);" },
+    { name: "circumcirclearc", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建三点外接圆上的圆弧。", api: "engine.getBoard().create(...)", example: "board.create('circumcirclearc', [A, B, C]);" },
+    { name: "circumcirclemidpoint", mode: "别名/特殊", params: "三点 `[p1, p2, p3]`", desc: "`circumcenter` 的别名，用于取得三角形外心。", api: "engine.getBoard().create(...)", example: "board.create('circumcirclemidpoint', [A, B, C]);" },
+    { name: "circumcirclesector", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建三点外接圆上的扇形区域。", api: "engine.getBoard().create(...)", example: "board.create('circumcirclesector', [A, B, C]);" },
+    { name: "comb", mode: "2D/常规", params: "两点 `[p1, p2]`", desc: "创建梳齿状标记，常用于不等式边界或特殊线段标示。", api: "engine.getBoard().create(...)", example: "board.create('comb', [A, B]);" },
+    { name: "conic", mode: "2D/常规", params: "五点；或六个二次曲线系数", desc: "创建一般二次曲线，可表示椭圆、抛物线、双曲线等。", api: "engine.getBoard().create(...)", example: "board.create('conic', [A, B, C, D, E]);" },
+    { name: "curve", mode: "2D/常规", params: "`x(t), y(t), [tMin, tMax]`；或离散数据", desc: "创建二维参数曲线或离散点曲线。", api: "engine.getBoard().create(...)", example: "board.create('curve', [t => Math.cos(t), t => Math.sin(t), 0, 2 * Math.PI]);" },
+    { name: "curve3d", mode: "3D", params: "`x(u), y(u), z(u), range`；或坐标数组", desc: "创建三维参数曲线或三维离散曲线。", api: "engine.getView3D().create(...)", example: "view.create('curve3d', [u => Math.cos(u), u => Math.sin(u), u => u / 3, [0, 6 * Math.PI]]);" },
+    { name: "curvedifference", mode: "2D/常规", params: "两个闭合曲线/圆/多边形", desc: "创建两个封闭图形做差后的边界路径。", api: "engine.getBoard().create(...)", example: "board.create('curvedifference', [poly1, poly2], { fillColor: '#f97316', fillOpacity: 0.2 });" },
+    { name: "curveintersection", mode: "2D/常规", params: "两个闭合曲线/圆/多边形", desc: "创建两个封闭图形相交后的边界路径。", api: "engine.getBoard().create(...)", example: "board.create('curveintersection', [poly1, poly2], { fillColor: '#22c55e', fillOpacity: 0.2 });" },
+    { name: "curveunion", mode: "2D/常规", params: "两个闭合曲线/圆/多边形", desc: "创建两个封闭图形并集后的边界路径。", api: "engine.getBoard().create(...)", example: "board.create('curveunion', [poly1, poly2], { fillColor: '#3b82f6', fillOpacity: 0.2 });" },
+    { name: "derivative", mode: "2D/常规", params: "`[curve]`", desc: "创建某条曲线的导函数图像。", api: "engine.getBoard().create(...)", example: "board.create('derivative', [fg]);" },
+    { name: "ellipse", mode: "2D/常规", params: "两个焦点 + 第三点；或两个焦点 + 长轴长度", desc: "创建椭圆。", api: "engine.getBoard().create(...)", example: "board.create('ellipse', [A, B, C]);" },
+    { name: "face3d", mode: "3D", params: "3D 顶点/面片数据", desc: "创建三维面片，常作为 3D 实体的一个面使用。", api: "engine.getView3D().create(...)", example: "const solid = view.create('polyhedron3d', [[[0,0,0],[2,0,0],[0,2,0],[0,0,2]], [[0,1,2],[0,1,3],[0,2,3],[1,2,3]]], { fillOpacity: 0.08, edges: { strokeColor: '#94a3b8' } }); solid.faces[0].setAttribute({ fillColor: '#f97316', fillOpacity: 0.5, strokeWidth: 2 });" },
+    { name: "fo", mode: "别名/特殊", params: "同 `foreignobject`", desc: "`foreignobject` 的别名。", api: "engine.getBoard().create(...)", example: "board.create('fo', ['<div style=\\\"padding:6px\\\">FO</div>', [-7, -1], [2.2, 1.2]]);" },
+    { name: "foreignobject", mode: "2D/常规", params: "HTML 内容 + 位置 + 尺寸", desc: "在 SVG 中嵌入 HTML 内容，如自定义 DOM、视频、iframe 等。", api: "engine.getBoard().create(...)", example: "board.create('foreignobject', ['<div style=\\\"padding:6px\\\">Hello</div>', [-7, -1], [2.2, 1.2]]);" },
+    { name: "functiongraph", mode: "2D/常规", params: "`f(x), [min, max]`", desc: "创建二维函数图像。", api: "可直接参考 executeCommand / 或 raw create", example: "board.create('functiongraph', [x => Math.sin(x)], { strokeColor: '#2563eb' });" },
+    { name: "functiongraph3d", mode: "3D", params: "`f(x, y), rangeX, rangeY`", desc: "创建三维函数图形，通常表示 `z = f(x, y)`。", api: "可直接参考 executeCommand / 或 raw create", example: "view.create('functiongraph3d', [(x, y) => Math.sin(x) * Math.cos(y), [-3, 3], [-3, 3]]);" },
+    { name: "glider", mode: "2D/常规", params: "坐标 + 宿主对象 `host`", desc: "创建附着在直线、圆、曲线等对象上的滑动点。", api: "engine.getBoard().create(...)", example: "board.create('glider', [0.5, 0.5, fg]);" },
+    { name: "grid", mode: "2D/常规", params: "可选两个轴 `[axisX, axisY]`", desc: "创建网格。", api: "engine.getBoard().create(...)", example: "board.create('grid', []);" },
+    { name: "group", mode: "2D/常规", params: "画板 + 元素数组 + 属性", desc: "把多个点/文本/图像编成组，以便联动平移、缩放或旋转。", api: "engine.getBoard().create(...)", example: "const group = board.create('group', [[A, B, C], {}]);" },
+    { name: "hash", mode: "别名/特殊", params: "线/曲线 + 数量 `num`", desc: "创建短刻痕标记，常用于表示线段等量。", api: "engine.getBoard().create(...)", example: "board.create('hash', [lAB, 3]);" },
+    { name: "hatch", mode: "别名/特殊", params: "线/曲线 + 数量 `num`", desc: "创建斜线刻纹标记，和 `hash` 类似，常用于等量或区域标示。", api: "engine.getBoard().create(...)", example: "board.create('hatch', [lAB, 4]);" },
+    { name: "htmlslider", mode: "别名/特殊", params: "`[[x, y], [min, start, max]]`", desc: "创建 HTML 版滑块控件。", api: "engine.getBoard().create(...)", example: "board.create('htmlslider', [[-7, 5], [0, 3, 10]]);" },
+    { name: "hyperbola", mode: "2D/常规", params: "两个焦点 + 第三点；或两个焦点 + 主轴长度", desc: "创建双曲线。", api: "engine.getBoard().create(...)", example: "board.create('hyperbola', [A, B, C]);" },
+    { name: "image", mode: "2D/常规", params: "图片 URL + 位置 + 尺寸", desc: "在画板中插入图片。", api: "engine.getBoard().create(...)", example: "board.create('image', ['https://dummyimage.com/120x80/e5e7eb/111827&text=img', [-7, -4], [3, 2]]);" },
+    { name: "implicitcurve", mode: "2D/常规", params: "`f(x, y)`；可选导数与范围", desc: "创建隐式曲线，例如 `x^2 + y^2 - 1 = 0`。", api: "engine.getBoard().create(...)", example: "board.create('implicitcurve', ['x^2 + y^2 - 9']);" },
+    { name: "incenter", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建三角形内心。", api: "engine.getBoard().create(...)", example: "board.create('incenter', [A, B, C]);" },
+    { name: "incircle", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建三角形内切圆。", api: "engine.getBoard().create(...)", example: "board.create('incircle', [A, B, C]);" },
+    { name: "inequality", mode: "2D/常规", params: "直线或函数图像", desc: "创建不等式区域，如某条线下方或函数图像某侧区域。", api: "engine.getBoard().create(...)", example: "board.create('inequality', [fg], { inverse: false, fillOpacity: 0.15 });" },
+    { name: "input", mode: "2D/常规", params: "`[x, y, defaultValue, label]`", desc: "创建 HTML 文本输入框。", api: "engine.getBoard().create(...)", example: "board.create('input', [-7, 4, 'sin(x)', 'f(x)=']);" },
+    { name: "integral", mode: "2D/常规", params: "区间 + 曲线", desc: "创建积分区域或积分相关图形。", api: "engine.getBoard().create(...)", example: "board.create('integral', [[-2, 2], fg]);" },
+    { name: "intersection", mode: "2D/常规", params: "两个对象 + 交点索引", desc: "创建两个对象的交点。", api: "engine.getBoard().create(...)", example: "board.create('intersection', [c1, c2, 0]);" },
+    { name: "intersectioncircle3d", mode: "3D", params: "球与球/平面", desc: "创建 3D 对象相交得到的圆。", api: "engine.getView3D().create(...)", example: "view.create('intersectioncircle3d', [sphereA, planeA]);" },
+    { name: "intersectionline3d", mode: "3D", params: "两个平面", desc: "创建两个平面相交得到的直线。", api: "engine.getView3D().create(...)", example: "view.create('intersectionline3d', [planeA, planeB]);" },
+    { name: "legend", mode: "2D/常规", params: "`[x, y]`", desc: "创建图表图例。", api: "engine.getBoard().create(...)", example: "board.create('legend', [5.5, 7.5]);" },
+    { name: "line", mode: "2D/常规", params: "两点；或系数 `[a, b, c]`；或线 + 变换", desc: "创建二维直线。", api: "可直接参考 executeCommand / 或 raw create", example: "board.create('line', [A, B]);" },
+    { name: "line3d", mode: "3D", params: "两点；或点 + 方向 + 范围", desc: "创建三维直线、射线或线段。", api: "可直接参考 executeCommand / 或 raw create", example: "view.create('line3d', [[0, 0, 0], [2, 1, 1]]);" },
+    { name: "majorarc", mode: "2D/常规", params: "三点 `[center, radiusPoint, anglePoint]`", desc: "创建大圆弧（角度大于等于 180 度）。", api: "engine.getBoard().create(...)", example: "board.create('majorarc', [A, B, C]);" },
+    { name: "majorsector", mode: "2D/常规", params: "三点 `[center, radiusPoint, anglePoint]`", desc: "创建大扇形（角度大于等于 180 度）。", api: "engine.getBoard().create(...)", example: "board.create('majorsector', [A, B, C]);" },
+    { name: "measurement", mode: "2D/常规", params: "对象/点 + 表达式", desc: "创建测量文本，可显示长度、角度、面积或表达式值。", api: "engine.getBoard().create(...)", example: "board.create('measurement', [A, B, ['Dist', 'A', 'B']]);" },
+    { name: "mesh3d", mode: "3D", params: "起点 + 两个方向 + 两个范围", desc: "创建三维网格面。", api: "engine.getView3D().create(...)", example: "view.create('mesh3d', [[0, 0, 0], [1, 0, 0], [0, 1, 0], [-2, 2], [-2, 2]]);" },
+    { name: "metapostspline", mode: "2D/常规", params: "点数组 + Metapost 控制参数", desc: "创建 Metapost 风格样条曲线。", api: "engine.getBoard().create(...)", example: "board.create('metapostspline', [[A, B, C, D], { tension: 1 }]);" },
+    { name: "midpoint", mode: "2D/常规", params: "两点；或一条线", desc: "创建中点。", api: "engine.getBoard().create(...)", example: "board.create('midpoint', [A, B]);" },
+    { name: "minorarc", mode: "2D/常规", params: "三点 `[center, radiusPoint, anglePoint]`", desc: "创建小圆弧（角度小于等于 180 度）。", api: "engine.getBoard().create(...)", example: "board.create('minorarc', [A, B, C]);" },
+    { name: "minorsector", mode: "2D/常规", params: "三点 `[center, radiusPoint, anglePoint]`", desc: "创建小扇形（角度小于等于 180 度）。", api: "engine.getBoard().create(...)", example: "board.create('minorsector', [A, B, C]);" },
+    { name: "mirrorelement", mode: "2D/常规", params: "对象 + 镜像中心点", desc: "按点对一个图形做中心对称。", api: "engine.getBoard().create(...)", example: "board.create('mirrorelement', [segAB, O]);" },
+    { name: "mirrorpoint", mode: "2D/常规", params: "中心点 + 被镜像点", desc: "把一个点按另一个点做中心对称。", api: "engine.getBoard().create(...)", example: "board.create('mirrorpoint', [O, A]);" },
+    { name: "msector", mode: "别名/特殊", params: "文档不完整，通常与角/扇形测量相关", desc: "历史/实验性元素，建议不要作为稳定公共指令依赖。", api: "engine.getBoard().create(...)", example: "board.create('msector', [A, B, C]); // 某些版本可能需要微调" },
+    { name: "nonreflexangle", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建不大于 180 度的角对象。", api: "engine.getBoard().create(...)", example: "board.create('nonreflexangle', [A, B, C]);" },
+    { name: "normal", mode: "2D/常规", params: "对象 + 点", desc: "创建法线/垂线，通常相对于曲线切线或直线。", api: "engine.getBoard().create(...)", example: "board.create('normal', [fg, G]);" },
+    { name: "orthogonalprojection", mode: "2D/常规", params: "点 + 直线", desc: "创建点到直线的正交投影点。", api: "engine.getBoard().create(...)", example: "board.create('orthogonalprojection', [C, lAB]);" },
+    { name: "otherintersection", mode: "2D/常规", params: "两个对象 + 已知交点", desc: "在已有一个交点的情况下，创建“另一个”交点。", api: "engine.getBoard().create(...)", example: "board.create('otherintersection', [c1, c2, I0]);" },
+    { name: "parabola", mode: "2D/常规", params: "焦点 + 准线", desc: "创建抛物线。", api: "engine.getBoard().create(...)", example: "board.create('parabola', [A, lCD]);" },
+    { name: "parallel", mode: "2D/常规", params: "直线 + 点；或三点 `p1, p2, p`", desc: "创建过指定点且与目标直线平行的直线。", api: "engine.getBoard().create(...)", example: "board.create('parallel', [lAB, C]);" },
+    { name: "parallelogram", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "用三点构造平行四边形。", api: "engine.getBoard().create(...)", example: "board.create('parallelogram', [A, B, C]);" },
+    { name: "parallelpoint", mode: "2D/常规", params: "三点；或直线 + 点", desc: "创建能与已有三点组成平行四边形的第四个点。", api: "engine.getBoard().create(...)", example: "board.create('parallelpoint', [A, B, C]);" },
+    { name: "parametricsurface3d", mode: "3D", params: "`x(u,v), y(u,v), z(u,v), rangeU, rangeV`", desc: "创建三维参数曲面。", api: "可直接参考 executeCommand / 或 raw create", example: "view.create('parametricsurface3d', [(u, v) => (3 + Math.cos(v)) * Math.cos(u), (u, v) => (3 + Math.cos(v)) * Math.sin(u), (u, v) => Math.sin(v), [0, 2 * Math.PI], [0, 2 * Math.PI]], { stepsU: 24, stepsV: 16, fillOpacity: 0.45 });" },
+    { name: "perpendicular", mode: "2D/常规", params: "直线 + 点", desc: "创建过指定点且垂直于目标直线的直线。", api: "engine.getBoard().create(...)", example: "board.create('perpendicular', [lAB, C]);" },
+    { name: "perpendicularpoint", mode: "2D/常规", params: "点 + 直线", desc: "创建点在直线上的垂足。", api: "engine.getBoard().create(...)", example: "board.create('perpendicularpoint', [C, lAB]);" },
+    { name: "perpendicularsegment", mode: "2D/常规", params: "直线 + 点", desc: "创建从点到直线的垂线段。", api: "engine.getBoard().create(...)", example: "board.create('perpendicularsegment', [lAB, C]);" },
+    { name: "plane3d", mode: "3D", params: "点 + 两个方向；或三点", desc: "创建三维平面。", api: "engine.getView3D().create(...)", example: "view.create('plane3d', [[0, 0, 0], [1, 0, 0], [0, 1, 0], [-2, 2], [-2, 2]]);" },
+    { name: "plot", mode: "别名/特殊", params: "同 `functiongraph`", desc: "`functiongraph` 的别名。", api: "可直接参考 executeCommand / 或 raw create", example: "board.create('plot', [x => Math.cos(x)], { strokeColor: '#ef4444' });" },
+    { name: "point", mode: "2D/常规", params: "`[x, y]`；或 `[z, x, y]`；或点 + 变换", desc: "创建二维点。", api: "可直接参考 executeCommand / 或 raw create", example: "board.create('point', [1, 2]);" },
+    { name: "point3d", mode: "3D", params: "`[x, y, z]`；或函数返回 `[x, y, z]`；可选 slide", desc: "创建三维点。", api: "可直接参考 executeCommand / 或 raw create", example: "view.create('point3d', [1, 2, 3]);" },
+    { name: "polar", mode: "别名/特殊", params: "圆锥曲线/圆 + 点", desc: "创建极线；在源码里是 `tangent` 的别名入口之一。", api: "engine.getBoard().create(...)", example: "board.create('polar', [c1, C]);" },
+    { name: "polarline", mode: "2D/常规", params: "圆锥曲线/圆 + 点", desc: "创建点相对于圆或圆锥曲线的极线。", api: "engine.getBoard().create(...)", example: "board.create('polarline', [c1, C]);" },
+    { name: "polepoint", mode: "2D/常规", params: "圆锥曲线/圆 + 线/点", desc: "创建极线对应的极点。", api: "engine.getBoard().create(...)", example: "board.create('polepoint', [c1, lAB]);" },
+    { name: "polygon", mode: "2D/常规", params: "顶点数组 `vertices[]`", desc: "创建二维多边形。", api: "可直接参考 executeCommand / 或 raw create", example: "board.create('polygon', [A, B, C, D]);" },
+    { name: "polygon3d", mode: "3D", params: "顶点数组 `vertices[]`", desc: "创建三维多边形。", api: "可直接参考 executeCommand / 或 raw create", example: "view.create('polygon3d', [[0, 0, 0], [2, 0, 0], [1, 2, 0]]);" },
+    { name: "polygonalchain", mode: "2D/常规", params: "顶点数组 `vertices[]`", desc: "创建折线链，不自动闭合。", api: "engine.getBoard().create(...)", example: "board.create('polygonalchain', [A, B, C, D]);" },
+    { name: "polyhedron3d", mode: "3D", params: "顶点/面集合", desc: "创建三维多面体。", api: "engine.getView3D().create(...)", example: "view.create('polyhedron3d', [[[0,0,0],[2,0,0],[2,2,0],[0,2,0],[0,0,2],[2,0,2],[2,2,2],[0,2,2]], [[0,1,2,3],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]]], { fillOpacity: 0.2 });" },
+    { name: "radicalaxis", mode: "2D/常规", params: "两个圆 `[circle1, circle2]`", desc: "创建两圆的根轴。", api: "engine.getBoard().create(...)", example: "board.create('radicalaxis', [c1, c2]);" },
+    { name: "reflection", mode: "2D/常规", params: "对象 + 直线", desc: "按直线对一个对象做镜像反射。", api: "engine.getBoard().create(...)", example: "board.create('reflection', [A, lCD]);" },
+    { name: "reflexangle", mode: "2D/常规", params: "三点 `[p1, p2, p3]`", desc: "创建大于 180 度的反角对象。", api: "engine.getBoard().create(...)", example: "board.create('reflexangle', [A, B, C]);" },
+    { name: "regularpolygon", mode: "2D/常规", params: "两点 + 边数 `n`", desc: "创建正多边形。", api: "engine.getBoard().create(...)", example: "board.create('regularpolygon', [A, B, 5]);" },
+    { name: "riemannsum", mode: "2D/常规", params: "`f, n, type, a, b`", desc: "创建黎曼和图形，用于近似积分。", api: "engine.getBoard().create(...)", example: "board.create('riemannsum', [x => Math.sin(x) + 2, 8, 'left', -3, 3]);" },
+    { name: "sector", mode: "2D/常规", params: "三点；或两条线 + 方向/坐标 + 半径", desc: "创建扇形区域。", api: "engine.getBoard().create(...)", example: "board.create('sector', [A, B, C]);" },
+    { name: "segment", mode: "2D/常规", params: "两点；可附长度约束", desc: "创建线段。", api: "engine.getBoard().create(...)", example: "board.create('segment', [A, B]);" },
+    { name: "semicircle", mode: "2D/常规", params: "两点 `[p1, p2]`", desc: "创建半圆。", api: "engine.getBoard().create(...)", example: "board.create('semicircle', [A, B]);" },
+    { name: "slider", mode: "2D/常规", params: "起点 + 终点 + `[min, start, max]`", desc: "创建滑块。", api: "engine.getBoard().create(...)", example: "board.create('slider', [[-7, 3], [-1, 3], [0, 2, 5]]);" },
+    { name: "slopefield", mode: "2D/常规", params: "`f(x, y), xData, yData`", desc: "创建微分方程斜率场。", api: "engine.getBoard().create(...)", example: "board.create('slopefield', [(x, y) => x - y, [-4, 10, 4], [-4, 10, 4]]);" },
+    { name: "slopetriangle", mode: "2D/常规", params: "切线；或直线 + 点", desc: "创建斜率三角形，用于直观显示斜率。", api: "engine.getBoard().create(...)", example: "board.create('slopetriangle', [tangentFg]);" },
+    { name: "smartlabel", mode: "2D/常规", params: "父对象 + 可选文本", desc: "创建智能标签，可自动显示长度、面积、角度等测量结果。", api: "engine.getBoard().create(...)", example: "board.create('smartlabel', [segAB]);" },
+    { name: "sphere3d", mode: "3D", params: "中心点 + 半径/点", desc: "创建球体。", api: "engine.getView3D().create(...)", example: "view.create('sphere3d', [Q1, 2]);" },
+    { name: "spline", mode: "2D/常规", params: "点数组 `points[]`", desc: "创建样条插值曲线。", api: "engine.getBoard().create(...)", example: "board.create('spline', [[A, B, C, D]]);" },
+    { name: "stepfunction", mode: "2D/常规", params: "`xData, yData`", desc: "创建阶梯函数图像。", api: "engine.getBoard().create(...)", example: "board.create('stepfunction', [[-3, -1, 1, 3], [1, 3, 2, 4]]);" },
+    { name: "tangent", mode: "2D/常规", params: "滑点；或对象 + 点", desc: "创建切线。", api: "engine.getBoard().create(...)", example: "board.create('tangent', [G]);" },
+    { name: "tangentto", mode: "2D/常规", params: "圆/圆锥曲线 + 外部点 + 序号", desc: "创建从外部点引向圆或圆锥曲线的切线。", api: "engine.getBoard().create(...)", example: "board.create('tangentto', [c1, D, 0]);" },
+    { name: "tapemeasure", mode: "2D/常规", params: "起点 + 终点", desc: "创建卷尺/测距工具。", api: "engine.getBoard().create(...)", example: "board.create('tapemeasure', [[-4, -5], [3, -5]]);" },
+    { name: "text", mode: "2D/常规", params: "`x, y, text`；或 `z, x, y, text`", desc: "创建文本标签。", api: "engine.getBoard().create(...)", example: "board.create('text', [-7, 7.5, 'Hello VueGraphX']);" },
+    { name: "text3d", mode: "3D", params: "`x, y, z, text`；可选 slide", desc: "创建三维文本标签。", api: "engine.getView3D().create(...)", example: "view.create('text3d', [1, 1, 1, 'P']);" },
+    { name: "ticks", mode: "2D/常规", params: "直线/曲线 + 刻度数组", desc: "创建刻度。", api: "engine.getBoard().create(...)", example: "board.create('ticks', [lAB, [-2, -1, 0, 1, 2]]);" },
+    { name: "ticks3d", mode: "3D", params: "起点 + 方向 + 长度 + 刻度方向", desc: "创建三维刻度。", api: "engine.getView3D().create(...)", example: "view.create('ticks3d', [[0, 0, 0], [1, 0, 0], 4, [0, 0.25, 0]]);" },
+    { name: "tracecurve", mode: "2D/常规", params: "滑点 + 被跟踪点", desc: "创建轨迹曲线，显示某个点随另一点运动的轨迹。", api: "engine.getBoard().create(...)", example: "board.create('tracecurve', [G, T]);" },
+    { name: "transform", mode: "别名/特殊", params: "按 `type` 传平移/旋转/缩放/反射等参数", desc: "创建二维变换对象，供其它元素复用。", api: "engine.getBoard().create(...)", example: "const tr = board.create('transform', [1.5, 0.5], { type: 'translate' }); board.create('point', [A, tr], { name: 'A1' });" },
+    { name: "transform3d", mode: "3D", params: "按 `type` 传 3D 平移/旋转/缩放参数", desc: "创建三维变换对象，供其它元素复用。", api: "engine.getView3D().create(...)", example: "const rot = view.create('transform3d', [Math.PI / 6], { type: 'rotateZ' });" },
+    { name: "turtle", mode: "2D/常规", params: "画板 + 选项", desc: "创建海龟绘图对象。", api: "engine.getBoard().create(...)", example: "const turtle = board.create('turtle', []); turtle.forward(2); turtle.right(120); turtle.forward(2); turtle.right(120); turtle.forward(2);" },
+    { name: "vectorfield", mode: "2D/常规", params: "`F, xData, yData`", desc: "创建二维向量场。", api: "engine.getBoard().create(...)", example: "board.create('vectorfield', [[(x, y) => -y, (x, y) => x], [-4, 8, 4], [-4, 8, 4]]);" },
+    { name: "vectorfield3d", mode: "3D", params: "`F, xData, yData, zData`", desc: "创建三维向量场。", api: "engine.getView3D().create(...)", example: "view.create('vectorfield3d', [[(x, y, z) => y, (x, y, z) => -x, (x, y, z) => z], [-2, 4, 2], [-2, 4, 2], [-2, 4, 2]]);" },
+    { name: "view3d", mode: "3D", params: "`lower, dim, cube`", desc: "创建 3D 视图容器，是所有 3D 图元的承载入口。", api: "engine.getView3D().create(...)", example: "board3d.create('view3d', [[-6, -3], [8, 8], [[-5, 5], [-5, 5], [-5, 5]]]);" }];
+    const tbody = document.getElementById('rows');
+    const search = document.getElementById('search');
+    const chips = [...document.querySelectorAll('.chip')];
+    const singleRun = document.getElementById('singleRun');
+    const clear2dBtn = document.getElementById('clear2d');
+    const clear3dBtn = document.getElementById('clear3d');
+    const resetAllBtn = document.getElementById('resetAll');
+    const restoreDemoBtn = document.getElementById('restoreDemo');
+    const activeCommandEl = document.getElementById('activeCommand');
+    const activeModeEl = document.getElementById('activeMode');
+    const runStatusEl = document.getElementById('runStatus');
+    const statusMessageEl = document.getElementById('statusMessage');
+    const activeExampleEl = document.getElementById('activeExample');
+    const panel2d = document.getElementById('panel2d');
+    const panel3d = document.getElementById('panel3d');
+    const captureReadyEl = document.getElementById('captureReady');
+    const dataMap = new Map(data.map((item) => [item.name, item]));
+    const pageParams = new URLSearchParams(window.location.search);
+    const autoCommandName = pageParams.get('command');
+    const captureMode = pageParams.get('capture') === '1';
+    const passiveHintMap = {
+      axes3d: 'axes3d 通常由 view3d 自动管理，单独运行时可见变化可能不明显。',
+      face3d: '当前 JSXGraph 版本里直接单独 create face3d 容易不稳定，这里改用 polyhedron3d 生成后的面来演示效果。',
+      group: 'group 主要用于把多个对象编组，本身不会额外生成醒目的几何图形。',
+      legend: 'legend 通常配合 chart 一起看更明显。',
+      transform3d: 'transform3d 是 3D 变换对象，本身不一定直接产生可见结果。',
+      view3d: '当前 3D 引擎已经自带一个 view3d，这条示例会额外再创建一个 3D 视图。'
+    };
+    const plainDescMap = {
+      angle: '拿三个点就能画出一个角。',
+      arc: '从一个圆里截出一段弧。',
+      arrow: '画一条带箭头的线，表示方向更直观。',
+      arrowparallel: '画一条带箭头、并且和现有方向平行的线。',
+      axes3d: '3D 坐标轴那一整套壳子，通常系统自己就会带上。',
+      axis: '就是坐标轴本体，不只是普通直线。',
+      axis3d: '3D 里的单根坐标轴。',
+      bisector: '把一个角从中间平分开。',
+      bisectorlines: '给你两条线，直接找它们夹角的平分线。',
+      boxplot: '统计课里常见的箱线图。',
+      button: '往画板里塞一个可以点的按钮。',
+      cardinalspline: '把几个点顺滑地连成一条曲线。',
+      chart: '画数据图，折线图柱状图这些都算。',
+      checkbox: '往画板里塞一个勾选框。',
+      circle: '画圆，最常用的圆命令。',
+      circle3d: '在 3D 空间里画一个圆。',
+      circumcenter: '直接找三角形的外心。',
+      circumcircle: '让一个圆刚好穿过三个点。',
+      circumcirclearc: '先确定外接圆，再只取其中一段弧。',
+      circumcirclemidpoint: '其实就是外心，名字比较历史包袱。',
+      circumcirclesector: '先确定外接圆，再取其中一块扇形。',
+      comb: '在线段边上加一排小梳齿标记。',
+      conic: '通用二次曲线，椭圆抛物线双曲线都能装进去。',
+      curve: '画一条普通 2D 曲线。',
+      curve3d: '画一条空间里的 3D 曲线。',
+      curvedifference: '把两个封闭图形做减法，剩下的那块显示出来。',
+      curveintersection: '把两个封闭图形重叠的部分抠出来。',
+      curveunion: '把两个封闭图形合并成一整块。',
+      derivative: '直接把一条函数的导函数也画出来。',
+      ellipse: '画椭圆。',
+      face3d: '画 3D 物体的一个面片。',
+      fo: '就是 foreignobject 的短名字。',
+      foreignobject: '把一块 HTML 内容直接嵌进画板里。',
+      functiongraph: '画函数图像，比如 y = sin(x)。',
+      functiongraph3d: '画曲面，比如 z = f(x, y)。',
+      glider: '让一个点只能沿着某条线或某条曲线滑动。',
+      grid: '打开网格背景。',
+      group: '把几个图形打包成一组一起操作。',
+      hash: '给线段加几道小刻痕，常用来表示等长。',
+      hatch: '给对象加斜线纹或刻纹标记。',
+      htmlslider: '画板里的 HTML 版滑块。',
+      hyperbola: '画双曲线。',
+      image: '往画板里放一张图片。',
+      implicitcurve: '直接按方程画隐式曲线，不用先写成 y = f(x)。',
+      incenter: '直接找三角形的内心。',
+      incircle: '画三角形的内切圆。',
+      inequality: '把满足不等式的那一片区域涂出来。',
+      input: '往画板里塞一个输入框。',
+      integral: '把积分对应的面积区域直接画出来。',
+      intersection: '找两个图形的交点。',
+      intersectioncircle3d: '看两个 3D 对象相交后是不是形成一个圆。',
+      intersectionline3d: '看两个平面相交后那条线在哪。',
+      legend: '给图表配一个图例说明。',
+      line: '画直线。',
+      line3d: '画空间直线。',
+      majorarc: '取圆上比较大的那段弧。',
+      majorsector: '取圆上比较大的那块扇形。',
+      measurement: '把长度角度面积这些测量值直接显示出来。',
+      mesh3d: '画一个 3D 网格面。',
+      metapostspline: '一种偏排版风格的平滑样条线。',
+      midpoint: '找中点。',
+      minorarc: '取圆上比较短的那段弧。',
+      minorsector: '取圆上比较小的那块扇形。',
+      mirrorelement: '把整个图形按一个点做中心对称。',
+      mirrorpoint: '把一个点按另一个点翻到对面去。',
+      msector: '老一点的实验命令，和扇形测量有关，不建议重度依赖。',
+      nonreflexangle: '强制取不超过 180 度的那个角。',
+      normal: '画法线，或者理解成垂直方向那条线。',
+      orthogonalprojection: '把一个点垂直投到一条线上。',
+      otherintersection: '已知一个交点后，帮你找另一个交点。',
+      parabola: '画抛物线。',
+      parallel: '过某个点画一条平行线。',
+      parallelogram: '拿三个点补出一个平行四边形。',
+      parallelpoint: '帮你补出平行四边形缺的第四个点。',
+      parametricsurface3d: '按参数方程画一整张 3D 曲面。',
+      perpendicular: '过某个点画一条垂线。',
+      perpendicularpoint: '找垂足。',
+      perpendicularsegment: '从点到直线拉一条垂线段。',
+      plane3d: '画一个 3D 平面。',
+      plot: 'functiongraph 的另一个叫法，本质还是画函数。',
+      point: '画点。',
+      point3d: '在空间里放一个点。',
+      polar: '求极线，属于圆锥曲线相关工具。',
+      polarline: '给定点以后，求它对应的极线。',
+      polepoint: '给定极线以后，反过来求对应的极点。',
+      polygon: '画多边形。',
+      polygon3d: '画 3D 多边形面。',
+      polygonalchain: '画折线，但不自动封口。',
+      polyhedron3d: '画一个完整 3D 多面体。',
+      radicalaxis: '找两个圆的根轴。',
+      reflection: '按一条直线做镜像翻折。',
+      reflexangle: '强制取大于 180 度的那个反角。',
+      regularpolygon: '画正多边形。',
+      riemannsum: '把积分近似成一块一块的小矩形。',
+      sector: '画扇形。',
+      segment: '画线段。',
+      semicircle: '画半圆。',
+      slider: '画一个可拖动的数值滑块。',
+      slopefield: '画微分方程的斜率场。',
+      slopetriangle: '在线上配一个斜率三角形，方便看 rise/run。',
+      smartlabel: '自动给对象挂一个会算数值的智能标签。',
+      sphere3d: '画球。',
+      spline: '用样条方式平滑连点。',
+      stepfunction: '画阶梯函数。',
+      tangent: '画切线。',
+      tangentto: '从外部一点向圆或曲线作切线。',
+      tapemeasure: '像卷尺一样量两点距离。',
+      text: '在画板上写字。',
+      text3d: '在 3D 场景里放文字。',
+      ticks: '给线加刻度。',
+      ticks3d: '给 3D 轴或线加刻度。',
+      tracecurve: '把运动点走过的轨迹留下来。',
+      transform: '先定义一个平移旋转缩放规则，后面图形都能复用。',
+      transform3d: '3D 版的平移旋转缩放规则。',
+      turtle: '海龟绘图那一套，边走边画。',
+      vectorfield: '画二维向量场。',
+      vectorfield3d: '画三维向量场。',
+      view3d: '3D 场景的容器，没有它就没地方放 3D 图形。'
+    };
+    let filter = 'all';
+    let activeName = '';
+
+    if (captureMode) {
+      document.body.classList.add('capture-mode');
+    }
+
+    function modeClass(mode) {
+      if (mode === '3D') return 'mode mode-3d';
+      if (mode === '别名/特殊') return 'mode mode-special';
+      return 'mode';
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+    }
+
+    function getPlainDesc(item) {
+      return plainDescMap[item.name] || item.desc;
+    }
+
+    function setStatus(kind, text) {
+      const labelMap = {
+        waiting: '待运行',
+        success: '运行成功',
+        error: '运行失败'
+      };
+      runStatusEl.className = `status-pill ${kind}`;
+      runStatusEl.textContent = labelMap[kind] || text;
+      statusMessageEl.textContent = text;
+    }
+
+    function setCaptureReady(ready) {
+      captureReadyEl.dataset.ready = ready ? '1' : '0';
+    }
+
+    function focusPanel(mode) {
+      panel2d.classList.toggle('active-panel', mode === '2d');
+      panel3d.classList.toggle('active-panel', mode === '3d');
+    }
+
+    function get2DBoard() {
+      const board = engine2d.getBoard();
+      if (!board) throw new Error('2D 画板尚未初始化');
+      return board;
+    }
+
+    function get3DBoard() {
+      const board = engine3d.getBoard();
+      if (!board) throw new Error('3D 画板尚未初始化');
+      return board;
+    }
+
+    function getView3D() {
+      const view = engine3d.getView3D();
+      if (!view) throw new Error('3D 视图尚未初始化');
+      return view;
+    }
+
+    function reset2DScene(seedDemo = false) {
+      engine2d.resetBoard(options2d);
+      sceneCache2d = null;
+      if (seedDemo) {
+        engine2d.executeCommand('demo-func', 'y = sin(x)', '#2563eb');
+        engine2d.executeCommand('demo-circle', 'Circle((0,0), (2,0))', '#ef4444');
+        engine2d.executeCommand('demo-point', 'A = (-3, 2)', '#0f172a');
+      }
+    }
+
+    function reset3DScene(seedDemo = false) {
+      engine3d.setMode('3d', options3d);
+      sceneCache3d = null;
+      if (seedDemo) {
+        engine3d.executeCommand('demo-surface', 'z = sin(x) * cos(y)', '#10b981', { fillOpacity: 0.65 });
+        engine3d.executeCommand('demo-line3d', 'Line((0,0,0), (2,2,2))', '#f97316');
+      }
+    }
+
+    function createLazyContext(builders, extras = {}) {
+      const cache = new Map();
+      let proxy = null;
+
+      function getValue(key) {
+        if (cache.has(key)) return cache.get(key);
+        if (Object.prototype.hasOwnProperty.call(extras, key)) {
+          const value = extras[key];
+          cache.set(key, value);
+          return value;
+        }
+        if (Object.prototype.hasOwnProperty.call(builders, key)) {
+          const value = builders[key](proxy);
+          cache.set(key, value);
+          return value;
+        }
+        return undefined;
+      }
+
+      proxy = new Proxy({}, {
+        has(_, key) {
+          if (typeof key !== 'string') return false;
+          return Object.prototype.hasOwnProperty.call(extras, key) ||
+            Object.prototype.hasOwnProperty.call(builders, key);
+        },
+        get(_, key) {
+          if (typeof key !== 'string') return undefined;
+          return getValue(key);
+        }
+      });
+
+      return proxy;
+    }
+
+    function create2DContext() {
+      return createLazyContext({
+        board: () => get2DBoard(),
+        A: (ctx) => ctx.board.create('point', [-4, 1], { name: 'A', size: 3 }),
+        B: (ctx) => ctx.board.create('point', [-1, 3], { name: 'B', size: 3 }),
+        C: (ctx) => ctx.board.create('point', [2, 1], { name: 'C', size: 3 }),
+        D: (ctx) => ctx.board.create('point', [1, -2], { name: 'D', size: 3 }),
+        E: (ctx) => ctx.board.create('point', [-2, -3], { name: 'E', size: 3 }),
+        O: (ctx) => ctx.board.create('point', [0, 0], { name: 'O', size: 3 }),
+        lAB: (ctx) => ctx.board.create('line', [ctx.A, ctx.B], { strokeColor: '#64748b' }),
+        lCD: (ctx) => ctx.board.create('line', [ctx.C, ctx.D], { strokeColor: '#94a3b8' }),
+        segAB: (ctx) => ctx.board.create('segment', [ctx.A, ctx.B], { strokeColor: '#0f172a', strokeWidth: 2 }),
+        c1: (ctx) => ctx.board.create('circle', [ctx.A, ctx.B], { strokeColor: '#ef4444' }),
+        c2: (ctx) => ctx.board.create('circle', [ctx.C, ctx.D], { strokeColor: '#3b82f6' }),
+        fg: (ctx) => ctx.board.create('functiongraph', [x => Math.sin(x)], { strokeColor: '#2563eb', strokeWidth: 2 }),
+        G: (ctx) => ctx.board.create('glider', [0.5, 0.5, ctx.fg], { name: 'G', size: 4, color: '#2563eb' }),
+        tangentFg: (ctx) => ctx.board.create('tangent', [ctx.G], { strokeColor: '#f97316' }),
+        T: (ctx) => ctx.board.create('point', [() => ctx.G.X(), () => ctx.G.Y() + 1], { name: 'T', size: 3 }),
+        I0: (ctx) => ctx.board.create('intersection', [ctx.c1, ctx.c2, 0], { name: 'I0', size: 3 }),
+        poly1: (ctx) => ctx.board.create('polygon', [[-5, -1], [-1, -1], [-1, 2], [-5, 2]], { fillColor: '#f59e0b', fillOpacity: 0.12 }),
+        poly2: (ctx) => ctx.board.create('polygon', [[-3, -2], [2, -2], [2, 1], [-3, 1]], { fillColor: '#10b981', fillOpacity: 0.12 })
+      }, {
+        engine2d,
+        Math,
+        console,
+        alert: window.alert.bind(window)
+      });
+    }
+
+    function create3DContext() {
+      return createLazyContext({
+        board3d: () => get3DBoard(),
+        view: () => getView3D(),
+        Q1: (ctx) => ctx.view.create('point3d', [0, 0, 0], { name: 'Q1' }),
+        Q2: (ctx) => ctx.view.create('point3d', [2, 0, 0], { name: 'Q2' }),
+        Q3: (ctx) => ctx.view.create('point3d', [0, 2, 0], { name: 'Q3' }),
+        Q4: (ctx) => ctx.view.create('point3d', [0, 0, 2], { name: 'Q4' }),
+        Q5: (ctx) => ctx.view.create('point3d', [2, 2, 2], { name: 'Q5' }),
+        planeA: (ctx) => ctx.view.create('plane3d', [ctx.Q1, ctx.Q2, ctx.Q3, [-2, 2], [-2, 2]], { fillColor: '#60a5fa', fillOpacity: 0.18 }),
+        planeB: (ctx) => ctx.view.create('plane3d', [[0, 0, 1], [1, 0, 0], [0, 1, 1], [-2, 2], [-2, 2]], { fillColor: '#34d399', fillOpacity: 0.18 }),
+        sphereA: (ctx) => ctx.view.create('sphere3d', [ctx.Q1, 2], { fillColor: '#f97316', fillOpacity: 0.1 }),
+        sphereB: (ctx) => ctx.view.create('sphere3d', [ctx.Q5, 1.8], { fillColor: '#6366f1', fillOpacity: 0.1 })
+      }, {
+        engine3d,
+        Math,
+        console
+      });
+    }
+
+    function get2DContext() {
+      const board = get2DBoard();
+      if (!sceneCache2d || sceneCache2d.board !== board) {
+        sceneCache2d = { board, context: create2DContext() };
+      }
+      return sceneCache2d.context;
+    }
+
+    function get3DContext() {
+      const board = get3DBoard();
+      if (!sceneCache3d || sceneCache3d.board !== board) {
+        sceneCache3d = { board, context: create3DContext() };
+      }
+      return sceneCache3d.context;
+    }
+
+    function runSnippet(code, context) {
+      const normalizedCode = code
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t');
+      const runner = new Function('context', `with (context) {\n${normalizedCode}\n}`);
+      return runner(context);
+    }
+
+    function getTargetMode(item) {
+      return item.mode === '3D' ? '3d' : '2d';
+    }
+
+    function updateCurrentInfo(item, message, statusKind) {
+      activeName = item ? item.name : '';
+      activeCommandEl.textContent = item ? item.name : '未运行';
+      activeModeEl.textContent = item ? item.mode : '-';
+      activeExampleEl.textContent = item ? item.example : '点击任意指令行或右侧“运行”按钮后，这里会显示实际执行的示例代码。';
+      setStatus(statusKind, message);
+      render();
+    }
+
+    function runItem(item) {
+      setCaptureReady(false);
+      const targetMode = getTargetMode(item);
+      focusPanel(targetMode);
+      activeCommandEl.textContent = item.name;
+      activeModeEl.textContent = item.mode;
+      activeExampleEl.textContent = item.example;
+      setStatus('waiting', '运行中');
+
+      try {
+        if (singleRun.checked) {
+          if (targetMode === '3d') {
+            reset3DScene(false);
+          } else {
+            reset2DScene(false);
+          }
+        }
+
+        const context = targetMode === '3d' ? get3DContext() : get2DContext();
+        runSnippet(item.example, context);
+
+        if (targetMode === '3d') {
+          get3DBoard().update();
+        } else {
+          get2DBoard().update();
+        }
+
+        const hint = passiveHintMap[item.name] ? ` ${passiveHintMap[item.name]}` : '';
+        updateCurrentInfo(item, `运行成功${singleRun.checked ? '，已清空当前画板后重新绘制。' : '，已追加到当前画板。'}${hint}`, 'success');
+        requestAnimationFrame(() => setCaptureReady(true));
+      } catch (error) {
+        console.error(`[demo] ${item.name} run failed`, error);
+        updateCurrentInfo(item, `运行失败：${error?.message || error}`, 'error');
+        requestAnimationFrame(() => setCaptureReady(true));
+      }
+    }
+
+    function render() {
+      const keyword = search.value.trim().toLowerCase();
+      const list = data.filter((item) => {
+        const hitFilter = filter === 'all' || item.mode === filter;
+        const text = `${item.name} ${item.params} ${item.desc} ${item.example}`.toLowerCase();
+        const hitKeyword = !keyword || text.includes(keyword);
+        return hitFilter && hitKeyword;
+      });
+
+      tbody.innerHTML = list.map((item) => `
+        <tr class="${activeName === item.name ? 'active' : ''}" data-name="${item.name}">
+          <td class="run-cell"><button class="run-btn" type="button" data-name="${item.name}">运行</button></td>
+          <td><code class="inline">${item.name}</code></td>
+          <td><span class="${modeClass(item.mode)}">${item.mode}</span></td>
+          <td><div class="plain-desc">${getPlainDesc(item)}</div><div class="tech-desc">${item.desc}</div></td>
+          <td>${item.params}</td>
+          <td>${item.api}</td>
+          <td><pre>${escapeHtml(item.example)}</pre></td>
+        </tr>
+      `).join('');
+    }
+
+    search.addEventListener('input', render);
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        chips.forEach((btn) => btn.classList.remove('active'));
+        chip.classList.add('active');
+        filter = chip.dataset.filter;
+        render();
+      });
+    });
+
+    tbody.addEventListener('click', (event) => {
+      const target = event.target;
+      const button = target.closest('.run-btn');
+      const row = target.closest('tr[data-name]');
+      if (!row) return;
+      const item = dataMap.get(row.dataset.name);
+      if (!item) return;
+      if (button) {
+        event.stopPropagation();
+      }
+      runItem(item);
+    });
+
+    clear2dBtn.addEventListener('click', () => {
+      reset2DScene(false);
+      focusPanel('2d');
+      updateCurrentInfo(null, '2D 画板已清空。', 'success');
+    });
+
+    clear3dBtn.addEventListener('click', () => {
+      reset3DScene(false);
+      focusPanel('3d');
+      updateCurrentInfo(null, '3D 画板已清空。', 'success');
+    });
+
+    resetAllBtn.addEventListener('click', () => {
+      reset2DScene(false);
+      reset3DScene(false);
+      focusPanel(null);
+      updateCurrentInfo(null, '2D 与 3D 画板都已清空。', 'success');
+    });
+
+    restoreDemoBtn.addEventListener('click', () => {
+      reset2DScene(true);
+      reset3DScene(true);
+      focusPanel(null);
+      updateCurrentInfo(null, '已恢复页面默认演示内容。', 'success');
+    });
+
+    reset2DScene(true);
+    reset3DScene(true);
+    render();
+    setCaptureReady(true);
+
+    if (autoCommandName) {
+      const autoItem = dataMap.get(autoCommandName);
+      if (autoItem) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            runItem(autoItem);
+          });
+        });
+      } else {
+        updateCurrentInfo(null, `未找到指令：${autoCommandName}`, 'error');
+        setCaptureReady(true);
+      }
+    }
+  </script>
+</body>
+
+</html>

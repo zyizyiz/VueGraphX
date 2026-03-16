@@ -8,6 +8,10 @@ export default defineConfig(({ command }) => {
   const isBuildPlayground = process.env.BUILD_MODE === 'playground';
   const isPlayground = isServe || isBuildPlayground;
   const playgroundBase = process.env.VITE_BASE_PATH || '/VueGraphX/';
+  const playgroundInputs = {
+    main: resolve(__dirname, 'index.html'),
+    allCommands: resolve(__dirname, 'test-vuegraphx-all-commands.html')
+  };
 
   return {
     plugins: [
@@ -30,6 +34,9 @@ export default defineConfig(({ command }) => {
       ? {
           outDir: 'dist-playground',
           emptyOutDir: true,
+          rollupOptions: {
+            input: playgroundInputs
+          }
         }
       : {
           lib: {

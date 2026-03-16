@@ -33,6 +33,22 @@ VueGraphX 提供两条互补的能力主线：
 
 🌐 在线演示: [https://zyizyiz.github.io/VueGraphX/](https://zyizyiz.github.io/VueGraphX/)
 
+## 🧪 指令总览 Demo
+
+如果你想看“某个 JSXGraph 指令到底会画出什么”，建议直接打开这个总览页：
+
+- 本地开发：运行 `npm run dev` 后访问 `http://localhost:5174/test-vuegraphx-all-commands.html`
+- GitHub Pages：`https://zyizyiz.github.io/VueGraphX/test-vuegraphx-all-commands.html`
+
+这个页面支持：
+
+- 直接搜索指令名
+- 区分 2D / 3D / 特殊别名
+- 点击指令立即运行示例
+- 查看“人话说明 + 技术说明 + 常见参数 + 示例写法”
+
+因为 playground 构建会把这个 HTML 一起打进 GitHub Pages，所以可以直接发链接给别人看，不需要本地单独搭环境。
+
 ## ✨ 核心特性
 
 - 🚀 能力优先交互：外部通过 `subscribeCapabilities()` 订阅状态，通过 `executeCapability()` 触发行为，不必记忆每种图形的专用 API。
@@ -236,6 +252,9 @@ const dispose = group.bindNativeEvent('pointerdown', (member, event, node) => {
 
 ## 📚 文档入口
 
+- 📊 [图形支持与 API 对照](./docs/SUPPORTED_GRAPHICS_AND_APIS.md)
+- 🧾 [JSXGraph 指令参数与中文说明](./docs/JSXGRAPH_COMMAND_PARAMS_ZH.md)
+- 🧪 [全指令交互 Demo（GitHub Pages）](https://zyizyiz.github.io/VueGraphX/test-vuegraphx-all-commands.html)
 - 📖 [架构设计文档 (ARCHITECTURE.md)](./docs/ARCHITECTURE.md)
 - 🛠 [开发贡献指南 (DEVELOPMENT.md)](./docs/DEVELOPMENT.md)
 - 📘 [API 参考文档 (自动生成)](./docs/api/README.md)
