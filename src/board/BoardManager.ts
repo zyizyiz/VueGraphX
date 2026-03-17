@@ -1,5 +1,6 @@
 import JXG from 'jsxgraph';
 import { EngineMode, GraphXOptions, JXGView3D } from '../types/engine';
+import jsxgraphCssText from '../../node_modules/jsxgraph/distrib/jsxgraph.css?inline';
 
 type View3DRect = NonNullable<NonNullable<GraphXOptions['view3D']>['rect']>;
 
@@ -73,6 +74,7 @@ export class BoardManager {
     const styleEl = document.createElement('style');
     styleEl.id = styleId;
     styleEl.innerHTML = `
+      ${jsxgraphCssText}
       .jxgbox { position: relative; overflow: hidden; touch-action: none; }
       .jxgbox :focus { outline: none !important; }
       .JXGtext { position: absolute; white-space: nowrap; pointer-events: none; }

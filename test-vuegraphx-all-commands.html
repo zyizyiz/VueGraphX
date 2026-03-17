@@ -542,7 +542,6 @@
   <div class="app">
     <aside class="sidebar">
       <h1>VueGraphX 全指令示例</h1>
-      <p>这个页面直接引用 <code class="inline">./dist/vuegraphx.js</code>。顶部先初始化一个 2D 与一个 3D 引擎，下面再把全部指令的典型写法集中列出来。</p>
       <div class="stat">
         <div class="stat-card"><strong>118</strong><span>全部指令</span></div>
         <div class="stat-card"><strong>21</strong><span>3D 指令</span></div>
@@ -683,8 +682,7 @@ const sphereB = view.create('sphere3d', [Q5, 1.8]);</code></pre>
   </div>
 
   <script type="module">
-    import { GraphXEngine } from './dist/vuegraphx.js';
-    import './node_modules/jsxgraph/distrib/jsxgraph.css';
+    import { GraphXEngine } from 'https://esm.sh/vuegraphx@1.1.1?bundle';
 
     const options2d = {
       boundingbox: [-8, 8, 8, -8],
