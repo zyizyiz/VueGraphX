@@ -37,8 +37,8 @@ VueGraphX 提供两条互补的能力主线：
 
 如果你想看“某个 JSXGraph 指令到底会画出什么”，建议直接打开这个总览页：
 
-- 本地开发：运行 `npm run dev` 后访问 `http://localhost:5174/test-vuegraphx-all-commands.html`
-- GitHub Pages：`https://zyizyiz.github.io/VueGraphX/test-vuegraphx-all-commands.html`
+- 本地开发：运行 `npm run dev` 后访问 [http://localhost:5174/test-vuegraphx-all-commands.html](http://localhost:5174/test-vuegraphx-all-commands.html)
+- GitHub Pages：[https://zyizyiz.github.io/VueGraphX/test-vuegraphx-all-commands.html](https://zyizyiz.github.io/VueGraphX/test-vuegraphx-all-commands.html)
 
 这个页面支持：
 
