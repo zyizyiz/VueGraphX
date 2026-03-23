@@ -621,11 +621,16 @@ textarea::-webkit-scrollbar {
 }
 
 #vuegraphx-mount-2d > svg {
+  background: transparent !important;
   pointer-events: none;
 }
 
 #vuegraphx-mount-2d > svg * {
   pointer-events: auto;
+}
+
+#vuegraphx-mount-2d {
+  background: transparent !important;
 }
 
 </style>
