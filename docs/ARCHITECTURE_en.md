@@ -2,15 +2,18 @@
 
 **English** | [简体中文](./ARCHITECTURE.md)
 
-This document describes the VueGraphX architecture. The project is organized around two parallel workflows:
+This document describes the VueGraphX architecture. The project is organized around four parallel workflows:
 
 - Expression rendering for turning string expressions into JSXGraph elements.
 - Shape runtime authoring for shape definitions, instance lifecycle, capability snapshots, and capability execution.
+- Relation orchestration for turning public geometry targets into explainable relation records.
+- Scene document persistence for versioned public content snapshots and replace-based restoration.
 
 ## 1. Core Design Principles
 
 - Facade first: `GraphXEngine` is the public entry point for board lifecycle, rendering, shape registration, and capability execution.
 - Capability-first interaction: external UI should react to generic capability descriptors instead of calling shape-specific APIs.
+- Explicit cross-object semantics: relations are promoted into first-class engine content instead of hiding in ad hoc UI state.
 - Decoupled shape authoring: the library exposes reusable authoring primitives, while concrete shapes should usually live in consumer code or the playground.
 - Shared 2D / 3D infrastructure: projection helpers, screen bounds, anchors, animation scheduling, and point annotations are reusable across shapes and modes.
 - Engine-level hidden-line scene model: 3D edge visibility, runtime tuning, and diagnostics are coordinated centrally instead of being reimplemented per shape.
@@ -41,7 +44,7 @@ The public entry point is `src/index.ts`. The main exports are now:
 - shape contracts and capability contracts
 - `BoardManager`, `MathScope`, and public engine types
 
-## 3. Dual Runtime Model
+## 3. Runtime Model
 
 ### 3.1 Expression Rendering Flow
 
@@ -103,7 +106,39 @@ This is valuable because:
 - delete, style, resize, split, annotation, and animation behavior can be reused across shapes.
 - shapes keep their private implementation details while still exposing a stable public interaction model.
 
-### 3.4 Playground dual-layer mode
+### 3.4 Relation Flow
+
+The relation workflow answers: “How do cross-object geometry semantics become public content instead of one-off interaction artifacts?”
+
+1. Command-rendered or runtime-authored content exposes public relation targets such as `point`, `line-like`, `segment-like`, or `circle-like`.
+2. `GraphXEngine` keeps relation records in dedicated engine-owned state instead of mixing them into capability snapshots or playground-only stores.
+3. The evaluator produces explainable snapshots such as `satisfied`, `violated`, `missing-target`, `unsupported`, and `conflicting`.
+4. Playground panels and consumer applications read relation state through public engine methods such as `createRelation()`, `listRelations()`, `getRelationSnapshots()`, and `subscribeRelations()`.
+
+Current v1 boundaries:
+
+- Focused on geometry-oriented public targets.
+- Public kinds currently include `parallel`, `perpendicular`, `equal-length`, and `distance-assertion`.
+- The current implementation is an explainable relation layer, not a general CAD-grade global constraint solver.
+
+### 3.5 Scene document workflow
+
+The scene document workflow answers: “How do we persist the current public content and restore it later?”
+
+1. `GraphXEngine.executeCommand()` writes command records into engine-owned scene state, not just runtime render output.
+2. `GraphXEngine.createShape()` / `handleDropEvent()` register shape runtime metadata when shapes explicitly opt into scene support.
+3. Relation records participate in the same scene contract as commands and shapes instead of using a second import/export protocol.
+4. `exportScene()` produces a versioned scene document containing `mode`, supported settings, ordered commands, serializable shapes, and relations.
+5. `loadScene()` runs document preflight and then restores content in `commands -> shapes -> relations` order with structured diagnostics.
+
+Important boundaries:
+
+- scene v1 is a public content document, not a full session snapshot.
+- `dual-layer` remains a playground-level composition and is not part of the public scene contract.
+- shapes participate only when their definitions explicitly declare `scene` support and runtime instances can return `getScenePayload()`.
+- missing `relations` is treated as an empty array for compatibility with older scene documents.
+
+### 3.6 Playground dual-layer mode
 
 The playground currently includes an experimental `dual-layer` mode that demonstrates a math-software-style interaction model where 2D layers and a 3D scene cooperate in one composed runtime.
 
@@ -126,7 +161,7 @@ Why this design exists:
 - dual-layer mode is intentionally treated as a playground-level experiment before expanding the public engine mode surface
 - the reusable parts of this experiment, such as `view3D.fitToBoard`, `createGroup()`, and `bindNativeEvent()`, should live in `src` as public API rather than remaining hidden in playground-only code
 
-### 3.5 Hidden-line 3D scene model
+### 3.7 Hidden-line 3D scene model
 
 Hidden-line 3D is now treated as engine-level scene infrastructure rather than a one-off renderer trick.
 
