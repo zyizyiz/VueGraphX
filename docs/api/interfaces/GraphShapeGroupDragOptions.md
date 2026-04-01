@@ -6,7 +6,7 @@
 
 # Interface: GraphShapeGroupDragOptions
 
-Defined in: [architecture/shapes/contracts.ts:95](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L95)
+Defined in: [architecture/shapes/contracts.ts:113](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L113)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [architecture/shapes/contracts.ts:95](https://github.com/zyizyiz/Vue
 
 > `optional` **keys**: `string` \| `string`[]
 
-Defined in: [architecture/shapes/contracts.ts:99](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L99)
+Defined in: [architecture/shapes/contracts.ts:117](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L117)
 
 仅对指定 key 的成员启用拖拽。
 
@@ -24,7 +24,7 @@ Defined in: [architecture/shapes/contracts.ts:99](https://github.com/zyizyiz/Vue
 
 > `optional` **filter**: (`member`, ...`args`) => `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:104](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L104)
+Defined in: [architecture/shapes/contracts.ts:122](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L122)
 
 运行时过滤是否允许某个成员参与拖拽。
 
@@ -48,7 +48,7 @@ Defined in: [architecture/shapes/contracts.ts:104](https://github.com/zyizyiz/Vu
 
 > `optional` **selectOnStart**: `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:109](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L109)
+Defined in: [architecture/shapes/contracts.ts:127](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L127)
 
 是否在拖拽开始时自动选中所属图形。
 
@@ -58,7 +58,7 @@ Defined in: [architecture/shapes/contracts.ts:109](https://github.com/zyizyiz/Vu
 
 > `optional` **onStart**: (`member`, ...`args`) => `void`
 
-Defined in: [architecture/shapes/contracts.ts:114](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L114)
+Defined in: [architecture/shapes/contracts.ts:132](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L132)
 
 拖拽开始回调。
 
@@ -82,7 +82,7 @@ Defined in: [architecture/shapes/contracts.ts:114](https://github.com/zyizyiz/Vu
 
 > `optional` **onMove**: (`member`, ...`args`) => `void`
 
-Defined in: [architecture/shapes/contracts.ts:119](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L119)
+Defined in: [architecture/shapes/contracts.ts:137](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L137)
 
 拖拽移动回调。
 
@@ -106,7 +106,7 @@ Defined in: [architecture/shapes/contracts.ts:119](https://github.com/zyizyiz/Vu
 
 > `optional` **onEnd**: (`member`, ...`args`) => `void`
 
-Defined in: [architecture/shapes/contracts.ts:124](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L124)
+Defined in: [architecture/shapes/contracts.ts:142](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L142)
 
 拖拽结束回调。
 

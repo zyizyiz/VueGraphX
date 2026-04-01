@@ -18,6 +18,7 @@ import type {
   GraphScreenPoint,
   GraphShapeContext,
   GraphShapeDefinition,
+  GraphShapeSceneDefinition,
   GraphShapeGroup,
   GraphShapeGroupInput,
   GraphShapeInstance,
@@ -242,6 +243,9 @@ export interface GraphShapeComposition<StateType> {
   /** 返回当前实例对外暴露的能力目标。未选中或当前没有需要暴露的能力时可以返回 null。 */
   getCapabilityTarget(api: GraphShapeApi<StateType>): ShapeCapabilityTarget | null;
 
+  /** 返回当前实例参与 scene document 导出的内容负载。未提供时视为当前组合对象不支持导出。 */
+  getScenePayload?(api: GraphShapeApi<StateType>): unknown;
+
   /** 选中状态变化钩子，适合在这里切换高亮、辅助点或悬浮 UI。 */
   onSelectionChange?(api: GraphShapeApi<StateType>, selected: boolean): void;
 
@@ -279,6 +283,11 @@ export interface GraphShapeDefinitionComposition<Payload = unknown, StateType = 
    * 支持的引擎模式。
    */
   supportedModes: GraphShapeDefinition['supportedModes'];
+
+  /**
+   * 可选的 scene document 参与声明。
+   */
+  scene?: GraphShapeSceneDefinition<Payload>;
 
   /** 将上下文和负载转换为组合对象。返回 null 表示当前负载不合法或当前定义决定不创建实例。 */
   create(context: GraphShapeContext, payload?: Payload): GraphShapeComposition<StateType> | null;
@@ -328,6 +337,10 @@ class ComposedShapeInstance<StateType> extends BaseShapeInstance<StateType> {
 
   public getCapabilityTarget(): ShapeCapabilityTarget | null {
     return this.composition.getCapabilityTarget(this.api);
+  }
+
+  public getScenePayload(): unknown {
+    return this.composition.getScenePayload?.(this.api);
   }
 
   public override destroy(): void {
@@ -480,6 +493,7 @@ export const createComposedShapeDefinition = <Payload = unknown, StateType = unk
 ): GraphShapeDefinition => ({
   type: definition.type,
   supportedModes: definition.supportedModes,
+  scene: definition.scene,
   createShape(context, payload) {
     const composition = definition.create(context, payload as Payload);
     return composition ? createComposedShape(context, composition) : null;

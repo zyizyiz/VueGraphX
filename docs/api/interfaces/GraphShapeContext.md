@@ -6,7 +6,7 @@
 
 # Interface: GraphShapeContext
 
-Defined in: [architecture/shapes/contracts.ts:693](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L693)
+Defined in: [architecture/shapes/contracts.ts:711](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L711)
 
 创建图形实例时传给图形定义的上下文对象。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/shapes/contracts.ts:693](https://github.com/zyizyiz/Vu
 
 > **engine**: [`GraphXEngine`](../classes/GraphXEngine.md)
 
-Defined in: [architecture/shapes/contracts.ts:697](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L697)
+Defined in: [architecture/shapes/contracts.ts:715](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L715)
 
 当前图形所属的引擎实例。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/shapes/contracts.ts:697](https://github.com/zyizyiz/Vu
 
 > **board**: `any`
 
-Defined in: [architecture/shapes/contracts.ts:702](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L702)
+Defined in: [architecture/shapes/contracts.ts:720](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L720)
 
 当前使用的底层画板对象。
 
@@ -36,7 +36,7 @@ Defined in: [architecture/shapes/contracts.ts:702](https://github.com/zyizyiz/Vu
 
 > **selectShape**(`shapeId`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:707](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L707)
+Defined in: [architecture/shapes/contracts.ts:725](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L725)
 
 切换当前选中图形。
 
@@ -56,7 +56,7 @@ Defined in: [architecture/shapes/contracts.ts:707](https://github.com/zyizyiz/Vu
 
 > **isShapeSelected**(`shapeId`): `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:712](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L712)
+Defined in: [architecture/shapes/contracts.ts:730](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L730)
 
 判断某个图形当前是否处于选中态。
 
@@ -76,7 +76,7 @@ Defined in: [architecture/shapes/contracts.ts:712](https://github.com/zyizyiz/Vu
 
 > **addShape**(`instance`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:717](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L717)
+Defined in: [architecture/shapes/contracts.ts:735](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L735)
 
 将新的图形实例加入当前引擎。
 
@@ -96,7 +96,7 @@ Defined in: [architecture/shapes/contracts.ts:717](https://github.com/zyizyiz/Vu
 
 > **removeShape**(`shapeId`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:722](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L722)
+Defined in: [architecture/shapes/contracts.ts:740](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L740)
 
 从当前引擎中移除某个图形实例。
 
@@ -116,7 +116,7 @@ Defined in: [architecture/shapes/contracts.ts:722](https://github.com/zyizyiz/Vu
 
 > **notifyChange**(): `void`
 
-Defined in: [architecture/shapes/contracts.ts:727](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L727)
+Defined in: [architecture/shapes/contracts.ts:745](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L745)
 
 通知外部 UI 重新计算能力状态。
 
@@ -130,7 +130,7 @@ Defined in: [architecture/shapes/contracts.ts:727](https://github.com/zyizyiz/Vu
 
 > **generateId**(`prefix`): `string`
 
-Defined in: [architecture/shapes/contracts.ts:732](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L732)
+Defined in: [architecture/shapes/contracts.ts:750](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L750)
 
 生成一个带前缀的唯一 id。
 
@@ -150,7 +150,7 @@ Defined in: [architecture/shapes/contracts.ts:732](https://github.com/zyizyiz/Vu
 
 > **getUsrCoordFromEvent**(`event`): \[`number`, `number`\] \| `null`
 
-Defined in: [architecture/shapes/contracts.ts:737](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L737)
+Defined in: [architecture/shapes/contracts.ts:755](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L755)
 
 将原生事件转换为用户坐标。
 
@@ -170,7 +170,7 @@ Defined in: [architecture/shapes/contracts.ts:737](https://github.com/zyizyiz/Vu
 
 > **getViewport**(): [`GraphViewport`](GraphViewport.md)
 
-Defined in: [architecture/shapes/contracts.ts:742](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L742)
+Defined in: [architecture/shapes/contracts.ts:760](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L760)
 
 返回当前视口尺寸。
 
@@ -184,7 +184,7 @@ Defined in: [architecture/shapes/contracts.ts:742](https://github.com/zyizyiz/Vu
 
 > **projectUserPoint**(`point`): [`GraphScreenPoint`](GraphScreenPoint.md) \| `null`
 
-Defined in: [architecture/shapes/contracts.ts:747](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L747)
+Defined in: [architecture/shapes/contracts.ts:765](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L765)
 
 将二维用户坐标点投影为屏幕点。
 
@@ -204,7 +204,7 @@ Defined in: [architecture/shapes/contracts.ts:747](https://github.com/zyizyiz/Vu
 
 > **projectPoint3D**(`point`): [`GraphScreenPoint`](GraphScreenPoint.md) \| `null`
 
-Defined in: [architecture/shapes/contracts.ts:752](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L752)
+Defined in: [architecture/shapes/contracts.ts:770](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L770)
 
 将三维点投影为屏幕点。
 
@@ -224,7 +224,7 @@ Defined in: [architecture/shapes/contracts.ts:752](https://github.com/zyizyiz/Vu
 
 > **projectUserBounds**(`points`): [`GraphScreenBounds`](GraphScreenBounds.md) \| `null`
 
-Defined in: [architecture/shapes/contracts.ts:757](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L757)
+Defined in: [architecture/shapes/contracts.ts:775](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L775)
 
 将二维点集投影为屏幕包围盒。
 
@@ -244,7 +244,7 @@ Defined in: [architecture/shapes/contracts.ts:757](https://github.com/zyizyiz/Vu
 
 > **project3DBounds**(`points`): [`GraphScreenBounds`](GraphScreenBounds.md) \| `null`
 
-Defined in: [architecture/shapes/contracts.ts:762](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L762)
+Defined in: [architecture/shapes/contracts.ts:780](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L780)
 
 将三维点集投影为屏幕包围盒。
 
@@ -264,7 +264,7 @@ Defined in: [architecture/shapes/contracts.ts:762](https://github.com/zyizyiz/Vu
 
 > **getBoundsAnchor**(`bounds`, `anchor?`): [`GraphScreenPoint`](GraphScreenPoint.md)
 
-Defined in: [architecture/shapes/contracts.ts:767](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L767)
+Defined in: [architecture/shapes/contracts.ts:785](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L785)
 
 从屏幕包围盒中解析锚点坐标。
 
@@ -288,7 +288,7 @@ Defined in: [architecture/shapes/contracts.ts:767](https://github.com/zyizyiz/Vu
 
 > **clampScreenPoint**(`point`, `padding?`): [`GraphScreenPoint`](GraphScreenPoint.md)
 
-Defined in: [architecture/shapes/contracts.ts:772](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L772)
+Defined in: [architecture/shapes/contracts.ts:790](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L790)
 
 将屏幕点限制在视口边界之内。
 

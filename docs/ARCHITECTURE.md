@@ -6,6 +6,7 @@
 
 - 表达式渲染主线：负责把字符串表达式转换为 JSXGraph 图元。
 - 图形运行时主线：负责 shape definition、实例生命周期、能力快照与能力执行。
+- scene document 主线：负责把公开内容状态组织成版本化文档，并支持 replace 语义恢复。
 
 ## 1. 核心设计原则
 
@@ -14,6 +15,7 @@
 - shape authoring 与 engine runtime 解耦：库提供通用组合式 authoring API，具体图形定义应尽量写在业务侧或 playground 中。
 - 2D / 3D 共用基础设施：视口投影、屏幕包围盒、锚点解析、动画调度与点标注都是跨图形、跨模式复用的能力。
 - 表达式渲染与图形运行时并存：命令渲染适合函数/几何表达式，shape runtime 适合复杂交互式对象，两者都由同一个引擎门面协调。
+- scene 是内容文档，不是完整会话快照：只保存公开内容，不保存选中态、面板状态或 dual-layer 私有状态。
 
 ## 2. 当前目录结构
 
@@ -102,7 +104,23 @@ src/
 - 同一个删除、样式、缩放、动画能力可以跨图形复用。
 - 图形内部仍保留私有实现细节，不必把每种图形的专用操作暴露给外部。
 
-### 3.4 playground 的双层模式
+### 3.4 scene document 主线
+
+scene 主线解决的是“如何把当前公开内容稳定保存并重新加载”：
+
+1. `GraphXEngine.executeCommand()` 会把命令文档状态记录到引擎自己的 scene state，而不只是保留渲染产物。
+2. `GraphXEngine.createShape()` / `handleDropEvent()` 会把 shape runtime 与 scene 参与元数据一起记录下来。
+3. `exportScene()` 从 scene state 组装版本化文档，包含 `mode`、受支持的 scene 级设置、ordered commands 和 serializable shapes。
+4. `loadScene()` 先做文档级 preflight，再以 replace 语义清空当前内容，按 commands → shapes 的顺序恢复，并返回结构化 diagnostics。
+
+这里有几个明确边界：
+
+- scene v1 是内容文档，不是完整 session snapshot。
+- `dual-layer` 仍然只是 playground 级组合能力，不进入 scene 公共合同。
+- shape 只有显式声明 `definition.scene` 且实例能提供 `getScenePayload()` 时，才属于 scene 支持范围。
+- 导出遇到未声明 serializable 的 shape 时，会严格失败而不是静默生成残缺文档。
+
+### 3.5 playground 的双层模式
 
 当前 playground 额外提供一个实验性的 `dual-layer` 模式，用来演示“2D 图层与 3D 场景分层协作”的数学软件式交互。
 

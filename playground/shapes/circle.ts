@@ -66,6 +66,10 @@ interface CircleState {
 interface CirclePayload {
   x: number;
   y: number;
+  radius?: number;
+  strokeColor?: string;
+  fillColor?: string;
+  fillOpacity?: number;
 }
 
 interface CirclePiecePayload {
@@ -98,6 +102,39 @@ const createBaseState = (isPiece: boolean): CircleState => ({
   sizeInputStyle: { left: '50%', top: '50%' },
   refs: null
 });
+
+const normalizeCirclePayload = (payload: unknown): CirclePayload => {
+  const data = (typeof payload === 'object' && payload !== null ? payload : {}) as Partial<CirclePayload>;
+
+  if (typeof data.x !== 'number' || !Number.isFinite(data.x) || typeof data.y !== 'number' || !Number.isFinite(data.y)) {
+    throw new Error('Circle scene payload requires finite x and y coordinates.');
+  }
+
+  if (data.radius !== undefined && (typeof data.radius !== 'number' || !Number.isFinite(data.radius) || data.radius <= 0)) {
+    throw new Error('Circle scene payload radius must be a positive number.');
+  }
+
+  if (data.strokeColor !== undefined && typeof data.strokeColor !== 'string') {
+    throw new Error('Circle scene payload strokeColor must be a string.');
+  }
+
+  if (data.fillColor !== undefined && typeof data.fillColor !== 'string') {
+    throw new Error('Circle scene payload fillColor must be a string.');
+  }
+
+  if (data.fillOpacity !== undefined && (typeof data.fillOpacity !== 'number' || !Number.isFinite(data.fillOpacity))) {
+    throw new Error('Circle scene payload fillOpacity must be a finite number.');
+  }
+
+  return {
+    x: data.x,
+    y: data.y,
+    radius: data.radius ?? 2,
+    strokeColor: data.strokeColor ?? '#0ea5e9',
+    fillColor: data.fillColor ?? '#0ea5e9',
+    fillOpacity: data.fillOpacity ?? 0.12
+  };
+};
 
 const getRefs = (api: GraphShapeApi<CircleState>): CircleVisualRefs => {
   if (!api.state.refs) {
@@ -388,26 +425,31 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
   setup(api) {
     if (!api.board) return;
 
+    const radiusValue = payload.radius ?? 2;
+    const strokeColor = payload.strokeColor ?? '#0ea5e9';
+    const fillColor = payload.fillColor ?? '#0ea5e9';
+    const fillOpacity = payload.fillOpacity ?? 0.12;
+
     const center = api.trackObject(api.board.create('point', [payload.x, payload.y], {
       visible: false,
       name: '',
       size: 2
     }));
-    const radiusPoint = api.trackObject(api.board.create('point', [payload.x + 2, payload.y], {
+    const radiusPoint = api.trackObject(api.board.create('point', [payload.x + radiusValue, payload.y], {
       visible: false,
       name: '',
       size: 3,
-      strokeColor: '#0ea5e9',
-      fillColor: '#0ea5e9'
+      strokeColor,
+      fillColor: strokeColor
     }));
     const radius = () => center.Dist(radiusPoint);
     const centerX = () => center.X();
     const centerY = () => center.Y();
 
     const circle = createCircleVisual(api, center, radiusPoint, centerX, centerY, radius, {
-      strokeColor: '#0ea5e9',
-      fillColor: '#0ea5e9',
-      fillOpacity: 0.12,
+      strokeColor,
+      fillColor,
+      fillOpacity,
       strokeWidth: 2,
       highlight: false,
       hasInnerPoints: true
@@ -448,12 +490,25 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
         radiusPoint: geometryGroup.getObject('radiusPoint') ?? radiusPoint,
         radiusLine: geometryGroup.getObject('radiusLine') ?? radiusLine
       },
-      radiusValue: 2
+      radiusValue
     });
     syncPulseVisual(api);
     attachInteractiveHandlers(api);
     updateToolbarPosition(api);
     refreshCircleBoard(api);
+  },
+  getScenePayload(api) {
+    const refs = getRefs(api);
+    const radius = refs.radiusPoint ? refs.center.Dist(refs.radiusPoint) : api.state.radiusValue;
+
+    return {
+      x: refs.center.X(),
+      y: refs.center.Y(),
+      radius,
+      strokeColor: refs.circle.getAttribute('strokeColor') ?? '#0ea5e9',
+      fillColor: refs.circle.getAttribute('fillColor') ?? '#0ea5e9',
+      fillOpacity: refs.circle.getAttribute('fillOpacity') ?? 0.12
+    } satisfies CirclePayload;
   },
   onSelectionChange(api, selected) {
     const refs = selected ? ensureCircleSelectionRefs(api) : getRefs(api);
@@ -934,8 +989,11 @@ const createCirclePieceComposition = (payload: CirclePiecePayload): GraphShapeCo
 export const circleShapeDefinition = createComposedShapeDefinition<CirclePayload, CircleState>({
   type: 'circle',
   supportedModes: 'all',
+  scene: {
+    normalizePayload: normalizeCirclePayload
+  },
   create(_context, payload) {
-    const coords = payload || { x: 0, y: 0 };
+    const coords = payload || { x: 0, y: 0, radius: 2, strokeColor: '#0ea5e9', fillColor: '#0ea5e9', fillOpacity: 0.12 };
     return createCircleComposition(coords);
   },
   createFromDrop(context, event) {

@@ -8,7 +8,7 @@
 
 > **createComposedShape**\<`StateType`\>(`context`, `composition`): [`GraphShapeInstance`](../interfaces/GraphShapeInstance.md)
 
-Defined in: [architecture/shapes/composition.ts:448](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/composition.ts#L448)
+Defined in: [architecture/shapes/composition.ts:483](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/composition.ts#L483)
 
 ## Type Parameters
 

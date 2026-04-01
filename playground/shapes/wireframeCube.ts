@@ -10,6 +10,10 @@ interface WireframeCubeState {
 }
 
 interface WireframeCubePayload {
+  center?: Point3D;
+  rotationX?: number;
+  rotationY?: number;
+  size?: number;
   hiddenLine?: {
     visible?: GraphHiddenLineEdgeStyle;
     hidden?: GraphHiddenLineEdgeStyle;
@@ -110,22 +114,61 @@ const getPointerLikeArg = (args: any[]): { clientX?: number; clientY?: number; s
   return null;
 };
 
+const normalizeWireframeCubePayload = (payload: unknown): WireframeCubePayload => {
+  const data = (typeof payload === 'object' && payload !== null ? payload : {}) as Partial<WireframeCubePayload>;
+
+  if (data.center !== undefined) {
+    if (!Array.isArray(data.center) || data.center.length !== 3 || data.center.some((value) => typeof value !== 'number' || !Number.isFinite(value))) {
+      throw new Error('Wireframe cube scene payload center must be a finite [x, y, z] tuple.');
+    }
+  }
+
+  if (data.rotationX !== undefined && (typeof data.rotationX !== 'number' || !Number.isFinite(data.rotationX))) {
+    throw new Error('Wireframe cube scene payload rotationX must be a finite number.');
+  }
+
+  if (data.rotationY !== undefined && (typeof data.rotationY !== 'number' || !Number.isFinite(data.rotationY))) {
+    throw new Error('Wireframe cube scene payload rotationY must be a finite number.');
+  }
+
+  if (data.size !== undefined && (typeof data.size !== 'number' || !Number.isFinite(data.size) || data.size <= 0)) {
+    throw new Error('Wireframe cube scene payload size must be a positive number.');
+  }
+
+  return {
+    center: data.center ? [...data.center] as Point3D : undefined,
+    rotationX: data.rotationX ?? -0.45,
+    rotationY: data.rotationY ?? 0.55,
+    size: data.size ?? 2,
+    hiddenLine: data.hiddenLine
+  };
+};
+
 export const wireframeCubeShapeDefinition = createComposedShapeDefinition<WireframeCubePayload, WireframeCubeState>({
   type: 'wireframe-cube',
   supportedModes: 'all',
+  scene: {
+    normalizePayload: normalizeWireframeCubePayload
+  },
   create(_context, payload) {
     let cleanupKeyListeners: () => void = () => {};
     let cleanupInteractionListeners: () => void = () => {};
     let cleanupHitListeners: () => void = () => {};
     let frameId: number | null = null;
-    const spawnCenter = getWireframeCubeSpawnCenter(wireframeCubeSpawnIndex++);
+    const initialPayload = normalizeWireframeCubePayload(payload);
+    const spawnCenter = initialPayload.center ?? getWireframeCubeSpawnCenter(wireframeCubeSpawnIndex++);
     let instanceId: string | null = null;
     let hiddenLineHandle: GraphHiddenLineSourceHandle | null = null;
+    const transform = {
+      center: [...spawnCenter] as Point3D,
+      rotationX: initialPayload.rotationX ?? -0.45,
+      rotationY: initialPayload.rotationY ?? 0.55
+    };
 
     return {
       entityType: 'wireframe-cube',
       initialState: {
-        size: 2
+        size: initialPayload.size ?? 2
       },
       getCapabilityTarget: () => null,
       setup(api) {
@@ -133,12 +176,6 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<Wirefr
         const view3d = api.engine.getView3D() as any;
         if (!view3d || !api.board) return;
         const hiddenLineEnabled = api.engine.getHiddenLineOptions().enabled === true;
-
-        const transform = {
-          center: [...spawnCenter] as Point3D,
-          rotationX: -0.45,
-          rotationY: 0.55
-        };
 
         const projectVertex = (vertex: Point3D): Point3D => {
           const half = api.state.size / 2;
@@ -193,8 +230,8 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<Wirefr
           api.board.unsuspendUpdate?.();
         };
 
-        const hiddenLineVisible = payload?.hiddenLine?.visible ?? { strokeColor: '#475569', strokeWidth: 2 };
-        const hiddenLineHidden = payload?.hiddenLine?.hidden ?? { strokeColor: '#475569', strokeWidth: 1.6, dash: 2, dashScale: true };
+        const hiddenLineVisible = initialPayload.hiddenLine?.visible ?? { strokeColor: '#475569', strokeWidth: 2 };
+        const hiddenLineHidden = initialPayload.hiddenLine?.hidden ?? { strokeColor: '#475569', strokeWidth: 1.6, dash: 2, dashScale: true };
 
         hiddenLineHandle = api.registerHiddenLineSource({
           role: 'both',
@@ -406,6 +443,15 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<Wirefr
         }
 
         return;
+      },
+      getScenePayload(api) {
+        return {
+          center: [...transform.center] as Point3D,
+          rotationX: transform.rotationX,
+          rotationY: transform.rotationY,
+          size: api.state.size,
+          hiddenLine: initialPayload.hiddenLine
+        } satisfies WireframeCubePayload;
       },
       onDestroy() {
         if (activeWireframeCubeInteractionId === instanceId) {

@@ -22,6 +22,13 @@
       </div>
       
       <div class="flex items-center gap-3">
+        <button
+          v-if="supportsSceneDocument"
+          @click="showScenePanel = !showScenePanel"
+          class="text-xs font-semibold px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded transition-colors hidden sm:block"
+        >
+          {{ showScenePanel ? '收起场景' : '场景文档' }}
+        </button>
         <button @click="clearAll" class="text-xs font-semibold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded transition-colors hidden sm:block">
           清除全部
         </button>
@@ -98,6 +105,67 @@
           v-else-if="store.activeMode === 'dual-layer'"
           @add-shape="handleAddDualLayerShape"
         />
+
+        <div v-if="supportsSceneDocument && showScenePanel" class="border-t border-slate-100 bg-white px-4 py-4 shrink-0 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Scene Document</p>
+              <p class="text-[11px] text-slate-400 mt-1">导出 JSON / 导入替换当前场景</p>
+            </div>
+            <span
+              v-if="sceneLastStatus"
+              class="rounded-full px-2 py-1 text-[10px] font-semibold"
+              :class="sceneErrorCount > 0 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'"
+            >
+              {{ sceneLastStatus }}
+            </span>
+          </div>
+
+          <textarea
+            v-model="sceneText"
+            rows="10"
+            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-mono text-slate-700 outline-none transition-colors focus:border-sky-300 focus:bg-white"
+            placeholder="点击“导出当前”生成 scene JSON，或粘贴 scene 后点击“导入替换”。"
+            spellcheck="false"
+          ></textarea>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
+              @click="handleExportScene"
+            >
+              导出当前
+            </button>
+            <button
+              type="button"
+              class="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500"
+              @click="handleImportScene"
+            >
+              导入替换
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+              @click="clearSceneDocument()"
+            >
+              清空文本
+            </button>
+          </div>
+
+          <div v-if="sceneDiagnostics.length > 0" class="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p class="text-[11px] font-semibold text-amber-700">Diagnostics</p>
+            <ul class="mt-2 space-y-1.5">
+              <li
+                v-for="(diagnostic, index) in sceneDiagnostics.slice(0, 5)"
+                :key="`${diagnostic.code}-${index}`"
+                class="text-[11px] leading-5 text-amber-800"
+              >
+                {{ diagnostic.code }} · {{ diagnostic.message }}
+              </li>
+            </ul>
+          </div>
+        </div>
 
 
         <!-- Demo 示例区（多卡片可切换） -->
@@ -202,6 +270,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { GraphXEngine, type EngineMode } from 'vuegraphx';
 import { useFormulaStore, type CommandItem } from './stores/formula';
+import { useSceneDocument } from './composables/useSceneDocument';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 import DualLayerPanel from './components/DualLayerPanel.vue';
@@ -221,6 +290,8 @@ const onDragOver = (e: DragEvent) => {
     e.dataTransfer.dropEffect = 'copy';
   }
 };
+
+const showScenePanel = ref(false);
 
 // 顶部工具栏模式列表
 const availableModes: {id: PlaygroundMode, label: string, icon: string}[] = [
@@ -445,7 +516,7 @@ onMounted(() => {
   initEngines();
 });
 
-const initEngines = async () => {
+const initEngines = async (options: { syncCommands?: boolean } = {}) => {
   if (graphContainerRef.value) {
     engineRef.value = new GraphXEngine('vuegraphx-mount', getBoardOptionsForCurrentMode(store.activeMode));
     engineRef.value.setMode(getEngineModeForPlayground(store.activeMode));
@@ -465,7 +536,9 @@ const initEngines = async () => {
       registerDualLayerTopShapes(engineRef2d.value);
     }
     
-    syncAllToEngine();
+    if (options.syncCommands !== false) {
+      syncAllToEngine();
+    }
     startResizeObserver();
   }
 };
@@ -482,7 +555,7 @@ onUnmounted(() => {
   }
 });
 
-const switchMode = async (mode: PlaygroundMode) => {
+const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolean } = {}) => {
   if (store.activeMode === mode) return;
   store.activeMode = mode;
   activeDemo.value = -1;
@@ -499,7 +572,7 @@ const switchMode = async (mode: PlaygroundMode) => {
   }
 
   await waitForUiPaint();
-  initEngines();
+  initEngines(options);
 };
 
 const handleAddDualLayerShape = (layer: '2d' | '3d', type: string) => {
@@ -563,6 +636,36 @@ const loadSelectedDemo = (idx: number) => {
   nextTick(() => {
     syncAllToEngine();
   });
+};
+
+const {
+  sceneText,
+  diagnostics: sceneDiagnostics,
+  errorCount: sceneErrorCount,
+  lastStatus: sceneLastStatus,
+  supportsScene: supportsSceneDocument,
+  clearSceneDocument,
+  exportSceneDocument,
+  importSceneDocument
+} = useSceneDocument({
+  getEngine: () => engineRef.value,
+  getActiveMode: () => store.activeMode,
+  switchMode,
+  syncCommandsFromScene: (commands) => store.replaceCommandsFromScene(store.activeMode, commands)
+});
+
+const handleExportScene = () => {
+  showScenePanel.value = true;
+  exportSceneDocument();
+};
+
+const handleImportScene = async () => {
+  showScenePanel.value = true;
+  activeDemo.value = -1;
+  const result = await importSceneDocument();
+  if (result?.scene && engineRef.value) {
+    engineRef.value.forceUpdate();
+  }
 };
 </script>
 

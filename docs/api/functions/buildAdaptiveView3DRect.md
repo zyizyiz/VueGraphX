@@ -8,7 +8,7 @@
 
 > **buildAdaptiveView3DRect**(`boardBoundingBox`, `baseRect`): \[\[`number`, `number`\], \[`number`, `number`\], \[\[`number`, `number`\], \[`number`, `number`\], \[`number`, `number`\]\]\]
 
-Defined in: [board/BoardManager.ts:20](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/board/BoardManager.ts#L20)
+Defined in: [board/BoardManager.ts:21](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L21)
 
 ## Parameters
 

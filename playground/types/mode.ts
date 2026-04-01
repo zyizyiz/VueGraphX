@@ -12,6 +12,8 @@ export const getEngineModeForPlayground = (mode: PlaygroundMode): EngineMode => 
   return mode;
 };
 
+export const getPlaygroundModeForEngineMode = (mode: EngineMode): PlaygroundMode => mode;
+
 export const getBoardOptionsForPlaygroundMode = (mode: PlaygroundMode, _viewport?: PlaygroundViewportSize): GraphXOptions => {
   if (mode === 'geometry') {
     return { axis: false, showNavigation: false };

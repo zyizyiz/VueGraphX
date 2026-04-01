@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import type { GraphSceneCommandNode } from 'vuegraphx';
 import type { PlaygroundMode } from '../types/mode';
 
 export interface CommandItem {
@@ -82,6 +83,18 @@ export const useFormulaStore = defineStore('formula', () => {
     });
   };
 
+  const replaceCommandsFromScene = (mode: PlaygroundMode, sceneCommands: GraphSceneCommandNode[]) => {
+    const colors = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#10b981', '#f59e0b'];
+
+    commandsMap.value[mode] = sceneCommands.map((command, index) => ({
+      id: command.id,
+      expression: command.expression,
+      color: command.color ?? colors[index % colors.length],
+      visible: true,
+      options: command.options
+    }));
+  };
+
   return {
     commands,
     activeMode,
@@ -90,6 +103,7 @@ export const useFormulaStore = defineStore('formula', () => {
     updateCommand,
     setCommandError,
     clearCommands,
-    injectDemo
+    injectDemo,
+    replaceCommandsFromScene
   };
 });

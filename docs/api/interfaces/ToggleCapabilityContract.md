@@ -6,7 +6,7 @@
 
 # Interface: ToggleCapabilityContract
 
-Defined in: [architecture/capabilities/contracts.ts:59](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L59)
+Defined in: [architecture/capabilities/contracts.ts:59](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L59)
 
 仅暴露开关状态的简单能力契约。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/capabilities/contracts.ts:59](https://github.com/zyizy
 
 > **active**: `boolean`
 
-Defined in: [architecture/capabilities/contracts.ts:63](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L63)
+Defined in: [architecture/capabilities/contracts.ts:63](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L63)
 
 当前开关状态。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/capabilities/contracts.ts:63](https://github.com/zyizy
 
 > **toggle**: () => `void`
 
-Defined in: [architecture/capabilities/contracts.ts:68](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L68)
+Defined in: [architecture/capabilities/contracts.ts:68](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L68)
 
 切换开关状态。
 

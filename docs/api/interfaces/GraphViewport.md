@@ -6,7 +6,7 @@
 
 # Interface: GraphViewport
 
-Defined in: [architecture/shapes/contracts.ts:145](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L145)
+Defined in: [architecture/shapes/contracts.ts:163](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L163)
 
 当前画板视口尺寸，单位为像素。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/shapes/contracts.ts:145](https://github.com/zyizyiz/Vu
 
 > **width**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:149](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L149)
+Defined in: [architecture/shapes/contracts.ts:167](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L167)
 
 画板当前宽度。
 
@@ -26,6 +26,6 @@ Defined in: [architecture/shapes/contracts.ts:149](https://github.com/zyizyiz/Vu
 
 > **height**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:154](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L154)
+Defined in: [architecture/shapes/contracts.ts:172](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L172)
 
 画板当前高度。

@@ -8,7 +8,7 @@
 
 > **GraphPointAnnotationSource** = \{ `kind`: `"point"`; `point`: `any`; \} \| \{ `kind`: `"intersection"`; `elements`: `any`[]; `index?`: `number`; \} \| \{ `kind`: `"midpoint"`; `points`: \[`any`, `any`\]; \} \| \{ `kind`: `"computed"`; `resolve`: () => `any`; \}
 
-Defined in: [architecture/shapes/contracts.ts:200](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L200)
+Defined in: [architecture/shapes/contracts.ts:218](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L218)
 
 标注点支持的来源类型。
 

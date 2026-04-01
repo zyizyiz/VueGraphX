@@ -57,6 +57,7 @@ npm install
 
 - 新增图形作者可复用的运行时能力
 - 改进 `GraphShapeApi`、`GraphShapeContext`、分组、标注或动画轨道工具
+- 增加 scene document 合同、shape scene 接缝或引擎级 import/export 能力
 - 增加通用 capability contract 或 capability handler
 
 主要文件：
@@ -72,6 +73,13 @@ npm install
 2. 尽量把能力落在 shape contracts、composition helpers 或 capability contracts 上。
 3. 如果改动属于公共 API，需要同步更新 `src/index.ts` 导出面。
 4. 如果能力会影响外部使用方式，记得同时更新 README、架构文档和 API 注释。
+
+scene document 相关改动的额外约束：
+
+- `GraphXEngine` 继续是唯一公开门面，scene API 不要拆成并列 controller。
+- scene state 记录的是内容文档状态，不是 JSXGraph 渲染对象；不要把 `EntityManager` 当成 scene source of truth。
+- `loadScene()` 默认保持 replace 语义，partial 通过 diagnostics 表达，不要把 merge 行为偷偷塞进默认路径。
+- `dual-layer` 仍然只属于 playground，不要把它提升进公共 scene schema。
 
 ### 3. 编写具体图形定义
 
@@ -91,6 +99,7 @@ npm install
 - 库优先提供通用 authoring API，不优先内置具体图形。
 - 具体图形通过 `createComposedShapeDefinition()` 在消费侧组合。
 - 图形交互尽量通过 capability-first 模式暴露给外部 UI。
+- 如果图形需要参与 scene persistence，请显式声明 `scene`，并通过 `getScenePayload()` 导出当前内容状态。
 
 ### 4. 扩展 playground 的双层模式
 

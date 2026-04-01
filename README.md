@@ -19,6 +19,7 @@ VueGraphX 提供两条互补的能力主线：
 
 - 表达式渲染：把 2D/3D 数学表达式、几何指令交给统一渲染管线执行。
 - 图形运行时：把具体图形实现收敛为 shape definition，再通过统一 capability API 暴露交互能力。
+- scene document：把当前公开内容导出为稳定文档，并按“整体替换 + diagnostics”语义重新加载。
 
 当前 playground 还提供一个实验性的双层模式（dual-layer）：
 
@@ -55,6 +56,7 @@ VueGraphX 提供两条互补的能力主线：
 - 🧩 组合式图形定义：使用 `createComposedShapeDefinition()`、`GraphShapeApi` 和 `GraphShapeContext` 在业务侧组合自己的图形。
 - 🎬 共享动画与标注能力：动画轨道、点标注、命中分组、拖拽与悬浮 UI 投影工具都是通用基础设施。
 - 📐 统一 2D / 3D 渲染入口：表达式渲染和 view3d 生命周期都通过同一个引擎门面管理。
+- 💾 Scene 文档模型：支持 `exportScene()` / `loadScene()`，覆盖 commands、serializable shapes 和受支持的 scene 级设置。
 - 🧪 playground 双层模式：以 `3d` 引擎模式为底座，叠加独立的 2D 层，并通过对象级旋转查看立体结构。
 - 🧱 分层场景基础设施：内置 `view3D.fitToBoard` 和分组级 `bindNativeEvent()`，方便消费侧组合双层/多层交互。
 - 🛡️ 类型安全：公共类型、能力契约和 shape authoring API 都完整导出，适合二次封装和 IDE 自动提示。
@@ -137,6 +139,43 @@ unsubscribe();
 engine.executeCommand('function-demo', 'y = sin(x) + 0.5*cos(2*x)', '#ff0000');
 engine.executeCommand('geometry-demo', 'c1 = Circle((0,0), (2,0))', '#0000ff');
 ```
+
+### 4. 导出 / 导入 scene document
+
+```typescript
+import { GRAPH_SCENE_DOCUMENT_VERSION } from 'vuegraphx';
+
+const exportResult = engine.exportScene();
+
+if (exportResult.status === 'success' && exportResult.scene) {
+  const json = JSON.stringify(exportResult.scene, null, 2);
+  console.log('scene version:', GRAPH_SCENE_DOCUMENT_VERSION);
+  console.log(json);
+}
+
+const loadResult = engine.loadScene(`{
+  "version": 1,
+  "mode": "2d",
+  "commands": [
+    { "id": "cmd_1", "expression": "y = sin(x)" }
+  ],
+  "shapes": []
+}`);
+
+if (loadResult.status !== 'failure') {
+  console.log('loaded commands:', loadResult.appliedCommands);
+}
+
+console.log(loadResult.diagnostics);
+```
+
+scene v1 的边界：
+
+- 覆盖公共 `2d` / `3d` / `geometry` mode。
+- 保存 commands、显式声明 scene 支持的 shapes，以及少量 scene 级设置。
+- `loadScene()` 默认是 replace，而不是 merge。
+- `dual-layer`、选中态、面板状态、动画播放中状态和 URL 分享协议不在 v1 合同内。
+- 当当前场景包含未声明为 serializable 的 shape 时，`exportScene()` 会严格失败并返回 diagnostics。
 
 ### 4. 切换到 3D 模式
 

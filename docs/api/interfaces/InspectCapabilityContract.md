@@ -6,7 +6,7 @@
 
 # Interface: InspectCapabilityContract
 
-Defined in: [architecture/capabilities/contracts.ts:4](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L4)
+Defined in: [architecture/capabilities/contracts.ts:4](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L4)
 
 可进入或退出检查态的能力契约。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/capabilities/contracts.ts:4](https://github.com/zyizyi
 
 > **active**: `boolean`
 
-Defined in: [architecture/capabilities/contracts.ts:8](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L8)
+Defined in: [architecture/capabilities/contracts.ts:8](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L8)
 
 当前是否处于检查态。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/capabilities/contracts.ts:8](https://github.com/zyizyi
 
 > **setActive**: (`active`) => `void`
 
-Defined in: [architecture/capabilities/contracts.ts:13](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L13)
+Defined in: [architecture/capabilities/contracts.ts:13](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L13)
 
 显式切换检查态开关。
 
