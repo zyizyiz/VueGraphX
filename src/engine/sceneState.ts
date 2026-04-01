@@ -1,4 +1,5 @@
 import type { GraphSceneCommandNode } from '../scene/contracts';
+import type { GraphSceneRelationNode } from '../relation/contracts';
 
 const cloneSceneValue = <T>(value: T): T => {
   if (value === undefined || value === null) return value;
@@ -35,6 +36,8 @@ export class GraphSceneState {
   private readonly commandOrder: string[] = [];
   private readonly shapeMap = new Map<string, GraphSceneStateShapeRecord>();
   private readonly shapeOrder: string[] = [];
+  private readonly relationMap = new Map<string, GraphSceneRelationNode>();
+  private readonly relationOrder: string[] = [];
 
   public upsertCommand(command: GraphSceneCommandNode): void {
     if (!command.id || !command.expression) {
@@ -124,8 +127,48 @@ export class GraphSceneState {
     this.shapeOrder.length = 0;
   }
 
+  public upsertRelation(relation: GraphSceneRelationNode): void {
+    if (!relation.id || !relation.kind || !Array.isArray(relation.targets)) {
+      throw new Error('Graph scene relation records require non-empty id, kind, and targets');
+    }
+
+    if (!this.relationMap.has(relation.id)) {
+      this.relationOrder.push(relation.id);
+    }
+
+    this.relationMap.set(relation.id, cloneSceneValue({
+      id: relation.id,
+      kind: relation.kind,
+      targets: relation.targets,
+      active: relation.active,
+      params: relation.params
+    }));
+  }
+
+  public removeRelation(relationId: string): void {
+    if (!this.relationMap.has(relationId)) return;
+    this.relationMap.delete(relationId);
+    const index = this.relationOrder.indexOf(relationId);
+    if (index >= 0) {
+      this.relationOrder.splice(index, 1);
+    }
+  }
+
+  public listRelations(): GraphSceneRelationNode[] {
+    return this.relationOrder
+      .map((relationId) => this.relationMap.get(relationId))
+      .filter((relation): relation is GraphSceneRelationNode => !!relation)
+      .map((relation) => cloneSceneValue(relation));
+  }
+
+  public clearRelations(): void {
+    this.relationMap.clear();
+    this.relationOrder.length = 0;
+  }
+
   public clearAll(): void {
     this.clearCommands();
     this.clearShapes();
+    this.clearRelations();
   }
 }

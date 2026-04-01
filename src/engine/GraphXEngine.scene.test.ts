@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GraphShapeDefinition, GraphShapeInstance } from '../architecture/shapes/contracts';
 import type { EngineMode, GraphXOptions } from '../types/engine';
 import { GraphXEngine } from './GraphXEngine';
+import { GraphRelationState } from './relationState';
 import { GraphSceneState } from './sceneState';
 
 const createShapeInstance = (id: string, entityType: string, payload?: unknown): GraphShapeInstance => ({
@@ -79,6 +80,9 @@ const createFakeEngine = () => {
       isEnabled: vi.fn(() => false),
       getOptions: vi.fn(() => ({ enabled: false }))
     },
+    relationState: new GraphRelationState(),
+    relationTargets: new Map(),
+    relationSnapshots: [],
     sceneState: new GraphSceneState(),
     renderer: {
       render: vi.fn((_mode: EngineMode, expression: string, _color: string, _options: unknown, id: string) => {
@@ -98,6 +102,7 @@ const createFakeEngine = () => {
     selectedShapeId: null,
     isClickingObject: false,
     capabilityListeners: [],
+    relationListeners: [],
     mutationBatchDepth: 0,
     pendingCapabilityNotification: false
   });
@@ -146,7 +151,8 @@ describe('GraphXEngine scene document support', () => {
         { id: 'cmd_a', expression: 'a = 3', color: '#333333', options: { plot: false } },
         { id: 'cmd_b', expression: 'b = 2', color: '#222222', options: undefined }
       ],
-      shapes: []
+      shapes: [],
+      relations: []
     });
   });
 
@@ -213,6 +219,7 @@ describe('GraphXEngine scene document support', () => {
       expect(result.status).toBe('partial');
       expect(result.appliedCommands).toBe(1);
       expect(result.appliedShapes).toBe(1);
+      expect(result.appliedRelations).toBe(0);
       expect(result.diagnostics).toEqual([
         expect.objectContaining({ code: 'scene_command_execute_failed', nodeKind: 'command', nodeId: 'cmd_bad' }),
         expect.objectContaining({ code: 'scene_shape_missing_definition', nodeKind: 'shape', nodeId: 'shape_missing', nodeType: 'missing-shape' })
@@ -223,8 +230,44 @@ describe('GraphXEngine scene document support', () => {
       expect(result.scene?.shapes).toEqual([
         { id: 'shape_saved', type: 'serial-shape', payload: { value: 9 } }
       ]);
+      expect(result.scene?.relations).toEqual([]);
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it('round-trips scene relations through load and export', () => {
+    const engine = createFakeEngine();
+
+    const result = engine.loadScene({
+      version: 1,
+      mode: 'geometry',
+      commands: [],
+      shapes: [],
+      relations: [{
+        id: 'rel_saved',
+        kind: 'distance-assertion',
+        targets: [
+          { ownerType: 'command', ownerId: 'cmd_a', targetId: 'primary' },
+          { ownerType: 'command', ownerId: 'cmd_b', targetId: 'primary' }
+        ],
+        params: { expectedValue: 5 }
+      }]
+    });
+
+    expect(result.status).toBe('success');
+    expect(result.appliedRelations).toBe(1);
+    expect(result.scene?.relations).toEqual([
+      {
+        id: 'rel_saved',
+        kind: 'distance-assertion',
+        targets: [
+          { ownerType: 'command', ownerId: 'cmd_a', targetId: 'primary' },
+          { ownerType: 'command', ownerId: 'cmd_b', targetId: 'primary' }
+        ],
+        active: true,
+        params: { expectedValue: 5, tolerance: undefined }
+      }
+    ]);
   });
 });

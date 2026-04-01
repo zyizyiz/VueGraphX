@@ -26,6 +26,7 @@ const hasValidTopLevelSceneShape = (value: unknown): value is {
   mode: '2d' | '3d' | 'geometry';
   commands: unknown[];
   shapes: unknown[];
+  relations?: unknown[];
 } => {
   if (!isRecord(value)) return false;
   return value.version === graphSceneDocumentVersion
@@ -81,7 +82,7 @@ export function useSceneDocument(options: UseSceneDocumentOptions) {
     }
 
     if (!hasValidTopLevelSceneShape(parsed)) {
-      setFailureDiagnostics(`Scene text must contain version ${graphSceneDocumentVersion}, a valid mode, and commands[] / shapes[] arrays.`);
+      setFailureDiagnostics(`Scene text must contain version ${graphSceneDocumentVersion}, a valid mode, commands[] / shapes[] arrays, and optional relations[].`);
       return null;
     }
 

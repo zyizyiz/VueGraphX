@@ -5,6 +5,7 @@ import { EntityManager } from '../entities/EntityManager';
 import { Renderer } from '../rendering/Renderer';
 import { GraphHiddenLineManager } from '../rendering/hiddenLine';
 import { GraphSceneState } from './sceneState';
+import { GraphRelationState } from './relationState';
 import JXG from 'jsxgraph';
 import { capabilityRegistry } from '../architecture/capabilities/registry';
 import type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
@@ -18,6 +19,25 @@ import type {
   GraphViewport,
   GraphViewportPadding
 } from '../architecture/shapes/contracts';
+import type {
+  GraphRelationCreateInput,
+  GraphRelationCreateResult,
+  GraphRelationListener,
+  GraphRelationRecord,
+  GraphRelationSnapshot,
+  GraphRelationStateSnapshot,
+  GraphRelationTargetDescriptor,
+  GraphRelationTargetRef,
+  GraphSceneRelationNode
+} from '../relation/contracts';
+import { evaluateRelations } from '../relation/evaluator';
+import {
+  buildRelationTargetKey,
+  toRelationTargetDescriptor,
+  toRelationTargetRecord,
+  type GraphRelationTargetRecord,
+  type GraphRelationTargetRegistration
+} from '../relation/targets';
 import type {
   GraphCapabilityDescriptor,
   GraphCapabilityListener,
@@ -42,6 +62,17 @@ import {
 } from '../scene/contracts';
 export { GRAPH_SCENE_DOCUMENT_VERSION } from '../scene/contracts';
 
+export type {
+  GraphRelationCreateInput,
+  GraphRelationCreateResult,
+  GraphRelationListener,
+  GraphRelationRecord,
+  GraphRelationSnapshot,
+  GraphRelationStateSnapshot,
+  GraphRelationTargetDescriptor,
+  GraphRelationTargetRef,
+  GraphSceneRelationNode
+} from '../relation/contracts';
 export type {
   GraphCapabilityDescriptor,
   GraphCapabilityListener,
@@ -220,6 +251,9 @@ export class GraphXEngine {
   private currentOptions?: GraphXOptions;
   private entityMgr: EntityManager;
   private hiddenLineMgr: GraphHiddenLineManager;
+  private relationState = new GraphRelationState();
+  private relationTargets = new Map<string, GraphRelationTargetRecord>();
+  private relationSnapshots: GraphRelationSnapshot[] = [];
   private sceneState = new GraphSceneState();
   private renderer: Renderer;
   private shapeDefinitions: Map<string, GraphShapeDefinition> = new Map();
@@ -229,6 +263,7 @@ export class GraphXEngine {
   private selectedShapeId: string | null = null;
   private isClickingObject = false;
   private capabilityListeners: GraphCapabilityListener[] = [];
+  private relationListeners: GraphRelationListener[] = [];
   private mutationBatchDepth = 0;
   private pendingCapabilityNotification = false;
 
@@ -247,9 +282,17 @@ export class GraphXEngine {
       clearOwnerSources: (ownerId) => {
         this.hiddenLineMgr.clearOwnerSources(ownerId);
       }
+    }, {
+      registerTarget: (ownerId, target) => {
+        this.registerRelationTarget(ownerId, target);
+      },
+      clearOwnerTargets: (ownerId) => {
+        this.clearRelationTargets(ownerId);
+      }
     });
 
     this.setupGlobalEvents();
+    this.refreshRelationState();
   }
 
   public registerHiddenLineSource(
@@ -367,6 +410,110 @@ export class GraphXEngine {
     };
   }
 
+  /** 订阅 relation 状态与可用 target 列表。订阅后会立即收到一次当前快照。 */
+  public subscribeRelations(listener: GraphRelationListener): () => void {
+    this.relationListeners.push(listener);
+    listener(this.getRelationStateSnapshot());
+    return () => {
+      this.relationListeners = this.relationListeners.filter((current) => current !== listener);
+    };
+  }
+
+  /** 返回当前全部 relation snapshot 与可用 target 描述。 */
+  public getRelationStateSnapshot(): GraphRelationStateSnapshot {
+    return {
+      relations: this.getRelationSnapshots(),
+      targets: this.listRelationTargets()
+    };
+  }
+
+  /** 返回当前全部 relation snapshot。 */
+  public getRelationSnapshots(): GraphRelationSnapshot[] {
+    return this.relationSnapshots.map((snapshot) => ({
+      ...snapshot,
+      targets: snapshot.targets.map((target) => ({ ...target })),
+      params: snapshot.params ? { ...snapshot.params } : undefined,
+      diagnostics: snapshot.diagnostics.map((diagnostic) => ({ ...diagnostic })),
+      targetLabels: [...snapshot.targetLabels],
+      measurements: snapshot.measurements?.map((measurement) => ({ ...measurement }))
+    }));
+  }
+
+  /** 返回当前全部 relation record。 */
+  public listRelations(): GraphRelationRecord[] {
+    return this.relationState.list();
+  }
+
+  /** 返回当前场景内可参与 relation 的 target 列表。 */
+  public listRelationTargets(): GraphRelationTargetDescriptor[] {
+    return Array.from(this.relationTargets.values())
+      .map((target) => ({
+        ...toRelationTargetDescriptor(target.ownerId, target),
+        ownerType: target.ownerType,
+        targetId: target.targetId
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }
+
+  /** 创建一条新的 relation record。 */
+  public createRelation(input: GraphRelationCreateInput): GraphRelationCreateResult {
+    const created = this.relationState.create(input);
+    if (!created.record) {
+      return {
+        status: 'failure',
+        relation: null,
+        snapshot: null,
+        diagnostics: created.diagnostics
+      };
+    }
+
+    this.sceneState.upsertRelation({
+      id: created.record.id,
+      kind: created.record.kind,
+      targets: created.record.targets,
+      active: created.record.active,
+      params: created.record.params
+    });
+    this.refreshRelationState();
+
+    const snapshot = this.relationSnapshots.find((item) => item.id === created.record?.id) ?? null;
+
+    return {
+      status: 'success',
+      relation: created.record,
+      snapshot,
+      diagnostics: snapshot?.diagnostics ?? created.diagnostics
+    };
+  }
+
+  /** 删除一条 relation。 */
+  public removeRelation(relationId: string): boolean {
+    const removed = this.relationState.remove(relationId);
+    if (!removed) return false;
+    this.sceneState.removeRelation(relationId);
+    this.refreshRelationState();
+    return true;
+  }
+
+  /** 设置 relation 的 active 状态。 */
+  public setRelationActive(relationId: string, active: boolean): boolean {
+    const updated = this.relationState.setActive(relationId, active);
+    if (!updated) return false;
+
+    const record = this.relationState.list().find((item) => item.id === relationId);
+    if (record) {
+      this.sceneState.upsertRelation({
+        id: record.id,
+        kind: record.kind,
+        targets: record.targets,
+        active: record.active,
+        params: record.params
+      });
+    }
+    this.refreshRelationState();
+    return true;
+  }
+
   /** 返回当前选中项及其标准化能力列表。返回结果同时包含 selection 和 capabilities 两部分。 */
   public getCapabilitySnapshot(): GraphCapabilitySnapshot {
     const target = this.getSelectedCapabilityTarget();
@@ -424,6 +571,36 @@ export class GraphXEngine {
     this.dispatchCapabilityChange();
   }
 
+  private registerRelationTarget(ownerId: string, target: GraphRelationTargetRegistration): void {
+    const record = toRelationTargetRecord(ownerId, target);
+    this.relationTargets.set(buildRelationTargetKey(record), record);
+    this.refreshRelationState();
+  }
+
+  private clearRelationTargets(ownerId?: string): void {
+    if (ownerId) {
+      Array.from(this.relationTargets.keys()).forEach((key) => {
+        if (key.startsWith(`command:${ownerId}:`) || key.startsWith(`shape:${ownerId}:`)) {
+          this.relationTargets.delete(key);
+        }
+      });
+    } else {
+      this.relationTargets.clear();
+    }
+    this.refreshRelationState();
+  }
+
+  private refreshRelationState(): void {
+    this.relationSnapshots = evaluateRelations(this.relationState.list(), Array.from(this.relationTargets.values()));
+    this.notifyRelationChange();
+  }
+
+  private notifyRelationChange(): void {
+    if (this.relationListeners.length === 0) return;
+    const snapshot = this.getRelationStateSnapshot();
+    this.relationListeners.forEach((listener) => listener(snapshot));
+  }
+
   private addShapeInstance(instance: GraphShapeInstance, select = false, definition?: GraphShapeDefinition | null): void {
     this.runInMutationBatch(() => {
       this.shapeInstances.set(instance.id, instance);
@@ -451,6 +628,7 @@ export class GraphXEngine {
       }
       instance.destroy();
       this.hiddenLineMgr.clearOwnerSources(shapeId);
+      this.clearRelationTargets(shapeId);
       this.shapeInstances.delete(shapeId);
       this.sceneState.removeShape(shapeId);
       this.notifyCapabilityChange();
@@ -462,6 +640,7 @@ export class GraphXEngine {
       this.shapeInstances.forEach((instance) => {
         instance.destroy();
         this.hiddenLineMgr.clearOwnerSources(instance.id);
+        this.clearRelationTargets(instance.id);
       });
       this.shapeInstances.clear();
       this.sceneState.clearShapes();
@@ -530,6 +709,7 @@ export class GraphXEngine {
         instance.onBoardUpdate?.();
       });
       this.hiddenLineMgr.update();
+      this.refreshRelationState();
     });
   }
 
@@ -562,8 +742,12 @@ export class GraphXEngine {
       this.hiddenLineMgr.setOptions((options ?? this.currentOptions)?.view3D?.hiddenLine);
       this.clearShapeInstances();
       this.hiddenLineMgr.clearAllSources();
+      this.clearRelationTargets();
+      this.relationState.clear();
+      this.refreshRelationState();
       this.entityMgr.clearAll();
       this.sceneState.clearCommands();
+      this.sceneState.clearRelations();
       this.clearVariables();
       this.setupGlobalEvents();
     }
@@ -578,8 +762,12 @@ export class GraphXEngine {
     }
     this.hiddenLineMgr.setOptions((options ?? this.currentOptions)?.view3D?.hiddenLine);
     this.hiddenLineMgr.clearAllSources();
+    this.clearRelationTargets();
+    this.relationState.clear();
+    this.refreshRelationState();
     this.entityMgr.clearAll();
     this.sceneState.clearCommands();
+    this.sceneState.clearRelations();
     this.clearVariables();
     this.setupGlobalEvents();
   }
@@ -624,6 +812,13 @@ export class GraphXEngine {
   public exportScene(): GraphSceneExportResult {
     const diagnostics: GraphSceneDiagnostic[] = [];
     const shapes: GraphSceneShapeNode[] = [];
+    const relations = this.relationState.list().map((relation) => ({
+      id: relation.id,
+      kind: relation.kind,
+      targets: relation.targets.map((target) => ({ ...target })),
+      active: relation.active,
+      params: relation.params ? { ...relation.params } : undefined
+    }));
 
     for (const record of this.sceneState.listShapes()) {
       if (!record.serializable) {
@@ -705,7 +900,8 @@ export class GraphXEngine {
           color: command.color,
           options: cloneSceneValue(command.options)
         })),
-        shapes
+        shapes,
+        relations
       },
       diagnostics: []
     };
@@ -720,13 +916,15 @@ export class GraphXEngine {
         scene: null,
         diagnostics: preflight.diagnostics,
         appliedCommands: 0,
-        appliedShapes: 0
+        appliedShapes: 0,
+        appliedRelations: 0
       };
     }
 
     const diagnostics: GraphSceneDiagnostic[] = [];
     let appliedCommands = 0;
     let appliedShapes = 0;
+    let appliedRelations = 0;
 
     this.setMode(preflight.scene.mode, this.getSceneOptionsFromSettings(preflight.scene.settings));
 
@@ -833,6 +1031,70 @@ export class GraphXEngine {
       appliedShapes += 1;
     });
 
+    (preflight.scene.relations ?? []).forEach((rawNode, index) => {
+      const relation = this.normalizeSceneRelationNode(rawNode);
+      if (!relation) {
+        diagnostics.push({
+          code: 'scene_invalid_relation',
+          message: `Relation at index ${index} is not a valid scene relation node.`,
+          severity: 'error',
+          nodeKind: 'relation',
+          nodeIndex: index
+        });
+        return;
+      }
+
+      const result = this.createRelation({
+        kind: relation.kind,
+        targets: relation.targets,
+        active: relation.active,
+        params: relation.params
+      });
+
+      if (!result.relation) {
+        diagnostics.push(...(result.diagnostics.length > 0
+          ? result.diagnostics.map((diagnostic) => ({
+              code: diagnostic.code,
+              message: diagnostic.message,
+              severity: diagnostic.severity,
+              nodeKind: 'relation' as const,
+              nodeId: relation.id,
+              nodeIndex: index
+            }))
+          : [{
+              code: 'scene_relation_create_failed',
+              message: `Relation "${relation.id}" could not be restored from the scene document.`,
+              severity: 'error' as const,
+              nodeKind: 'relation' as const,
+              nodeId: relation.id,
+              nodeIndex: index
+            }]));
+        return;
+      }
+
+      if (result.relation.id !== relation.id) {
+        this.relationState.remove(result.relation.id);
+        this.sceneState.removeRelation(result.relation.id);
+        this.relationState.add({
+          id: relation.id,
+          kind: relation.kind,
+          targets: relation.targets,
+          active: relation.active ?? true,
+          params: relation.params
+        });
+        this.sceneState.upsertRelation({
+          id: relation.id,
+          kind: relation.kind,
+          targets: relation.targets,
+          active: relation.active,
+          params: relation.params
+        });
+        this.refreshRelationState();
+      }
+
+      appliedRelations += 1;
+    });
+
     const exportedScene = this.exportScene();
     if (exportedScene.status === 'failure') {
       diagnostics.push(...exportedScene.diagnostics);
@@ -840,7 +1102,7 @@ export class GraphXEngine {
 
     const hasErrors = diagnostics.some((diagnostic) => diagnostic.severity === 'error');
     const status = hasErrors
-      ? (appliedCommands > 0 || appliedShapes > 0 ? 'partial' : 'failure')
+      ? (appliedCommands > 0 || appliedShapes > 0 || appliedRelations > 0 ? 'partial' : 'failure')
       : 'success';
 
     return {
@@ -848,7 +1110,8 @@ export class GraphXEngine {
       scene: exportedScene.scene,
       diagnostics,
       appliedCommands,
-      appliedShapes
+      appliedShapes,
+      appliedRelations
     };
   }
 
@@ -910,12 +1173,12 @@ export class GraphXEngine {
       };
     }
 
-    if (!Array.isArray(raw.commands) || !Array.isArray(raw.shapes)) {
+    if (!Array.isArray(raw.commands) || !Array.isArray(raw.shapes) || (raw.relations !== undefined && !Array.isArray(raw.relations))) {
       return {
         scene: null,
         diagnostics: [{
           code: 'scene_invalid_document',
-          message: 'Scene document must contain commands[] and shapes[] arrays.',
+          message: 'Scene document must contain commands[] and shapes[] arrays, and relations[] when present.',
           severity: 'error',
           nodeKind: 'document'
         }]
@@ -943,7 +1206,10 @@ export class GraphXEngine {
         mode: raw.mode,
         settings: raw.settings === undefined ? undefined : normalizeSceneSettings(raw.settings) ?? undefined,
         commands: raw.commands.map((command) => cloneSceneValue(command)) as GraphSceneCommandNode[],
-        shapes: raw.shapes.map((shape) => cloneSceneValue(shape)) as GraphSceneShapeNode[]
+        shapes: raw.shapes.map((shape) => cloneSceneValue(shape)) as GraphSceneShapeNode[],
+        relations: Array.isArray(raw.relations)
+          ? raw.relations.map((relation) => cloneSceneValue(relation)) as GraphSceneRelationNode[]
+          : []
       },
       diagnostics: []
     };
@@ -979,6 +1245,50 @@ export class GraphXEngine {
       id: node.id,
       type: node.type,
       payload: cloneSceneValue(node.payload)
+    };
+  }
+
+  private normalizeSceneRelationNode(node: unknown): GraphSceneRelationNode | null {
+    if (!isRecord(node) || typeof node.id !== 'string' || node.id.trim() === '' || typeof node.kind !== 'string' || !Array.isArray(node.targets)) {
+      return null;
+    }
+
+    const targets = node.targets
+      .filter((target): target is GraphRelationTargetRef => (
+        isRecord(target)
+        && (target.ownerType === 'command' || target.ownerType === 'shape')
+        && typeof target.ownerId === 'string'
+        && target.ownerId.trim() !== ''
+        && typeof target.targetId === 'string'
+        && target.targetId.trim() !== ''
+      ))
+      .map((target) => ({
+        ownerType: target.ownerType,
+        ownerId: target.ownerId,
+        targetId: target.targetId
+      }));
+
+    if (targets.length !== 2) {
+      return null;
+    }
+
+    if (node.active !== undefined && typeof node.active !== 'boolean') {
+      return null;
+    }
+
+    const params = isRecord(node.params)
+      ? {
+          expectedValue: typeof node.params.expectedValue === 'number' ? node.params.expectedValue : undefined,
+          tolerance: typeof node.params.tolerance === 'number' ? node.params.tolerance : undefined
+        }
+      : undefined;
+
+    return {
+      id: node.id,
+      kind: node.kind as GraphSceneRelationNode['kind'],
+      targets,
+      active: node.active,
+      params
     };
   }
 
@@ -1042,6 +1352,7 @@ export class GraphXEngine {
 
   private removeCommandRuntime(id: string, removeSceneRecord = true): void {
     this.hiddenLineMgr.clearOwnerSources(id);
+    this.clearRelationTargets(id);
     if (this.boardMgr.board) {
       this.entityMgr.removeCommandElements(id, this.boardMgr.board);
     }
@@ -1077,6 +1388,9 @@ export class GraphXEngine {
     this.shapeDefinitions.clear();
     this.stopAnimationLoop();
     this.hiddenLineMgr.clearAllSources();
+    this.clearRelationTargets();
+    this.relationState.clear();
+    this.refreshRelationState();
     this.boardMgr.destroy();
     this.entityMgr.clearAll();
     this.sceneState.clearAll();

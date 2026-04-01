@@ -56,7 +56,8 @@ VueGraphX 提供两条互补的能力主线：
 - 🧩 组合式图形定义：使用 `createComposedShapeDefinition()`、`GraphShapeApi` 和 `GraphShapeContext` 在业务侧组合自己的图形。
 - 🎬 共享动画与标注能力：动画轨道、点标注、命中分组、拖拽与悬浮 UI 投影工具都是通用基础设施。
 - 📐 统一 2D / 3D 渲染入口：表达式渲染和 view3d 生命周期都通过同一个引擎门面管理。
-- 💾 Scene 文档模型：支持 `exportScene()` / `loadScene()`，覆盖 commands、serializable shapes 和受支持的 scene 级设置。
+- 🔗 几何关系层：支持 `createRelation()` / `getRelationSnapshots()`，可对 point / line / segment 建立平行、垂直、等长与距离断言等 explainable relations。
+- 💾 Scene 文档模型：支持 `exportScene()` / `loadScene()`，覆盖 commands、serializable shapes、relations 和受支持的 scene 级设置。
 - 👓 生产化 hidden-line 3D：支持运行时 profile 切换、snapshot stats / diagnostics，以及 3D 教学场景里的更稳定隐线显示。
 - 🧪 playground 双层模式：以 `3d` 引擎模式为底座，叠加独立的 2D 层，并通过对象级旋转查看立体结构。
 - 🧱 分层场景基础设施：内置 `view3D.fitToBoard` 和分组级 `bindNativeEvent()`，方便消费侧组合双层/多层交互。
@@ -173,12 +174,46 @@ console.log(loadResult.diagnostics);
 scene v1 的边界：
 
 - 覆盖公共 `2d` / `3d` / `geometry` mode。
-- 保存 commands、显式声明 scene 支持的 shapes，以及少量 scene 级设置。
+- 保存 commands、显式声明 scene 支持的 shapes、公开 relation records，以及少量 scene 级设置。
 - `loadScene()` 默认是 replace，而不是 merge。
 - `dual-layer`、选中态、面板状态、动画播放中状态和 URL 分享协议不在 v1 合同内。
 - 当当前场景包含未声明为 serializable 的 shape 时，`exportScene()` 会严格失败并返回 diagnostics。
 
-### 4. 切换到 3D 模式
+### 4.1 创建几何关系
+
+当前版本支持 geometry-oriented 的关系层。你可以把关系视为独立于命令/shape 的一等内容对象：
+
+```typescript
+const created = engine.createRelation({
+  kind: 'distance-assertion',
+  targets: [
+    { ownerType: 'command', ownerId: 'A', targetId: 'primary' },
+    { ownerType: 'command', ownerId: 'B', targetId: 'primary' }
+  ],
+  params: {
+    expectedValue: 5
+  }
+});
+
+console.log(created.snapshot?.status);
+console.log(engine.getRelationSnapshots());
+```
+
+当前公开支持的 v1 relation kinds：
+
+- `parallel`
+- `perpendicular`
+- `equal-length`
+- `distance-assertion`
+
+当前边界：
+
+- v1 是 explainable relation layer，不是通用 CAD 级全局约束求解器。
+- playground 里可以在 geometry 模式下直接使用 `Relations` 面板体验完整流程。
+- `distance-assertion` 当前只支持 point-to-point。
+- `parallel` / `perpendicular` / `equal-length` 当前是检查型能力；拖拽时会实时更新状态，但不会自动数值求解并强制维持几何。
+
+### 5. 切换到 3D 模式
 
 ```typescript
 engine.setMode('3d');
@@ -190,7 +225,7 @@ engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
 engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
 
-### 4.1 调整 hidden-line 3D
+### 5.1 调整 hidden-line 3D
 
 ```typescript
 engine.setHiddenLineOptions({
@@ -223,7 +258,7 @@ console.log(hiddenLineSnapshot.diagnostics);
 
 更多细节见 `docs/hidden-line-3d.md`。
 
-### 5. 在业务侧实现分层 / 双层场景
+### 6. 在业务侧实现分层 / 双层场景
 
 如果你的应用要把多个交互层叠在一起，例如：
 

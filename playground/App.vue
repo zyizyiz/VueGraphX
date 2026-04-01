@@ -37,7 +37,7 @@
 
     <div class="flex-1 flex overflow-hidden relative">
       <!-- 左侧控制面板 -->
-      <aside class="w-80 sm:w-96 bg-white border-r border-slate-200 shadow-[2px_0_8px_rgba(0,0,0,0.02)] flex flex-col z-10 shrink-0 h-full">
+      <aside ref="sidebarRef" class="w-80 sm:w-96 bg-white border-r border-slate-200 shadow-[2px_0_8px_rgba(0,0,0,0.02)] flex flex-col z-10 shrink-0 h-full min-h-0">
         
         <!-- 指令多行表单流列表 -->
         <div v-if="store.activeMode !== 'dual-layer'" class="flex-1 overflow-y-auto overflow-x-hidden p-2">
@@ -106,90 +106,107 @@
           @add-shape="handleAddDualLayerShape"
         />
 
-        <div v-if="supportsSceneDocument && showScenePanel" class="border-t border-slate-100 bg-white px-4 py-4 shrink-0 space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Scene Document</p>
-              <p class="text-[11px] text-slate-400 mt-1">导出 JSON / 导入替换当前场景</p>
+        <div
+          class="sidebar-bottom-dock shrink-0 border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85 flex flex-col overflow-hidden"
+          :style="sidebarBottomStyle"
+        >
+          <button
+            type="button"
+            class="sidebar-bottom-resize-handle"
+            :class="{ 'sidebar-bottom-resize-handle-active': isSidebarBottomResizing }"
+            @pointerdown="startSidebarBottomResize"
+          >
+            <span class="sidebar-bottom-resize-handle-bar"></span>
+          </button>
+
+          <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div v-if="supportsSceneDocument && showScenePanel" class="border-t border-slate-100 bg-white px-4 py-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Scene Document</p>
+                  <p class="text-[11px] text-slate-400 mt-1">导出 JSON / 导入替换当前场景</p>
+                </div>
+                <span
+                  v-if="sceneLastStatus"
+                  class="rounded-full px-2 py-1 text-[10px] font-semibold"
+                  :class="sceneErrorCount > 0 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'"
+                >
+                  {{ sceneLastStatus }}
+                </span>
+              </div>
+
+              <textarea
+                v-model="sceneText"
+                rows="10"
+                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-mono text-slate-700 outline-none transition-colors focus:border-sky-300 focus:bg-white"
+                placeholder="点击“导出当前”生成 scene JSON，或粘贴 scene 后点击“导入替换”。"
+                spellcheck="false"
+              ></textarea>
+
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
+                  @click="handleExportScene"
+                >
+                  导出当前
+                </button>
+                <button
+                  type="button"
+                  class="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500"
+                  @click="handleImportScene"
+                >
+                  导入替换
+                </button>
+                <button
+                  type="button"
+                  class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                  @click="clearSceneDocument()"
+                >
+                  清空文本
+                </button>
+              </div>
+
+              <div v-if="sceneDiagnostics.length > 0" class="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p class="text-[11px] font-semibold text-amber-700">Diagnostics</p>
+                <ul class="mt-2 space-y-1.5">
+                  <li
+                    v-for="(diagnostic, index) in sceneDiagnostics.slice(0, 5)"
+                    :key="`${diagnostic.code}-${index}`"
+                    class="text-[11px] leading-5 text-amber-800"
+                  >
+                    {{ diagnostic.code }} · {{ diagnostic.message }}
+                  </li>
+                </ul>
+              </div>
             </div>
-            <span
-              v-if="sceneLastStatus"
-              class="rounded-full px-2 py-1 text-[10px] font-semibold"
-              :class="sceneErrorCount > 0 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'"
-            >
-              {{ sceneLastStatus }}
-            </span>
-          </div>
 
-          <textarea
-            v-model="sceneText"
-            rows="10"
-            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-mono text-slate-700 outline-none transition-colors focus:border-sky-300 focus:bg-white"
-            placeholder="点击“导出当前”生成 scene JSON，或粘贴 scene 后点击“导入替换”。"
-            spellcheck="false"
-          ></textarea>
+            <RelationPanel :engine="engineRef" :active-mode="store.activeMode" />
+            <HiddenLinePanel :engine="engineRef" :active-mode="store.activeMode" />
 
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
-              @click="handleExportScene"
-            >
-              导出当前
-            </button>
-            <button
-              type="button"
-              class="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500"
-              @click="handleImportScene"
-            >
-              导入替换
-            </button>
-            <button
-              type="button"
-              class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
-              @click="clearSceneDocument()"
-            >
-              清空文本
-            </button>
-          </div>
-
-          <div v-if="sceneDiagnostics.length > 0" class="rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <p class="text-[11px] font-semibold text-amber-700">Diagnostics</p>
-            <ul class="mt-2 space-y-1.5">
-              <li
-                v-for="(diagnostic, index) in sceneDiagnostics.slice(0, 5)"
-                :key="`${diagnostic.code}-${index}`"
-                class="text-[11px] leading-5 text-amber-800"
-              >
-                {{ diagnostic.code }} · {{ diagnostic.message }}
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <HiddenLinePanel :engine="engineRef" :active-mode="store.activeMode" />
-
-        <!-- Demo 示例区（多卡片可切换） -->
-        <div class="border-t border-slate-100 bg-slate-50/80 shrink-0">
-          <div class="px-4 pt-3 pb-1 flex items-center justify-between">
-            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">📚 示例场景</span>
-            <span class="text-xs text-slate-400">点击卡片一键载入</span>
-          </div>
-          
-          <div class="flex gap-2 px-3 pb-3 overflow-x-auto scrollbar-hide">
-            <button
-              v-for="(demo, idx) in currentDemos"
-              :key="idx"
-              @click="loadSelectedDemo(idx)"
-              class="demo-card flex-shrink-0 w-36 p-2.5 text-left rounded-lg border transition-all duration-150 cursor-pointer"
-              :class="activeDemo === idx 
-                ? 'border-sky-300 bg-sky-50 shadow-sm' 
-                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'"
-            >
-              <div class="text-lg mb-1">{{ demo.emoji }}</div>
-              <div class="text-xs font-semibold text-slate-700 leading-tight truncate">{{ demo.title }}</div>
-              <div class="text-[10px] text-slate-400 mt-0.5 leading-tight line-clamp-2">{{ demo.desc }}</div>
-            </button>
+            <!-- Demo 示例区（多卡片可切换） -->
+            <div class="border-t border-slate-100 bg-slate-50/80">
+              <div class="px-4 pt-3 pb-1 flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">📚 示例场景</span>
+                <span class="text-xs text-slate-400">点击卡片一键载入</span>
+              </div>
+              
+              <div class="flex gap-2 px-3 pb-3 overflow-x-auto scrollbar-hide">
+                <button
+                  v-for="(demo, idx) in currentDemos"
+                  :key="idx"
+                  @click="loadSelectedDemo(idx)"
+                  class="demo-card flex-shrink-0 w-36 p-2.5 text-left rounded-lg border transition-all duration-150 cursor-pointer"
+                  :class="activeDemo === idx 
+                    ? 'border-sky-300 bg-sky-50 shadow-sm' 
+                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'"
+                >
+                  <div class="text-lg mb-1">{{ demo.emoji }}</div>
+                  <div class="text-xs font-semibold text-slate-700 leading-tight truncate">{{ demo.title }}</div>
+                  <div class="text-[10px] text-slate-400 mt-0.5 leading-tight line-clamp-2">{{ demo.desc }}</div>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
@@ -266,7 +283,7 @@
 </template>
 
 <script setup lang="ts">
-import { shallowRef, ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
+import { shallowRef, ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { GraphXEngine, type EngineMode } from 'vuegraphx';
@@ -276,6 +293,7 @@ import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 import DualLayerPanel from './components/DualLayerPanel.vue';
 import HiddenLinePanel from './components/HiddenLinePanel.vue';
+import RelationPanel from './components/RelationPanel.vue';
 import { registerDualLayerBottomShapes, registerDualLayerTopShapes, registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 
@@ -407,6 +425,12 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
   ],
   'geometry': [
     {
+      emoji: '🧭',
+      title: '关系面板练习',
+      desc: '四个点与两条线段，适合体验平行 / 垂直 / 等长 / 距离断言',
+      commands: ['A = (-4, 2)', 'B = (-1, 2)', 'C = (1, -1)', 'D = (4, -1)', 'Segment(A, B)', 'Segment(C, D)']
+    },
+    {
       emoji: '⭕',
       title: '欧氏尺规交点',
       desc: '双圆相交构造等边三角形',
@@ -444,6 +468,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
 };
 
 const store = useFormulaStore();
+const sidebarRef = ref<HTMLElement | null>(null);
 const graphContainerRef = ref<HTMLElement | null>(null);
 const activeDemo = ref<number>(-1);
 
@@ -454,9 +479,43 @@ const dualLayerPassClicks = ref(0);
 const dualLayerPassText = ref('');
 const dualLayerPassEnabled = ref(false);
 const dualLayerPassChecked = ref(false);
+const sidebarBottomHeight = ref(420);
+const sidebarBottomMaxHeight = ref(920);
+const isSidebarBottomResizing = ref(false);
 
 // 当前模式的 Demo 列表
 const currentDemos = computed(() => allDemos[store.activeMode]);
+const SIDEBAR_BOTTOM_MIN_HEIGHT = 220;
+const SIDEBAR_BOTTOM_DEFAULT_HEIGHT = 320;
+const SIDEBAR_BOTTOM_ABSOLUTE_MAX = 520;
+
+const clampSidebarBottomHeight = (value: number) => {
+  const min = SIDEBAR_BOTTOM_MIN_HEIGHT;
+  const max = Math.max(min, sidebarBottomMaxHeight.value);
+  return Math.min(Math.max(value, min), max);
+};
+
+const sidebarBottomStyle = computed(() => ({
+  height: `${clampSidebarBottomHeight(sidebarBottomHeight.value)}px`,
+  maxHeight: `${sidebarBottomMaxHeight.value}px`
+}));
+
+const syncSidebarBottomConstraints = () => {
+  const sidebarHeight = sidebarRef.value?.clientHeight ?? 0;
+  if (!sidebarHeight) return;
+
+  const proportionalMax = Math.floor(sidebarHeight * 0.58);
+  const preserveTopPane = sidebarHeight - 180;
+  const nextMax = Math.max(
+    SIDEBAR_BOTTOM_MIN_HEIGHT,
+    Math.min(SIDEBAR_BOTTOM_ABSOLUTE_MAX, proportionalMax, preserveTopPane)
+  );
+
+  sidebarBottomMaxHeight.value = nextMax;
+  sidebarBottomHeight.value = clampSidebarBottomHeight(
+    sidebarBottomHeight.value || Math.min(SIDEBAR_BOTTOM_DEFAULT_HEIGHT, nextMax)
+  );
+};
 
 // LaTeX 实时渲染预览（支持剥离首尾常见的 $ 或者 $$ 包裹符号）
 const renderLatexPreview = (expr: string): string => {
@@ -489,6 +548,10 @@ const getBoardOptionsForCurrentMode = (mode: PlaygroundMode) => getBoardOptionsF
 
 let modeResizeObserver: ResizeObserver | null = null;
 let modeResizeRaf: number | null = null;
+let sidebarResizeObserver: ResizeObserver | null = null;
+let sidebarResizeRaf: number | null = null;
+let sidebarResizePointerStartY = 0;
+let sidebarResizeStartHeight = SIDEBAR_BOTTOM_DEFAULT_HEIGHT;
 
 const stopResizeObserver = () => {
   if (modeResizeRaf !== null) {
@@ -497,6 +560,15 @@ const stopResizeObserver = () => {
   }
   modeResizeObserver?.disconnect();
   modeResizeObserver = null;
+};
+
+const stopSidebarResizeObserver = () => {
+  if (sidebarResizeRaf !== null) {
+    cancelAnimationFrame(sidebarResizeRaf);
+    sidebarResizeRaf = null;
+  }
+  sidebarResizeObserver?.disconnect();
+  sidebarResizeObserver = null;
 };
 
 const startResizeObserver = () => {
@@ -514,9 +586,55 @@ const startResizeObserver = () => {
   modeResizeObserver.observe(graphContainerRef.value);
 };
 
+const startSidebarResizeObserver = () => {
+  stopSidebarResizeObserver();
+  syncSidebarBottomConstraints();
+  if (!sidebarRef.value) return;
+
+  sidebarResizeObserver = new ResizeObserver(() => {
+    if (sidebarResizeRaf !== null) cancelAnimationFrame(sidebarResizeRaf);
+    sidebarResizeRaf = requestAnimationFrame(() => {
+      sidebarResizeRaf = null;
+      syncSidebarBottomConstraints();
+    });
+  });
+  sidebarResizeObserver.observe(sidebarRef.value);
+};
+
+const stopSidebarBottomResize = () => {
+  isSidebarBottomResizing.value = false;
+  window.removeEventListener('pointermove', handleSidebarBottomResizeMove);
+  window.removeEventListener('pointerup', stopSidebarBottomResize);
+  document.body.classList.remove('sidebar-resize-active');
+};
+
+const handleSidebarBottomResizeMove = (event: PointerEvent) => {
+  if (!isSidebarBottomResizing.value) return;
+  const delta = sidebarResizePointerStartY - event.clientY;
+  sidebarBottomHeight.value = clampSidebarBottomHeight(sidebarResizeStartHeight + delta);
+};
+
+const startSidebarBottomResize = (event: PointerEvent) => {
+  sidebarResizePointerStartY = event.clientY;
+  sidebarResizeStartHeight = sidebarBottomHeight.value;
+  isSidebarBottomResizing.value = true;
+  document.body.classList.add('sidebar-resize-active');
+  window.addEventListener('pointermove', handleSidebarBottomResizeMove);
+  window.addEventListener('pointerup', stopSidebarBottomResize);
+};
+
 onMounted(() => {
+  startSidebarResizeObserver();
   initEngines();
 });
+
+watch(
+  () => [store.activeMode, showScenePanel.value] as const,
+  async () => {
+    await waitForUiPaint();
+    syncSidebarBottomConstraints();
+  }
+);
 
 const initEngines = async (options: { syncCommands?: boolean } = {}) => {
   if (graphContainerRef.value) {
@@ -547,6 +665,8 @@ const initEngines = async (options: { syncCommands?: boolean } = {}) => {
 
 onUnmounted(() => {
   stopResizeObserver();
+  stopSidebarResizeObserver();
+  stopSidebarBottomResize();
   if (engineRef.value) {
     engineRef.value.destroy();
     engineRef.value = null;
@@ -694,6 +814,36 @@ textarea::-webkit-scrollbar {
 }
 .demo-card {
   min-width: 128px;
+}
+.sidebar-bottom-dock {
+  min-height: 220px;
+}
+.sidebar-bottom-resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 0.98));
+  cursor: ns-resize;
+  touch-action: none;
+}
+.sidebar-bottom-resize-handle:hover,
+.sidebar-bottom-resize-handle-active {
+  background: linear-gradient(180deg, rgba(240, 249, 255, 0.98), rgba(255, 255, 255, 0.98));
+}
+.sidebar-bottom-resize-handle-bar {
+  display: block;
+  width: 3.5rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: #cbd5e1;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+}
+body.sidebar-resize-active {
+  cursor: ns-resize;
+  user-select: none;
 }
 #dual-layer-container .jxgbox {
   position: absolute !important;

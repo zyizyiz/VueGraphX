@@ -36,7 +36,8 @@ That makes it suitable both as a standalone rendering engine and as the runtime 
 - 🧩 Composable shape authoring: build local shapes with `createComposedShapeDefinition()`, `GraphShapeApi`, and `GraphShapeContext`.
 - 🎬 Shared runtime utilities: animation tracks, point annotations, hit groups, drag helpers, and screen projection helpers are reusable across shapes.
 - 📐 Unified 2D / 3D entry point: expression rendering and `view3d` lifecycle are managed through the same engine facade.
-- 💾 Scene document model: use `exportScene()` / `loadScene()` to persist commands, serializable shapes, and supported scene-level settings.
+- 🔗 Geometry relation layer: use `createRelation()` / `getRelationSnapshots()` to attach explainable relations such as parallel, perpendicular, equal-length, and distance assertions to public geometry targets.
+- 💾 Scene document model: use `exportScene()` / `loadScene()` to persist commands, serializable shapes, relations, and supported scene-level settings.
 - 👓 Productionized hidden-line 3D: switch runtime profiles, inspect snapshot stats / diagnostics, and keep occluded edges stable in teaching-oriented 3D scenes.
 - 🧪 Experimental playground dual-layer mode: built on top of engine `3d` mode and composed with an independent 2D layer.
 - 🧱 Layered-scene primitives: public `view3D.fitToBoard` and group-level `bindNativeEvent()` make multi-layer interaction easier to build in consumer apps.
@@ -121,7 +122,83 @@ engine.executeCommand('function-demo', 'y = sin(x) + 0.5*cos(2*x)', '#ff0000');
 engine.executeCommand('geometry-demo', 'c1 = Circle((0,0), (2,0))', '#0000ff');
 ```
 
-### 4. Switch to 3D mode
+### 4. Export / import scene documents
+
+```typescript
+import { GRAPH_SCENE_DOCUMENT_VERSION } from 'vuegraphx';
+
+const exportResult = engine.exportScene();
+
+if (exportResult.status === 'success' && exportResult.scene) {
+  console.log('scene version:', GRAPH_SCENE_DOCUMENT_VERSION);
+  console.log(JSON.stringify(exportResult.scene, null, 2));
+}
+
+const loadResult = engine.loadScene(`{
+  "version": 1,
+  "mode": "geometry",
+  "commands": [
+    { "id": "cmd_1", "expression": "A = (0,0)" },
+    { "id": "cmd_2", "expression": "B = (3,4)" }
+  ],
+  "shapes": [],
+  "relations": [
+    {
+      "id": "rel_1",
+      "kind": "distance-assertion",
+      "targets": [
+        { "ownerType": "command", "ownerId": "cmd_1", "targetId": "primary" },
+        { "ownerType": "command", "ownerId": "cmd_2", "targetId": "primary" }
+      ],
+      "params": { "expectedValue": 5 }
+    }
+  ]
+}`);
+
+console.log(loadResult.appliedCommands, loadResult.appliedShapes, loadResult.appliedRelations);
+console.log(loadResult.diagnostics);
+```
+
+Scene v1 boundaries:
+
+- Covers public `2d` / `3d` / `geometry` modes.
+- Persists commands, explicitly serializable shapes, public relation records, and a bounded set of scene-level settings.
+- `loadScene()` is replace-based, not merge-based.
+- Dual-layer state, active selection, floating-panel state, playback state, and URL-share protocol are not part of the public scene contract.
+
+### 4.1 Create geometry relations
+
+```typescript
+const created = engine.createRelation({
+  kind: 'distance-assertion',
+  targets: [
+    { ownerType: 'command', ownerId: 'cmd_1', targetId: 'primary' },
+    { ownerType: 'command', ownerId: 'cmd_2', targetId: 'primary' }
+  ],
+  params: {
+    expectedValue: 5
+  }
+});
+
+console.log(created.snapshot?.status);
+console.log(engine.getRelationSnapshots());
+```
+
+Current public v1 relation kinds:
+
+- `parallel`
+- `perpendicular`
+- `equal-length`
+- `distance-assertion`
+
+Current boundaries:
+
+- v1 is an explainable relation layer, not a general CAD-style global constraint solver.
+- The playground exposes a complete relation authoring panel in `geometry` mode.
+- `distance-assertion` is currently point-to-point only.
+- `parallel`, `perpendicular`, and `equal-length` currently evaluate and explain state changes during drag, but do not yet numerically force geometry back into compliance.
+
+### 5. Switch to 3D mode
 
 ```typescript
 engine.setMode('3d');
@@ -133,7 +210,7 @@ engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
 engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
 
-### 4.1 Tune hidden-line 3D
+### 5.1 Tune hidden-line 3D
 
 ```typescript
 engine.setHiddenLineOptions({
@@ -166,7 +243,7 @@ The current productized support matrix focuses on:
 
 More details: `docs/hidden-line-3d_en.md`.
 
-### 5. Building layered / dual-layer scenes in your app
+### 6. Building layered / dual-layer scenes in your app
 
 If your application needs stacked interaction layers, for example:
 
@@ -232,7 +309,7 @@ You can still combine it with the higher-level helpers:
 - `group.bindDrag()` for regular drag behavior
 - `group.getRenderNode(key)` to inspect the actual render node of a member
 
-### 6. About the playground dual-layer mode
+### 7. About the playground dual-layer mode
 
 Dual-layer mode is currently a playground-level composition, not a new public `EngineMode`. It demonstrates a math-software-oriented interaction model:
 

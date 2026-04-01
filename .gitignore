@@ -138,7 +138,3 @@ dist-playground
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-
-/docs/brainstorms
-/docs/ideation
-/docs/plans

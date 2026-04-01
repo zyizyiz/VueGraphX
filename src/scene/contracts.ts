@@ -1,4 +1,5 @@
 import type { EngineMode } from '../types/engine';
+import type { GraphSceneRelationNode } from '../relation/contracts';
 
 export const GRAPH_SCENE_DOCUMENT_VERSION = 1;
 
@@ -33,10 +34,11 @@ export interface GraphSceneDocument {
   settings?: GraphSceneSettings;
   commands: GraphSceneCommandNode[];
   shapes: GraphSceneShapeNode[];
+  relations?: GraphSceneRelationNode[];
 }
 
 export type GraphSceneDiagnosticSeverity = 'error' | 'warning';
-export type GraphSceneDiagnosticNodeKind = 'document' | 'command' | 'shape';
+export type GraphSceneDiagnosticNodeKind = 'document' | 'command' | 'shape' | 'relation';
 export type GraphSceneLoadStatus = 'success' | 'partial' | 'failure';
 export type GraphSceneExportStatus = 'success' | 'failure';
 
@@ -62,5 +64,5 @@ export interface GraphSceneLoadResult {
   diagnostics: GraphSceneDiagnostic[];
   appliedCommands: number;
   appliedShapes: number;
+  appliedRelations: number;
 }
-

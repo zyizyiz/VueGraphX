@@ -20,11 +20,21 @@ describe('GraphSceneState', () => {
 
     state.upsertCommand({ id: 'cmd_1', expression: 'a = 1' });
     state.addShape({ id: 'shape_1', entityType: 'circle', definitionType: 'circle', serializable: true });
+    state.upsertRelation({
+      id: 'rel_1',
+      kind: 'parallel',
+      targets: [
+        { ownerType: 'command', ownerId: 'cmd_1', targetId: 'primary' },
+        { ownerType: 'command', ownerId: 'cmd_2', targetId: 'primary' }
+      ]
+    });
     state.removeCommand('cmd_1');
     state.clearShapes();
+    state.clearRelations();
 
     expect(state.listCommands()).toEqual([]);
     expect(state.listShapes()).toEqual([]);
+    expect(state.listRelations()).toEqual([]);
   });
 
   it('rejects invalid shape records before they enter scene state', () => {
