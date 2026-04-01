@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLineFace
 
-Defined in: [rendering/hiddenLine/contracts.ts:7](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L7)
+Defined in: [rendering/hiddenLine/contracts.ts:7](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L7)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:7](https://github.com/zyizyiz/Vue
 
 > `optional` **id**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:8](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L8)
+Defined in: [rendering/hiddenLine/contracts.ts:8](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L8)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [rendering/hiddenLine/contracts.ts:8](https://github.com/zyizyiz/Vue
 
 > **indices**: `number`[]
 
-Defined in: [rendering/hiddenLine/contracts.ts:9](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L9)
+Defined in: [rendering/hiddenLine/contracts.ts:9](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L9)

@@ -6,7 +6,7 @@
 
 # Interface: GraphSelectionSnapshot
 
-Defined in: [types/capabilities.ts:71](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/types/capabilities.ts#L71)
+Defined in: [types/capabilities.ts:71](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/capabilities.ts#L71)
 
 当前选中图形实体的快照。
 
@@ -16,7 +16,7 @@ Defined in: [types/capabilities.ts:71](https://github.com/zyizyiz/VueGraphX/blob
 
 > **entityType**: `string`
 
-Defined in: [types/capabilities.ts:75](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/types/capabilities.ts#L75)
+Defined in: [types/capabilities.ts:75](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/capabilities.ts#L75)
 
 当前选中实体的类型。
 
@@ -26,7 +26,7 @@ Defined in: [types/capabilities.ts:75](https://github.com/zyizyiz/VueGraphX/blob
 
 > **entityId**: `string`
 
-Defined in: [types/capabilities.ts:80](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/types/capabilities.ts#L80)
+Defined in: [types/capabilities.ts:80](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/capabilities.ts#L80)
 
 当前选中实体的唯一 id。
 
@@ -36,7 +36,7 @@ Defined in: [types/capabilities.ts:80](https://github.com/zyizyiz/VueGraphX/blob
 
 > **entity**: `unknown`
 
-Defined in: [types/capabilities.ts:85](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/types/capabilities.ts#L85)
+Defined in: [types/capabilities.ts:85](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/capabilities.ts#L85)
 
 由图形作者定义的实体数据。
 
@@ -46,6 +46,6 @@ Defined in: [types/capabilities.ts:85](https://github.com/zyizyiz/VueGraphX/blob
 
 > `optional` **ui**: `Record`\<`string`, `unknown`\>
 
-Defined in: [types/capabilities.ts:90](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/types/capabilities.ts#L90)
+Defined in: [types/capabilities.ts:90](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/capabilities.ts#L90)
 
 与当前选中项相关的 UI 摆放和展示信息。

@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLineSourceHandle
 
-Defined in: [rendering/hiddenLine/contracts.ts:135](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L135)
+Defined in: [rendering/hiddenLine/contracts.ts:138](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L138)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:135](https://github.com/zyizyiz/V
 
 > **id**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:136](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L136)
+Defined in: [rendering/hiddenLine/contracts.ts:139](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L139)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:136](https://github.com/zyizyiz/V
 
 > **ownerId**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:137](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L137)
+Defined in: [rendering/hiddenLine/contracts.ts:140](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L140)
 
 ## Methods
 
@@ -30,7 +30,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:137](https://github.com/zyizyiz/V
 
 > **dispose**(): `boolean`
 
-Defined in: [rendering/hiddenLine/contracts.ts:138](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L138)
+Defined in: [rendering/hiddenLine/contracts.ts:141](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L141)
 
 #### Returns
 

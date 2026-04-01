@@ -234,6 +234,8 @@ export const wireframeCubeShapeDefinition = createComposedShapeDefinition<Wirefr
         const hiddenLineHidden = initialPayload.hiddenLine?.hidden ?? { strokeColor: '#475569', strokeWidth: 1.6, dash: 2, dashScale: true };
 
         hiddenLineHandle = api.registerHiddenLineSource({
+          debugLabel: 'shape:wireframe-cube',
+          tags: ['shape', 'wireframe-cube', '3d', 'mesh'],
           role: 'both',
           style: {
             visible: hiddenLineVisible,

@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLineMeshSourceData
 
-Defined in: [rendering/hiddenLine/contracts.ts:65](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L65)
+Defined in: [rendering/hiddenLine/contracts.ts:68](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L68)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:65](https://github.com/zyizyiz/Vu
 
 > **kind**: `"mesh"`
 
-Defined in: [rendering/hiddenLine/contracts.ts:66](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L66)
+Defined in: [rendering/hiddenLine/contracts.ts:69](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L69)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:66](https://github.com/zyizyiz/Vu
 
 > **vertices**: [`GraphHiddenLinePoint3D`](GraphHiddenLinePoint3D.md)[]
 
-Defined in: [rendering/hiddenLine/contracts.ts:67](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L67)
+Defined in: [rendering/hiddenLine/contracts.ts:70](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L70)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:67](https://github.com/zyizyiz/Vu
 
 > **faces**: [`GraphHiddenLineFace`](GraphHiddenLineFace.md)[]
 
-Defined in: [rendering/hiddenLine/contracts.ts:68](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L68)
+Defined in: [rendering/hiddenLine/contracts.ts:71](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L71)
 
 ***
 
@@ -38,4 +38,4 @@ Defined in: [rendering/hiddenLine/contracts.ts:68](https://github.com/zyizyiz/Vu
 
 > `optional` **edges**: [`GraphHiddenLinePolyline`](GraphHiddenLinePolyline.md)[]
 
-Defined in: [rendering/hiddenLine/contracts.ts:69](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L69)
+Defined in: [rendering/hiddenLine/contracts.ts:72](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L72)

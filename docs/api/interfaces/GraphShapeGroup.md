@@ -6,7 +6,7 @@
 
 # Interface: GraphShapeGroup
 
-Defined in: [architecture/shapes/contracts.ts:601](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L601)
+Defined in: [architecture/shapes/contracts.ts:601](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L601)
 
 对一个或多个 JSXGraph 对象的受管分组封装。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/shapes/contracts.ts:601](https://github.com/zyizyiz/Vu
 
 > **id**: `string`
 
-Defined in: [architecture/shapes/contracts.ts:605](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L605)
+Defined in: [architecture/shapes/contracts.ts:605](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L605)
 
 分组唯一 id。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/shapes/contracts.ts:605](https://github.com/zyizyiz/Vu
 
 > **members**: readonly [`GraphShapeGroupMember`](GraphShapeGroupMember.md)[]
 
-Defined in: [architecture/shapes/contracts.ts:610](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L610)
+Defined in: [architecture/shapes/contracts.ts:610](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L610)
 
 当前分组包含的成员列表。
 
@@ -36,7 +36,7 @@ Defined in: [architecture/shapes/contracts.ts:610](https://github.com/zyizyiz/Vu
 
 > **nativeGroup**: `any`
 
-Defined in: [architecture/shapes/contracts.ts:615](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L615)
+Defined in: [architecture/shapes/contracts.ts:615](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L615)
 
 若启用原生 group，则为对应 JSXGraph group；否则为 null。
 
@@ -46,7 +46,7 @@ Defined in: [architecture/shapes/contracts.ts:615](https://github.com/zyizyiz/Vu
 
 > **getMember**(`key`): [`GraphShapeGroupMember`](GraphShapeGroupMember.md) \| `null`
 
-Defined in: [architecture/shapes/contracts.ts:620](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L620)
+Defined in: [architecture/shapes/contracts.ts:620](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L620)
 
 返回指定 key 的成员。
 
@@ -66,7 +66,7 @@ Defined in: [architecture/shapes/contracts.ts:620](https://github.com/zyizyiz/Vu
 
 > **getObject**(`key`): `any`
 
-Defined in: [architecture/shapes/contracts.ts:625](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L625)
+Defined in: [architecture/shapes/contracts.ts:625](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L625)
 
 返回指定 key 对应的原始对象。
 
@@ -86,7 +86,7 @@ Defined in: [architecture/shapes/contracts.ts:625](https://github.com/zyizyiz/Vu
 
 > **getRenderNode**(`key`): `Element` \| `null`
 
-Defined in: [architecture/shapes/contracts.ts:630](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L630)
+Defined in: [architecture/shapes/contracts.ts:630](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L630)
 
 返回指定 key 成员对应的底层渲染节点。
 
@@ -106,7 +106,7 @@ Defined in: [architecture/shapes/contracts.ts:630](https://github.com/zyizyiz/Vu
 
 > **has**(`key`): `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:635](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L635)
+Defined in: [architecture/shapes/contracts.ts:635](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L635)
 
 判断分组中是否存在指定 key。
 
@@ -126,7 +126,7 @@ Defined in: [architecture/shapes/contracts.ts:635](https://github.com/zyizyiz/Vu
 
 > **keys**(): `string`[]
 
-Defined in: [architecture/shapes/contracts.ts:640](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L640)
+Defined in: [architecture/shapes/contracts.ts:640](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L640)
 
 返回全部成员 key。
 
@@ -140,7 +140,7 @@ Defined in: [architecture/shapes/contracts.ts:640](https://github.com/zyizyiz/Vu
 
 > **pick**(`keys`): `GraphShapeGroup`
 
-Defined in: [architecture/shapes/contracts.ts:645](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L645)
+Defined in: [architecture/shapes/contracts.ts:645](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L645)
 
 基于部分 key 创建子分组视图。
 
@@ -160,7 +160,7 @@ Defined in: [architecture/shapes/contracts.ts:645](https://github.com/zyizyiz/Vu
 
 > **forEach**(`callback`, `keys?`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:650](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L650)
+Defined in: [architecture/shapes/contracts.ts:650](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L650)
 
 遍历一个或多个成员。
 
@@ -184,7 +184,7 @@ Defined in: [architecture/shapes/contracts.ts:650](https://github.com/zyizyiz/Vu
 
 > **setAttribute**(`attributes`, `keys?`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:655](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L655)
+Defined in: [architecture/shapes/contracts.ts:655](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L655)
 
 批量设置成员属性。
 
@@ -208,7 +208,7 @@ Defined in: [architecture/shapes/contracts.ts:655](https://github.com/zyizyiz/Vu
 
 > **setVisible**(`visible`, `keys?`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:660](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L660)
+Defined in: [architecture/shapes/contracts.ts:660](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L660)
 
 批量控制成员可见性。
 
@@ -232,7 +232,7 @@ Defined in: [architecture/shapes/contracts.ts:660](https://github.com/zyizyiz/Vu
 
 > **show**(`keys?`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:665](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L665)
+Defined in: [architecture/shapes/contracts.ts:665](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L665)
 
 显示指定成员。
 
@@ -252,7 +252,7 @@ Defined in: [architecture/shapes/contracts.ts:665](https://github.com/zyizyiz/Vu
 
 > **hide**(`keys?`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:670](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L670)
+Defined in: [architecture/shapes/contracts.ts:670](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L670)
 
 隐藏指定成员。
 
@@ -272,7 +272,7 @@ Defined in: [architecture/shapes/contracts.ts:670](https://github.com/zyizyiz/Vu
 
 > **on**(`eventName`, `handler`, `keys?`): () => `void`
 
-Defined in: [architecture/shapes/contracts.ts:675](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L675)
+Defined in: [architecture/shapes/contracts.ts:675](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L675)
 
 绑定成员事件并返回解绑函数。
 
@@ -304,7 +304,7 @@ Defined in: [architecture/shapes/contracts.ts:675](https://github.com/zyizyiz/Vu
 
 > **onHit**(`handler`, `options?`): () => `void`
 
-Defined in: [architecture/shapes/contracts.ts:680](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L680)
+Defined in: [architecture/shapes/contracts.ts:680](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L680)
 
 绑定命中事件辅助逻辑并返回解绑函数。
 
@@ -332,7 +332,7 @@ Defined in: [architecture/shapes/contracts.ts:680](https://github.com/zyizyiz/Vu
 
 > **bindNativeEvent**(`eventName`, `handler`, `options?`): () => `void`
 
-Defined in: [architecture/shapes/contracts.ts:686](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L686)
+Defined in: [architecture/shapes/contracts.ts:686](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L686)
 
 直接为成员的原生渲染节点绑定 DOM 事件。
 适合多层透传、命中代理失效或需要更细粒度控制的场景。
@@ -365,7 +365,7 @@ Defined in: [architecture/shapes/contracts.ts:686](https://github.com/zyizyiz/Vu
 
 > **bindSelectOnHit**(`options?`): () => `void`
 
-Defined in: [architecture/shapes/contracts.ts:695](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L695)
+Defined in: [architecture/shapes/contracts.ts:695](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L695)
 
 绑定命中即选中的交互。
 
@@ -389,7 +389,7 @@ Defined in: [architecture/shapes/contracts.ts:695](https://github.com/zyizyiz/Vu
 
 > **bindDrag**(`options?`): () => `void`
 
-Defined in: [architecture/shapes/contracts.ts:700](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L700)
+Defined in: [architecture/shapes/contracts.ts:700](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L700)
 
 为一个或多个成员绑定拖拽交互。
 
@@ -413,7 +413,7 @@ Defined in: [architecture/shapes/contracts.ts:700](https://github.com/zyizyiz/Vu
 
 > **off**(`eventName?`, `keys?`): `void`
 
-Defined in: [architecture/shapes/contracts.ts:705](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L705)
+Defined in: [architecture/shapes/contracts.ts:705](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L705)
 
 解绑指定事件；未传 eventName 时解绑全部。
 

@@ -6,7 +6,7 @@
 
 # Interface: GraphSceneDiagnostic
 
-Defined in: scene/contracts.ts:43
+Defined in: [scene/contracts.ts:43](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L43)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: scene/contracts.ts:43
 
 > **code**: `string`
 
-Defined in: scene/contracts.ts:44
+Defined in: [scene/contracts.ts:44](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L44)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: scene/contracts.ts:44
 
 > **message**: `string`
 
-Defined in: scene/contracts.ts:45
+Defined in: [scene/contracts.ts:45](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L45)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: scene/contracts.ts:45
 
 > **severity**: [`GraphSceneDiagnosticSeverity`](../type-aliases/GraphSceneDiagnosticSeverity.md)
 
-Defined in: scene/contracts.ts:46
+Defined in: [scene/contracts.ts:46](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L46)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: scene/contracts.ts:46
 
 > `optional` **nodeKind**: [`GraphSceneDiagnosticNodeKind`](../type-aliases/GraphSceneDiagnosticNodeKind.md)
 
-Defined in: scene/contracts.ts:47
+Defined in: [scene/contracts.ts:47](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L47)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: scene/contracts.ts:47
 
 > `optional` **nodeId**: `string`
 
-Defined in: scene/contracts.ts:48
+Defined in: [scene/contracts.ts:48](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L48)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: scene/contracts.ts:48
 
 > `optional` **nodeType**: `string`
 
-Defined in: scene/contracts.ts:49
+Defined in: [scene/contracts.ts:49](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L49)
 
 ***
 
@@ -62,4 +62,4 @@ Defined in: scene/contracts.ts:49
 
 > `optional` **nodeIndex**: `number`
 
-Defined in: scene/contracts.ts:50
+Defined in: [scene/contracts.ts:50](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L50)

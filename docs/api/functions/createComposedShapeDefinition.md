@@ -8,7 +8,7 @@
 
 > **createComposedShapeDefinition**\<`Payload`, `StateType`\>(`definition`): [`GraphShapeDefinition`](../interfaces/GraphShapeDefinition.md)
 
-Defined in: [architecture/shapes/composition.ts:491](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/composition.ts#L491)
+Defined in: [architecture/shapes/composition.ts:491](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/composition.ts#L491)
 
 基于更高层的组合工厂创建公共图形定义。
 

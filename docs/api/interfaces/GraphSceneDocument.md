@@ -6,7 +6,7 @@
 
 # Interface: GraphSceneDocument
 
-Defined in: scene/contracts.ts:30
+Defined in: [scene/contracts.ts:30](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L30)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: scene/contracts.ts:30
 
 > **version**: `1`
 
-Defined in: scene/contracts.ts:31
+Defined in: [scene/contracts.ts:31](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L31)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: scene/contracts.ts:31
 
 > **mode**: [`EngineMode`](../type-aliases/EngineMode.md)
 
-Defined in: scene/contracts.ts:32
+Defined in: [scene/contracts.ts:32](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L32)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: scene/contracts.ts:32
 
 > `optional` **settings**: [`GraphSceneSettings`](GraphSceneSettings.md)
 
-Defined in: scene/contracts.ts:33
+Defined in: [scene/contracts.ts:33](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L33)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: scene/contracts.ts:33
 
 > **commands**: [`GraphSceneCommandNode`](GraphSceneCommandNode.md)[]
 
-Defined in: scene/contracts.ts:34
+Defined in: [scene/contracts.ts:34](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L34)
 
 ***
 
@@ -46,4 +46,4 @@ Defined in: scene/contracts.ts:34
 
 > **shapes**: [`GraphSceneShapeNode`](GraphSceneShapeNode.md)[]
 
-Defined in: scene/contracts.ts:35
+Defined in: [scene/contracts.ts:35](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L35)

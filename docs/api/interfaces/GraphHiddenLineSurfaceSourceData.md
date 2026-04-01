@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLineSurfaceSourceData
 
-Defined in: [rendering/hiddenLine/contracts.ts:97](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L97)
+Defined in: [rendering/hiddenLine/contracts.ts:100](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L100)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:97](https://github.com/zyizyiz/Vu
 
 > **kind**: `"surface"`
 
-Defined in: [rendering/hiddenLine/contracts.ts:98](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L98)
+Defined in: [rendering/hiddenLine/contracts.ts:101](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L101)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:98](https://github.com/zyizyiz/Vu
 
 > **uRange**: \[`number`, `number`\]
 
-Defined in: [rendering/hiddenLine/contracts.ts:99](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L99)
+Defined in: [rendering/hiddenLine/contracts.ts:102](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L102)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:99](https://github.com/zyizyiz/Vu
 
 > **vRange**: \[`number`, `number`\]
 
-Defined in: [rendering/hiddenLine/contracts.ts:100](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L100)
+Defined in: [rendering/hiddenLine/contracts.ts:103](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L103)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:100](https://github.com/zyizyiz/V
 
 > `optional` **stepsU**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:101](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L101)
+Defined in: [rendering/hiddenLine/contracts.ts:104](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L104)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:101](https://github.com/zyizyiz/V
 
 > `optional` **stepsV**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:102](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L102)
+Defined in: [rendering/hiddenLine/contracts.ts:105](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L105)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:102](https://github.com/zyizyiz/V
 
 > **evaluate**: (`u`, `v`) => [`GraphHiddenLinePoint3D`](GraphHiddenLinePoint3D.md) \| `null`
 
-Defined in: [rendering/hiddenLine/contracts.ts:103](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L103)
+Defined in: [rendering/hiddenLine/contracts.ts:106](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L106)
 
 #### Parameters
 
@@ -76,4 +76,4 @@ Defined in: [rendering/hiddenLine/contracts.ts:103](https://github.com/zyizyiz/V
 
 > `optional` **featureCurves**: [`GraphHiddenLineSurfaceFeatureCurve`](GraphHiddenLineSurfaceFeatureCurve.md)[]
 
-Defined in: [rendering/hiddenLine/contracts.ts:104](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L104)
+Defined in: [rendering/hiddenLine/contracts.ts:107](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L107)

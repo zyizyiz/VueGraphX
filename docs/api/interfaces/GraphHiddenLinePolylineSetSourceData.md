@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLinePolylineSetSourceData
 
-Defined in: [rendering/hiddenLine/contracts.ts:72](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L72)
+Defined in: [rendering/hiddenLine/contracts.ts:75](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L75)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:72](https://github.com/zyizyiz/Vu
 
 > **kind**: `"polyline-set"`
 
-Defined in: [rendering/hiddenLine/contracts.ts:73](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L73)
+Defined in: [rendering/hiddenLine/contracts.ts:76](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L76)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [rendering/hiddenLine/contracts.ts:73](https://github.com/zyizyiz/Vu
 
 > **polylines**: [`GraphHiddenLinePolyline`](GraphHiddenLinePolyline.md)[]
 
-Defined in: [rendering/hiddenLine/contracts.ts:74](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L74)
+Defined in: [rendering/hiddenLine/contracts.ts:77](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L77)

@@ -132,6 +132,8 @@ export class GenericInvocationHandler implements RenderHandler {
               const polySource = buildPolylineSource(parsedArgs);
               if (polySource) {
                 ctx.hiddenLine.registerSource({
+                  debugLabel: `command:${lowerType}`,
+                  tags: ['command', '3d', lowerType, 'edge'],
                   role: 'edge',
                   resolve: () => polySource
                 });
@@ -140,6 +142,8 @@ export class GenericInvocationHandler implements RenderHandler {
               const meshSource = buildPolygonMeshSource(parsedArgs);
               if (meshSource) {
                 ctx.hiddenLine.registerSource({
+                  debugLabel: 'command:polygon3d',
+                  tags: ['command', '3d', 'polygon3d', 'mesh'],
                   role: 'both',
                   resolve: () => meshSource
                 });

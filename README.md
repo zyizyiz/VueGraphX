@@ -57,6 +57,7 @@ VueGraphX 提供两条互补的能力主线：
 - 🎬 共享动画与标注能力：动画轨道、点标注、命中分组、拖拽与悬浮 UI 投影工具都是通用基础设施。
 - 📐 统一 2D / 3D 渲染入口：表达式渲染和 view3d 生命周期都通过同一个引擎门面管理。
 - 💾 Scene 文档模型：支持 `exportScene()` / `loadScene()`，覆盖 commands、serializable shapes 和受支持的 scene 级设置。
+- 👓 生产化 hidden-line 3D：支持运行时 profile 切换、snapshot stats / diagnostics，以及 3D 教学场景里的更稳定隐线显示。
 - 🧪 playground 双层模式：以 `3d` 引擎模式为底座，叠加独立的 2D 层，并通过对象级旋转查看立体结构。
 - 🧱 分层场景基础设施：内置 `view3D.fitToBoard` 和分组级 `bindNativeEvent()`，方便消费侧组合双层/多层交互。
 - 🛡️ 类型安全：公共类型、能力契约和 shape authoring API 都完整导出，适合二次封装和 IDE 自动提示。
@@ -188,6 +189,39 @@ console.log('当前 3D 视图是否可用:', !!view3d);
 engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
 engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
+
+### 4.1 调整 hidden-line 3D
+
+```typescript
+engine.setHiddenLineOptions({
+  enabled: true,
+  profile: 'quality',
+  debug: true
+});
+
+const hiddenLineSnapshot = engine.getHiddenLineSceneSnapshot();
+
+console.log(hiddenLineSnapshot.options.profile);
+console.log(hiddenLineSnapshot.stats.renderedPathCount);
+console.log(hiddenLineSnapshot.diagnostics);
+```
+
+当前建议：
+
+- `performance`：更适合复杂曲面较少、但更在意流畅度的场景
+- `balanced`：默认推荐档位
+- `quality`：更适合教学立体、曲面边界更重要的场景
+
+当前明确产品化的 hidden-line 支持矩阵主要围绕：
+
+- `mesh`
+- `polyline-set`
+- sampled `curve`
+- sampled `surface` / `featureCurves`
+- command 侧已接好的 3D line / polygon / surface 类场景
+- playground 的 `cube` / `wireframe-cube`
+
+更多细节见 `docs/hidden-line-3d.md`。
 
 ### 5. 在业务侧实现分层 / 双层场景
 

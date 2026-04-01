@@ -6,7 +6,7 @@
 
 # Class: GraphHiddenLineManager
 
-Defined in: [rendering/hiddenLine/manager.ts:153](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L153)
+Defined in: [rendering/hiddenLine/manager.ts:242](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L242)
 
 ## Constructors
 
@@ -14,13 +14,13 @@ Defined in: [rendering/hiddenLine/manager.ts:153](https://github.com/zyizyiz/Vue
 
 > **new GraphHiddenLineManager**(`boardMgr`, `options?`): `GraphHiddenLineManager`
 
-Defined in: [rendering/hiddenLine/manager.ts:160](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L160)
+Defined in: [rendering/hiddenLine/manager.ts:251](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L251)
 
 #### Parameters
 
 ##### boardMgr
 
-`GraphHiddenLineBoardManagerContext`
+`Pick`\<[`BoardManager`](BoardManager.md), `"mode"`\> & `Partial`\<`Pick`\<[`BoardManager`](BoardManager.md), `"view3d"` \| `"board"`\>\>
 
 ##### options?
 
@@ -36,7 +36,7 @@ Defined in: [rendering/hiddenLine/manager.ts:160](https://github.com/zyizyiz/Vue
 
 > **isEnabled**(): `boolean`
 
-Defined in: [rendering/hiddenLine/manager.ts:165](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L165)
+Defined in: [rendering/hiddenLine/manager.ts:259](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L259)
 
 #### Returns
 
@@ -48,7 +48,7 @@ Defined in: [rendering/hiddenLine/manager.ts:165](https://github.com/zyizyiz/Vue
 
 > **getOptions**(): [`GraphHiddenLineOptions`](../interfaces/GraphHiddenLineOptions.md)
 
-Defined in: [rendering/hiddenLine/manager.ts:169](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L169)
+Defined in: [rendering/hiddenLine/manager.ts:263](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L263)
 
 #### Returns
 
@@ -60,7 +60,7 @@ Defined in: [rendering/hiddenLine/manager.ts:169](https://github.com/zyizyiz/Vue
 
 > **setOptions**(`options?`): `void`
 
-Defined in: [rendering/hiddenLine/manager.ts:173](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L173)
+Defined in: [rendering/hiddenLine/manager.ts:267](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L267)
 
 #### Parameters
 
@@ -78,7 +78,7 @@ Defined in: [rendering/hiddenLine/manager.ts:173](https://github.com/zyizyiz/Vue
 
 > **registerSource**(`ownerId`, `descriptor`): [`GraphHiddenLineSourceHandle`](../interfaces/GraphHiddenLineSourceHandle.md)
 
-Defined in: [rendering/hiddenLine/manager.ts:178](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L178)
+Defined in: [rendering/hiddenLine/manager.ts:272](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L272)
 
 #### Parameters
 
@@ -100,7 +100,7 @@ Defined in: [rendering/hiddenLine/manager.ts:178](https://github.com/zyizyiz/Vue
 
 > **removeSource**(`sourceId`): `boolean`
 
-Defined in: [rendering/hiddenLine/manager.ts:192](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L192)
+Defined in: [rendering/hiddenLine/manager.ts:286](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L286)
 
 #### Parameters
 
@@ -118,7 +118,7 @@ Defined in: [rendering/hiddenLine/manager.ts:192](https://github.com/zyizyiz/Vue
 
 > **clearOwnerSources**(`ownerId`): `number`
 
-Defined in: [rendering/hiddenLine/manager.ts:200](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L200)
+Defined in: [rendering/hiddenLine/manager.ts:294](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L294)
 
 #### Parameters
 
@@ -136,7 +136,7 @@ Defined in: [rendering/hiddenLine/manager.ts:200](https://github.com/zyizyiz/Vue
 
 > **clearAllSources**(): `void`
 
-Defined in: [rendering/hiddenLine/manager.ts:208](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L208)
+Defined in: [rendering/hiddenLine/manager.ts:302](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L302)
 
 #### Returns
 
@@ -148,7 +148,7 @@ Defined in: [rendering/hiddenLine/manager.ts:208](https://github.com/zyizyiz/Vue
 
 > **update**(): [`GraphHiddenLineSceneSnapshot`](../interfaces/GraphHiddenLineSceneSnapshot.md)
 
-Defined in: [rendering/hiddenLine/manager.ts:214](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L214)
+Defined in: [rendering/hiddenLine/manager.ts:308](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L308)
 
 #### Returns
 
@@ -160,7 +160,7 @@ Defined in: [rendering/hiddenLine/manager.ts:214](https://github.com/zyizyiz/Vue
 
 > **getSnapshot**(): [`GraphHiddenLineSceneSnapshot`](../interfaces/GraphHiddenLineSceneSnapshot.md)
 
-Defined in: [rendering/hiddenLine/manager.ts:255](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/manager.ts#L255)
+Defined in: [rendering/hiddenLine/manager.ts:400](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/manager.ts#L400)
 
 #### Returns
 

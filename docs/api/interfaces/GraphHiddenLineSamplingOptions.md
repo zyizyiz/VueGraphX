@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLineSamplingOptions
 
-Defined in: [rendering/hiddenLine/contracts.ts:47](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L47)
+Defined in: [rendering/hiddenLine/contracts.ts:47](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L47)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:47](https://github.com/zyizyiz/Vu
 
 > `optional` **curveSegments**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:48](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L48)
+Defined in: [rendering/hiddenLine/contracts.ts:48](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L48)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:48](https://github.com/zyizyiz/Vu
 
 > `optional` **surfaceStepsU**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:49](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L49)
+Defined in: [rendering/hiddenLine/contracts.ts:49](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L49)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:49](https://github.com/zyizyiz/Vu
 
 > `optional` **surfaceStepsV**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:50](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L50)
+Defined in: [rendering/hiddenLine/contracts.ts:50](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L50)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:50](https://github.com/zyizyiz/Vu
 
 > `optional` **adaptive**: `boolean`
 
-Defined in: [rendering/hiddenLine/contracts.ts:51](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L51)
+Defined in: [rendering/hiddenLine/contracts.ts:51](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L51)
 
 ***
 
@@ -46,4 +46,4 @@ Defined in: [rendering/hiddenLine/contracts.ts:51](https://github.com/zyizyiz/Vu
 
 > `optional` **maxSubdivisions**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:52](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L52)
+Defined in: [rendering/hiddenLine/contracts.ts:52](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L52)

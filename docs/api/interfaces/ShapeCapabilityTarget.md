@@ -6,7 +6,7 @@
 
 # Interface: ShapeCapabilityTarget
 
-Defined in: [architecture/capabilities/contracts.ts:274](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L274)
+Defined in: [architecture/capabilities/contracts.ts:274](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L274)
 
 选中图形实例返回的标准化能力表面。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/capabilities/contracts.ts:274](https://github.com/zyiz
 
 > **entityType**: `string`
 
-Defined in: [architecture/capabilities/contracts.ts:278](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L278)
+Defined in: [architecture/capabilities/contracts.ts:278](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L278)
 
 实体类型。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/capabilities/contracts.ts:278](https://github.com/zyiz
 
 > **entityId**: `string`
 
-Defined in: [architecture/capabilities/contracts.ts:283](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L283)
+Defined in: [architecture/capabilities/contracts.ts:283](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L283)
 
 实体唯一 id。
 
@@ -36,7 +36,7 @@ Defined in: [architecture/capabilities/contracts.ts:283](https://github.com/zyiz
 
 > **entity**: `unknown`
 
-Defined in: [architecture/capabilities/contracts.ts:288](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L288)
+Defined in: [architecture/capabilities/contracts.ts:288](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L288)
 
 图形作者提供的实体数据。
 
@@ -46,7 +46,7 @@ Defined in: [architecture/capabilities/contracts.ts:288](https://github.com/zyiz
 
 > `optional` **ui**: `Record`\<`string`, `unknown`\>
 
-Defined in: [architecture/capabilities/contracts.ts:293](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L293)
+Defined in: [architecture/capabilities/contracts.ts:293](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L293)
 
 与外部 UI 摆放、样式或展示有关的附加信息。
 
@@ -56,7 +56,7 @@ Defined in: [architecture/capabilities/contracts.ts:293](https://github.com/zyiz
 
 > `optional` **inspect**: [`InspectCapabilityContract`](InspectCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:298](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L298)
+Defined in: [architecture/capabilities/contracts.ts:298](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L298)
 
 检查能力。
 
@@ -66,7 +66,7 @@ Defined in: [architecture/capabilities/contracts.ts:298](https://github.com/zyiz
 
 > `optional` **resize**: [`ResizeCapabilityContract`](ResizeCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:303](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L303)
+Defined in: [architecture/capabilities/contracts.ts:303](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L303)
 
 resize 或数值编辑能力。
 
@@ -76,7 +76,7 @@ resize 或数值编辑能力。
 
 > `optional` **auxiliaryLine**: [`ToggleCapabilityContract`](ToggleCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:308](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L308)
+Defined in: [architecture/capabilities/contracts.ts:308](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L308)
 
 辅助线开关能力。
 
@@ -86,7 +86,7 @@ Defined in: [architecture/capabilities/contracts.ts:308](https://github.com/zyiz
 
 > `optional` **projection**: [`ToggleCapabilityContract`](ToggleCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:313](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L313)
+Defined in: [architecture/capabilities/contracts.ts:313](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L313)
 
 投影开关能力。
 
@@ -96,7 +96,7 @@ Defined in: [architecture/capabilities/contracts.ts:313](https://github.com/zyiz
 
 > `optional` **annotation**: [`ToggleCapabilityContract`](ToggleCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:318](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L318)
+Defined in: [architecture/capabilities/contracts.ts:318](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L318)
 
 标注开关能力。
 
@@ -106,7 +106,7 @@ Defined in: [architecture/capabilities/contracts.ts:318](https://github.com/zyiz
 
 > `optional` **split**: [`SplitCapabilityContract`](SplitCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:323](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L323)
+Defined in: [architecture/capabilities/contracts.ts:323](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L323)
 
 拆分能力。
 
@@ -116,7 +116,7 @@ Defined in: [architecture/capabilities/contracts.ts:323](https://github.com/zyiz
 
 > `optional` **stylePanel**: [`StylePanelCapabilityContract`](StylePanelCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:328](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L328)
+Defined in: [architecture/capabilities/contracts.ts:328](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L328)
 
 样式面板入口能力。
 
@@ -126,7 +126,7 @@ Defined in: [architecture/capabilities/contracts.ts:328](https://github.com/zyiz
 
 > `optional` **strokeStyle**: [`ColorStyleCapabilityContract`](ColorStyleCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:333](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L333)
+Defined in: [architecture/capabilities/contracts.ts:333](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L333)
 
 描边颜色能力。
 
@@ -136,7 +136,7 @@ Defined in: [architecture/capabilities/contracts.ts:333](https://github.com/zyiz
 
 > `optional` **fillStyle**: [`ColorStyleCapabilityContract`](ColorStyleCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:338](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L338)
+Defined in: [architecture/capabilities/contracts.ts:338](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L338)
 
 填充颜色能力。
 
@@ -146,7 +146,7 @@ Defined in: [architecture/capabilities/contracts.ts:338](https://github.com/zyiz
 
 > `optional` **animation**: [`AnimationCapabilityContract`](AnimationCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:343](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L343)
+Defined in: [architecture/capabilities/contracts.ts:343](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L343)
 
 向后兼容的单轨动画能力别名。
 
@@ -156,7 +156,7 @@ Defined in: [architecture/capabilities/contracts.ts:343](https://github.com/zyiz
 
 > `optional` **animations**: [`AnimationCollectionCapabilityContract`](AnimationCollectionCapabilityContract.md)
 
-Defined in: [architecture/capabilities/contracts.ts:348](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L348)
+Defined in: [architecture/capabilities/contracts.ts:348](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L348)
 
 多轨动画能力集合。
 
@@ -166,7 +166,7 @@ Defined in: [architecture/capabilities/contracts.ts:348](https://github.com/zyiz
 
 > `optional` **remove**: () => `void`
 
-Defined in: [architecture/capabilities/contracts.ts:353](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/capabilities/contracts.ts#L353)
+Defined in: [architecture/capabilities/contracts.ts:353](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L353)
 
 删除当前实体的入口。
 

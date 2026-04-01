@@ -6,7 +6,7 @@
 
 # Class: MathScope
 
-Defined in: [math/MathScope.ts:6](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/math/MathScope.ts#L6)
+Defined in: [math/MathScope.ts:6](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/math/MathScope.ts#L6)
 
 供表达式渲染器共享使用的可变求值作用域。
 
@@ -26,7 +26,7 @@ Defined in: [math/MathScope.ts:6](https://github.com/zyizyiz/VueGraphX/blob/4b71
 
 > **data**: `any` = `{}`
 
-Defined in: [math/MathScope.ts:7](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/math/MathScope.ts#L7)
+Defined in: [math/MathScope.ts:7](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/math/MathScope.ts#L7)
 
 ## Methods
 
@@ -34,7 +34,7 @@ Defined in: [math/MathScope.ts:7](https://github.com/zyizyiz/VueGraphX/blob/4b71
 
 > **clear**(): `void`
 
-Defined in: [math/MathScope.ts:12](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/math/MathScope.ts#L12)
+Defined in: [math/MathScope.ts:12](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/math/MathScope.ts#L12)
 
 清空作用域中保存的所有变量。
 
@@ -48,7 +48,7 @@ Defined in: [math/MathScope.ts:12](https://github.com/zyizyiz/VueGraphX/blob/4b7
 
 > **evaluate**(`node`): `any`
 
-Defined in: [math/MathScope.ts:19](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/math/MathScope.ts#L19)
+Defined in: [math/MathScope.ts:19](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/math/MathScope.ts#L19)
 
 基于当前作用域执行一个编译后的 mathjs 节点。
 

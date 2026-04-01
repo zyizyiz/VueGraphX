@@ -6,7 +6,7 @@
 
 # Interface: GraphScreenPoint
 
-Defined in: [architecture/shapes/contracts.ts:148](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L148)
+Defined in: [architecture/shapes/contracts.ts:148](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L148)
 
 以像素表示的屏幕坐标点。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/shapes/contracts.ts:148](https://github.com/zyizyiz/Vu
 
 > **x**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:152](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L152)
+Defined in: [architecture/shapes/contracts.ts:152](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L152)
 
 水平方向像素坐标。
 
@@ -26,6 +26,6 @@ Defined in: [architecture/shapes/contracts.ts:152](https://github.com/zyizyiz/Vu
 
 > **y**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:157](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L157)
+Defined in: [architecture/shapes/contracts.ts:157](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L157)
 
 垂直方向像素坐标。

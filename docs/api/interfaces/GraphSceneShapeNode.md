@@ -6,7 +6,7 @@
 
 # Interface: GraphSceneShapeNode
 
-Defined in: scene/contracts.ts:24
+Defined in: [scene/contracts.ts:24](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L24)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: scene/contracts.ts:24
 
 > `optional` **id**: `string`
 
-Defined in: scene/contracts.ts:25
+Defined in: [scene/contracts.ts:25](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L25)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: scene/contracts.ts:25
 
 > **type**: `string`
 
-Defined in: scene/contracts.ts:26
+Defined in: [scene/contracts.ts:26](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L26)
 
 ***
 
@@ -30,4 +30,4 @@ Defined in: scene/contracts.ts:26
 
 > `optional` **payload**: `unknown`
 
-Defined in: scene/contracts.ts:27
+Defined in: [scene/contracts.ts:27](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L27)

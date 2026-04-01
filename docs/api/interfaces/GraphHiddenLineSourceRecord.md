@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLineSourceRecord\<TData\>
 
-Defined in: [rendering/hiddenLine/contracts.ts:127](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L127)
+Defined in: [rendering/hiddenLine/contracts.ts:130](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L130)
 
 ## Type Parameters
 
@@ -20,7 +20,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:127](https://github.com/zyizyiz/V
 
 > **id**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:128](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L128)
+Defined in: [rendering/hiddenLine/contracts.ts:131](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L131)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:128](https://github.com/zyizyiz/V
 
 > **ownerId**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:129](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L129)
+Defined in: [rendering/hiddenLine/contracts.ts:132](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L132)
 
 ***
 
@@ -36,7 +36,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:129](https://github.com/zyizyiz/V
 
 > **order**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:131](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L131)
+Defined in: [rendering/hiddenLine/contracts.ts:134](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L134)
 
 全局注册顺序，后注册的数值更大，作为遮挡排序优先级。
 
@@ -46,4 +46,4 @@ Defined in: [rendering/hiddenLine/contracts.ts:131](https://github.com/zyizyiz/V
 
 > **descriptor**: [`GraphHiddenLineSourceDescriptor`](GraphHiddenLineSourceDescriptor.md)\<`TData`\>
 
-Defined in: [rendering/hiddenLine/contracts.ts:132](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L132)
+Defined in: [rendering/hiddenLine/contracts.ts:135](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L135)

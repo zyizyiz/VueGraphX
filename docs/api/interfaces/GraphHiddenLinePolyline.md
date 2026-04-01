@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLinePolyline
 
-Defined in: [rendering/hiddenLine/contracts.ts:14](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L14)
+Defined in: [rendering/hiddenLine/contracts.ts:14](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L14)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:14](https://github.com/zyizyiz/Vu
 
 > `optional` **id**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:15](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L15)
+Defined in: [rendering/hiddenLine/contracts.ts:15](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L15)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:15](https://github.com/zyizyiz/Vu
 
 > **points**: [`GraphHiddenLinePoint3D`](GraphHiddenLinePoint3D.md)[]
 
-Defined in: [rendering/hiddenLine/contracts.ts:16](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L16)
+Defined in: [rendering/hiddenLine/contracts.ts:16](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L16)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:16](https://github.com/zyizyiz/Vu
 
 > `optional` **closed**: `boolean`
 
-Defined in: [rendering/hiddenLine/contracts.ts:17](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L17)
+Defined in: [rendering/hiddenLine/contracts.ts:17](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L17)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:17](https://github.com/zyizyiz/Vu
 
 > `optional` **ignoreOwnerOcclusion**: `boolean`
 
-Defined in: [rendering/hiddenLine/contracts.ts:18](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L18)
+Defined in: [rendering/hiddenLine/contracts.ts:18](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L18)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:18](https://github.com/zyizyiz/Vu
 
 > `optional` **sampleVisibility**: (`point`) => [`GraphHiddenLineBaseVisibility`](../type-aliases/GraphHiddenLineBaseVisibility.md) \| `null` \| `undefined`
 
-Defined in: [rendering/hiddenLine/contracts.ts:19](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L19)
+Defined in: [rendering/hiddenLine/contracts.ts:19](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L19)
 
 #### Parameters
 

@@ -7,6 +7,7 @@ import type {
   GraphHiddenLinePoint3D,
   GraphHiddenLinePolyline,
   GraphHiddenLinePolylineSetSourceData,
+  GraphHiddenLineSourceData,
   GraphHiddenLineSourceRecord,
   GraphHiddenLineStyleSpec,
   GraphHiddenLineSurfaceFeatureCurve,
@@ -345,15 +346,22 @@ const resolveSurfaceSource = (
   };
 };
 
+export const resolveHiddenLineSceneSourceData = (
+  record: GraphHiddenLineSourceRecord,
+  data: GraphHiddenLineSourceData,
+  options: GraphHiddenLineOptions
+): GraphHiddenLineResolvedSceneSource | null => {
+  if (data.kind === 'mesh') return resolveMeshSource(record, data);
+  if (data.kind === 'polyline-set') return resolvePolylineSetSource(record, data);
+  if (data.kind === 'curve') return resolveCurveSource(record, data, options);
+  return resolveSurfaceSource(record, data, options);
+};
+
 export const resolveHiddenLineSceneSource = (
   record: GraphHiddenLineSourceRecord,
   options: GraphHiddenLineOptions
 ): GraphHiddenLineResolvedSceneSource | null => {
   const data = record.descriptor.resolve();
   if (!data) return null;
-
-  if (data.kind === 'mesh') return resolveMeshSource(record, data);
-  if (data.kind === 'polyline-set') return resolvePolylineSetSource(record, data);
-  if (data.kind === 'curve') return resolveCurveSource(record, data, options);
-  return resolveSurfaceSource(record, data, options);
+  return resolveHiddenLineSceneSourceData(record, data, options);
 };

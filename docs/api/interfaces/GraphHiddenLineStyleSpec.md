@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLineStyleSpec
 
-Defined in: [rendering/hiddenLine/contracts.ts:31](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L31)
+Defined in: [rendering/hiddenLine/contracts.ts:31](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L31)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:31](https://github.com/zyizyiz/Vu
 
 > `optional` **visible**: [`GraphHiddenLineEdgeStyle`](GraphHiddenLineEdgeStyle.md)
 
-Defined in: [rendering/hiddenLine/contracts.ts:32](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L32)
+Defined in: [rendering/hiddenLine/contracts.ts:32](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L32)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [rendering/hiddenLine/contracts.ts:32](https://github.com/zyizyiz/Vu
 
 > `optional` **hidden**: [`GraphHiddenLineEdgeStyle`](GraphHiddenLineEdgeStyle.md)
 
-Defined in: [rendering/hiddenLine/contracts.ts:33](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L33)
+Defined in: [rendering/hiddenLine/contracts.ts:33](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L33)

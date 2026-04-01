@@ -6,7 +6,7 @@
 
 # Interface: GraphSceneSettings
 
-Defined in: scene/contracts.ts:5
+Defined in: [scene/contracts.ts:5](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L5)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: scene/contracts.ts:5
 
 > `optional` **boundingbox**: \[`number`, `number`, `number`, `number`\]
 
-Defined in: scene/contracts.ts:6
+Defined in: [scene/contracts.ts:6](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L6)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: scene/contracts.ts:6
 
 > `optional` **axis**: `boolean`
 
-Defined in: scene/contracts.ts:7
+Defined in: [scene/contracts.ts:7](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L7)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: scene/contracts.ts:7
 
 > `optional` **showNavigation**: `boolean`
 
-Defined in: scene/contracts.ts:8
+Defined in: [scene/contracts.ts:8](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L8)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: scene/contracts.ts:8
 
 > `optional` **keepaspectratio**: `boolean`
 
-Defined in: scene/contracts.ts:9
+Defined in: [scene/contracts.ts:9](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L9)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: scene/contracts.ts:9
 
 > `optional` **view3D**: `object`
 
-Defined in: scene/contracts.ts:10
+Defined in: [scene/contracts.ts:10](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L10)
 
 #### hiddenLine?
 

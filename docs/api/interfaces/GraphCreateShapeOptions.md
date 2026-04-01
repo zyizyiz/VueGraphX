@@ -6,7 +6,7 @@
 
 # Interface: GraphCreateShapeOptions
 
-Defined in: [engine/GraphXEngine.ts:70](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/engine/GraphXEngine.ts#L70)
+Defined in: [engine/GraphXEngine.ts:70](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/engine/GraphXEngine.ts#L70)
 
 ## Properties
 
@@ -14,4 +14,4 @@ Defined in: [engine/GraphXEngine.ts:70](https://github.com/zyizyiz/VueGraphX/blo
 
 > `optional` **select**: `boolean`
 
-Defined in: [engine/GraphXEngine.ts:71](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/engine/GraphXEngine.ts#L71)
+Defined in: [engine/GraphXEngine.ts:71](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/engine/GraphXEngine.ts#L71)

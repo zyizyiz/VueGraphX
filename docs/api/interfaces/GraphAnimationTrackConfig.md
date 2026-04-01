@@ -6,7 +6,7 @@
 
 # Interface: GraphAnimationTrackConfig
 
-Defined in: [architecture/shapes/contracts.ts:432](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L432)
+Defined in: [architecture/shapes/contracts.ts:432](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L432)
 
 创建动画轨道时使用的静态配置。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/shapes/contracts.ts:432](https://github.com/zyizyiz/Vu
 
 > **id**: `string`
 
-Defined in: [architecture/shapes/contracts.ts:436](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L436)
+Defined in: [architecture/shapes/contracts.ts:436](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L436)
 
 动画轨道唯一 id。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/shapes/contracts.ts:436](https://github.com/zyizyiz/Vu
 
 > `optional` **label**: `string`
 
-Defined in: [architecture/shapes/contracts.ts:441](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L441)
+Defined in: [architecture/shapes/contracts.ts:441](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L441)
 
 轨道名称。
 
@@ -36,7 +36,7 @@ Defined in: [architecture/shapes/contracts.ts:441](https://github.com/zyizyiz/Vu
 
 > `optional` **initialProgress**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:446](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L446)
+Defined in: [architecture/shapes/contracts.ts:446](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L446)
 
 初始进度值。
 
@@ -46,7 +46,7 @@ Defined in: [architecture/shapes/contracts.ts:446](https://github.com/zyizyiz/Vu
 
 > `optional` **min**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:451](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L451)
+Defined in: [architecture/shapes/contracts.ts:451](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L451)
 
 最小进度值。
 
@@ -56,7 +56,7 @@ Defined in: [architecture/shapes/contracts.ts:451](https://github.com/zyizyiz/Vu
 
 > `optional` **max**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:456](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L456)
+Defined in: [architecture/shapes/contracts.ts:456](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L456)
 
 最大进度值。
 
@@ -66,7 +66,7 @@ Defined in: [architecture/shapes/contracts.ts:456](https://github.com/zyizyiz/Vu
 
 > `optional` **step**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:461](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L461)
+Defined in: [architecture/shapes/contracts.ts:461](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L461)
 
 推荐步长。
 
@@ -76,7 +76,7 @@ Defined in: [architecture/shapes/contracts.ts:461](https://github.com/zyizyiz/Vu
 
 > `optional` **duration**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:466](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L466)
+Defined in: [architecture/shapes/contracts.ts:466](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L466)
 
 默认播放时长，单位毫秒。
 
@@ -86,7 +86,7 @@ Defined in: [architecture/shapes/contracts.ts:466](https://github.com/zyizyiz/Vu
 
 > `optional` **loop**: `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:471](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L471)
+Defined in: [architecture/shapes/contracts.ts:471](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L471)
 
 是否默认开启循环。
 
@@ -96,7 +96,7 @@ Defined in: [architecture/shapes/contracts.ts:471](https://github.com/zyizyiz/Vu
 
 > `optional` **yoyo**: `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:476](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L476)
+Defined in: [architecture/shapes/contracts.ts:476](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L476)
 
 是否默认开启往返播放。
 
@@ -106,7 +106,7 @@ Defined in: [architecture/shapes/contracts.ts:476](https://github.com/zyizyiz/Vu
 
 > `optional` **easing**: [`GraphAnimationEasing`](../type-aliases/GraphAnimationEasing.md)
 
-Defined in: [architecture/shapes/contracts.ts:481](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L481)
+Defined in: [architecture/shapes/contracts.ts:481](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L481)
 
 默认缓动函数。
 
@@ -116,7 +116,7 @@ Defined in: [architecture/shapes/contracts.ts:481](https://github.com/zyizyiz/Vu
 
 > `optional` **onProgress**: (`value`, `track`) => `void`
 
-Defined in: [architecture/shapes/contracts.ts:486](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/architecture/shapes/contracts.ts#L486)
+Defined in: [architecture/shapes/contracts.ts:486](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L486)
 
 每次进度变化时触发的回调。
 

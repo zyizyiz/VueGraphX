@@ -13,6 +13,7 @@ This document describes the VueGraphX architecture. The project is organized aro
 - Capability-first interaction: external UI should react to generic capability descriptors instead of calling shape-specific APIs.
 - Decoupled shape authoring: the library exposes reusable authoring primitives, while concrete shapes should usually live in consumer code or the playground.
 - Shared 2D / 3D infrastructure: projection helpers, screen bounds, anchors, animation scheduling, and point annotations are reusable across shapes and modes.
+- Engine-level hidden-line scene model: 3D edge visibility, runtime tuning, and diagnostics are coordinated centrally instead of being reimplemented per shape.
 - Rendering and runtime coexist: command rendering is ideal for expressions, while shape runtime is ideal for complex interactive objects.
 
 ## 2. Current Directory Layout
@@ -124,6 +125,34 @@ Why this design exists:
 - if axes, grids, annotations, or controls are added as normal 3D elements, they inherit face occlusion, layering, and hit behavior that feels wrong for a coordinate system
 - dual-layer mode is intentionally treated as a playground-level experiment before expanding the public engine mode surface
 - the reusable parts of this experiment, such as `view3D.fitToBoard`, `createGroup()`, and `bindNativeEvent()`, should live in `src` as public API rather than remaining hidden in playground-only code
+
+### 3.5 Hidden-line 3D scene model
+
+Hidden-line 3D is now treated as engine-level scene infrastructure rather than a one-off renderer trick.
+
+The main public integration points are:
+
+- `GraphXEngine.registerHiddenLineSource()` / `removeHiddenLineSource()` / `clearHiddenLineSources()`
+- `GraphXEngine.getHiddenLineSceneSnapshot()` / `getHiddenLineOptions()` / `setHiddenLineOptions()`
+- `GraphShapeApi.registerHiddenLineSource()` for shape-side registration
+- `RenderContext.hiddenLine` for renderer-side adapters
+
+This architecture matters because:
+
+- shapes and render handlers can both contribute semantic hidden-line sources to one shared manager
+- runtime tuning stays explicit through `performance` / `balanced` / `quality` profiles
+- diagnostics and scene stats are public, so playground tooling and downstream apps can inspect the feature without reaching into private runtime state
+
+The current productized support matrix focuses on:
+
+- `mesh`
+- `polyline-set`
+- sampled `curve`
+- sampled `surface` plus `featureCurves`
+- connected 3D line / polygon / surface command adapters
+- playground `cube` / `wireframe-cube`
+
+Not every JSXGraph 3D object is guaranteed to participate in hidden-line yet; that boundary is intentional while the support matrix grows.
 
 ## 4. Shared Infrastructure for Shape Authors
 

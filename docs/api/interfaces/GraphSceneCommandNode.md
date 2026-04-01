@@ -6,7 +6,7 @@
 
 # Interface: GraphSceneCommandNode
 
-Defined in: scene/contracts.ts:17
+Defined in: [scene/contracts.ts:17](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L17)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: scene/contracts.ts:17
 
 > **id**: `string`
 
-Defined in: scene/contracts.ts:18
+Defined in: [scene/contracts.ts:18](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L18)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: scene/contracts.ts:18
 
 > **expression**: `string`
 
-Defined in: scene/contracts.ts:19
+Defined in: [scene/contracts.ts:19](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L19)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: scene/contracts.ts:19
 
 > `optional` **color**: `string`
 
-Defined in: scene/contracts.ts:20
+Defined in: [scene/contracts.ts:20](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L20)
 
 ***
 
@@ -38,4 +38,4 @@ Defined in: scene/contracts.ts:20
 
 > `optional` **options**: `unknown`
 
-Defined in: scene/contracts.ts:21
+Defined in: [scene/contracts.ts:21](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L21)

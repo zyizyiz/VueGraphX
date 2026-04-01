@@ -36,6 +36,8 @@ That makes it suitable both as a standalone rendering engine and as the runtime 
 - 🧩 Composable shape authoring: build local shapes with `createComposedShapeDefinition()`, `GraphShapeApi`, and `GraphShapeContext`.
 - 🎬 Shared runtime utilities: animation tracks, point annotations, hit groups, drag helpers, and screen projection helpers are reusable across shapes.
 - 📐 Unified 2D / 3D entry point: expression rendering and `view3d` lifecycle are managed through the same engine facade.
+- 💾 Scene document model: use `exportScene()` / `loadScene()` to persist commands, serializable shapes, and supported scene-level settings.
+- 👓 Productionized hidden-line 3D: switch runtime profiles, inspect snapshot stats / diagnostics, and keep occluded edges stable in teaching-oriented 3D scenes.
 - 🧪 Experimental playground dual-layer mode: built on top of engine `3d` mode and composed with an independent 2D layer.
 - 🧱 Layered-scene primitives: public `view3D.fitToBoard` and group-level `bindNativeEvent()` make multi-layer interaction easier to build in consumer apps.
 - 🛡️ Type-safe public surface: engine options, capability contracts, and shape authoring interfaces are exported for downstream integrations.
@@ -130,6 +132,39 @@ console.log('3D view is ready:', !!view3d);
 engine.executeCommand('surface-demo', 'z = sin(x) * cos(y)', '#42b883');
 engine.executeCommand('line-demo', 'Line((0,0,0), (1,1,1))', '#e74c3c');
 ```
+
+### 4.1 Tune hidden-line 3D
+
+```typescript
+engine.setHiddenLineOptions({
+  enabled: true,
+  profile: 'quality',
+  debug: true
+});
+
+const hiddenLineSnapshot = engine.getHiddenLineSceneSnapshot();
+
+console.log(hiddenLineSnapshot.options.profile);
+console.log(hiddenLineSnapshot.stats.renderedPathCount);
+console.log(hiddenLineSnapshot.diagnostics);
+```
+
+Current guidance:
+
+- `performance`: better for scenes where frame rate matters more than surface-edge fidelity
+- `balanced`: the default recommended profile
+- `quality`: better for teaching solids and scenes where surface / curve boundaries matter more
+
+The current productized support matrix focuses on:
+
+- `mesh`
+- `polyline-set`
+- sampled `curve`
+- sampled `surface` / `featureCurves`
+- connected 3D line / polygon / surface cases handled by the command-side adapters
+- playground `cube` / `wireframe-cube`
+
+More details: `docs/hidden-line-3d_en.md`.
 
 ### 5. Building layered / dual-layer scenes in your app
 
@@ -235,6 +270,7 @@ This lets the UI layer reason about capabilities instead of shape-specific imple
 
 - 📖 [Architecture Design (ARCHITECTURE_en.md)](./docs/ARCHITECTURE_en.md)
 - 🛠 [Development Guide (DEVELOPMENT_en.md)](./docs/DEVELOPMENT_en.md)
+- 👓 [Hidden Line 3D](./docs/hidden-line-3d_en.md)
 - 📘 [API Reference (generated)](./docs/api/README.md)
 
 To regenerate the API reference:

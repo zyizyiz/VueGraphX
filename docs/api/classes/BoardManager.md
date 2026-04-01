@@ -6,7 +6,7 @@
 
 # Class: BoardManager
 
-Defined in: [board/BoardManager.ts:47](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L47)
+Defined in: [board/BoardManager.ts:47](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L47)
 
 供公共引擎门面调用的底层画板生命周期管理器。
 
@@ -16,7 +16,7 @@ Defined in: [board/BoardManager.ts:47](https://github.com/zyizyiz/VueGraphX/blob
 
 > **new BoardManager**(`containerId`, `options?`): `BoardManager`
 
-Defined in: [board/BoardManager.ts:59](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L59)
+Defined in: [board/BoardManager.ts:59](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L59)
 
 创建一个绑定到指定 DOM 容器 id 的画板管理器。
 
@@ -40,7 +40,7 @@ Defined in: [board/BoardManager.ts:59](https://github.com/zyizyiz/VueGraphX/blob
 
 > **board**: `Board`
 
-Defined in: [board/BoardManager.ts:48](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L48)
+Defined in: [board/BoardManager.ts:48](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L48)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [board/BoardManager.ts:48](https://github.com/zyizyiz/VueGraphX/blob
 
 > **view3d**: [`JXGView3D`](../interfaces/JXGView3D.md) \| `null` = `null`
 
-Defined in: [board/BoardManager.ts:49](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L49)
+Defined in: [board/BoardManager.ts:49](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L49)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [board/BoardManager.ts:49](https://github.com/zyizyiz/VueGraphX/blob
 
 > **mode**: [`EngineMode`](../type-aliases/EngineMode.md) = `'2d'`
 
-Defined in: [board/BoardManager.ts:50](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L50)
+Defined in: [board/BoardManager.ts:50](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L50)
 
 ## Methods
 
@@ -64,7 +64,7 @@ Defined in: [board/BoardManager.ts:50](https://github.com/zyizyiz/VueGraphX/blob
 
 > **initBoard**(): `void`
 
-Defined in: [board/BoardManager.ts:89](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L89)
+Defined in: [board/BoardManager.ts:89](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L89)
 
 使用当前模式与配置初始化或重建 JSXGraph 画板。
 
@@ -78,7 +78,7 @@ Defined in: [board/BoardManager.ts:89](https://github.com/zyizyiz/VueGraphX/blob
 
 > **syncView3DToBoard**(): `void`
 
-Defined in: [board/BoardManager.ts:150](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L150)
+Defined in: [board/BoardManager.ts:150](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L150)
 
 #### Returns
 
@@ -90,7 +90,7 @@ Defined in: [board/BoardManager.ts:150](https://github.com/zyizyiz/VueGraphX/blo
 
 > **setMode**(`mode`, `options?`): `boolean`
 
-Defined in: [board/BoardManager.ts:172](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L172)
+Defined in: [board/BoardManager.ts:172](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L172)
 
 切换画板模式，并可选地替换全局画板配置。
 
@@ -114,7 +114,7 @@ Defined in: [board/BoardManager.ts:172](https://github.com/zyizyiz/VueGraphX/blo
 
 > **resetBoard**(`options?`): `void`
 
-Defined in: [board/BoardManager.ts:185](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L185)
+Defined in: [board/BoardManager.ts:185](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L185)
 
 在保留当前模式的前提下重建画板。
 
@@ -134,7 +134,7 @@ Defined in: [board/BoardManager.ts:185](https://github.com/zyizyiz/VueGraphX/blo
 
 > **destroy**(): `void`
 
-Defined in: [board/BoardManager.ts:195](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/board/BoardManager.ts#L195)
+Defined in: [board/BoardManager.ts:195](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/board/BoardManager.ts#L195)
 
 释放底层 JSXGraph 画板资源。
 

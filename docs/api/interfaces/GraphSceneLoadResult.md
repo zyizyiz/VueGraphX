@@ -6,7 +6,7 @@
 
 # Interface: GraphSceneLoadResult
 
-Defined in: scene/contracts.ts:59
+Defined in: [scene/contracts.ts:59](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L59)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: scene/contracts.ts:59
 
 > **status**: [`GraphSceneLoadStatus`](../type-aliases/GraphSceneLoadStatus.md)
 
-Defined in: scene/contracts.ts:60
+Defined in: [scene/contracts.ts:60](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L60)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: scene/contracts.ts:60
 
 > **scene**: [`GraphSceneDocument`](GraphSceneDocument.md) \| `null`
 
-Defined in: scene/contracts.ts:61
+Defined in: [scene/contracts.ts:61](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L61)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: scene/contracts.ts:61
 
 > **diagnostics**: [`GraphSceneDiagnostic`](GraphSceneDiagnostic.md)[]
 
-Defined in: scene/contracts.ts:62
+Defined in: [scene/contracts.ts:62](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L62)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: scene/contracts.ts:62
 
 > **appliedCommands**: `number`
 
-Defined in: scene/contracts.ts:63
+Defined in: [scene/contracts.ts:63](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L63)
 
 ***
 
@@ -46,4 +46,4 @@ Defined in: scene/contracts.ts:63
 
 > **appliedShapes**: `number`
 
-Defined in: scene/contracts.ts:64
+Defined in: [scene/contracts.ts:64](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/scene/contracts.ts#L64)

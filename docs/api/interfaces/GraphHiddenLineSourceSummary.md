@@ -6,7 +6,7 @@
 
 # Interface: GraphHiddenLineSourceSummary
 
-Defined in: [rendering/hiddenLine/contracts.ts:141](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L141)
+Defined in: [rendering/hiddenLine/contracts.ts:144](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L144)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:141](https://github.com/zyizyiz/V
 
 > **sourceId**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:142](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L142)
+Defined in: [rendering/hiddenLine/contracts.ts:145](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L145)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:142](https://github.com/zyizyiz/V
 
 > **ownerId**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:143](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L143)
+Defined in: [rendering/hiddenLine/contracts.ts:146](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L146)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:143](https://github.com/zyizyiz/V
 
 > `optional` **order**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:144](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L144)
+Defined in: [rendering/hiddenLine/contracts.ts:147](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L147)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:144](https://github.com/zyizyiz/V
 
 > **kind**: `"mesh"` \| `"polyline-set"` \| `"curve"` \| `"surface"`
 
-Defined in: [rendering/hiddenLine/contracts.ts:145](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L145)
+Defined in: [rendering/hiddenLine/contracts.ts:148](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L148)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:145](https://github.com/zyizyiz/V
 
 > **role**: [`GraphHiddenLineOcclusionRole`](../type-aliases/GraphHiddenLineOcclusionRole.md)
 
-Defined in: [rendering/hiddenLine/contracts.ts:146](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L146)
+Defined in: [rendering/hiddenLine/contracts.ts:149](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L149)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:146](https://github.com/zyizyiz/V
 
 > `optional` **debugLabel**: `string`
 
-Defined in: [rendering/hiddenLine/contracts.ts:147](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L147)
+Defined in: [rendering/hiddenLine/contracts.ts:150](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L150)
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:147](https://github.com/zyizyiz/V
 
 > **edgeCount**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:148](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L148)
+Defined in: [rendering/hiddenLine/contracts.ts:151](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L151)
 
 ***
 
@@ -70,7 +70,7 @@ Defined in: [rendering/hiddenLine/contracts.ts:148](https://github.com/zyizyiz/V
 
 > **faceCount**: `number`
 
-Defined in: [rendering/hiddenLine/contracts.ts:149](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L149)
+Defined in: [rendering/hiddenLine/contracts.ts:152](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L152)
 
 ***
 
@@ -78,4 +78,4 @@ Defined in: [rendering/hiddenLine/contracts.ts:149](https://github.com/zyizyiz/V
 
 > **tags**: `string`[]
 
-Defined in: [rendering/hiddenLine/contracts.ts:150](https://github.com/zyizyiz/VueGraphX/blob/4b7129ef16e07c8334f02a2a510c37f3c77444ab/src/rendering/hiddenLine/contracts.ts#L150)
+Defined in: [rendering/hiddenLine/contracts.ts:153](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/rendering/hiddenLine/contracts.ts#L153)

@@ -167,6 +167,7 @@
           </div>
         </div>
 
+        <HiddenLinePanel :engine="engineRef" :active-mode="store.activeMode" />
 
         <!-- Demo 示例区（多卡片可切换） -->
         <div class="border-t border-slate-100 bg-slate-50/80 shrink-0">
@@ -274,6 +275,7 @@ import { useSceneDocument } from './composables/useSceneDocument';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 import DualLayerPanel from './components/DualLayerPanel.vue';
+import HiddenLinePanel from './components/HiddenLinePanel.vue';
 import { registerDualLayerBottomShapes, registerDualLayerTopShapes, registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 

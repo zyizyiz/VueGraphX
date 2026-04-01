@@ -71,6 +71,17 @@ export interface GraphCreateShapeOptions {
   select?: boolean;
 }
 
+const cloneHiddenLineOptions = (options?: GraphHiddenLineOptions): GraphHiddenLineOptions | undefined => (
+  options
+    ? {
+        ...options,
+        visibleStyle: options.visibleStyle ? { ...options.visibleStyle } : undefined,
+        hiddenStyle: options.hiddenStyle ? { ...options.hiddenStyle } : undefined,
+        sampling: options.sampling ? { ...options.sampling } : undefined
+      }
+    : undefined
+);
+
 const cloneBoundingBox = (boundingbox?: [number, number, number, number]) => (
   Array.isArray(boundingbox) && boundingbox.length === 4
     ? [...boundingbox] as [number, number, number, number]
@@ -96,7 +107,7 @@ const cloneGraphXOptions = (options?: GraphXOptions): GraphXOptions | undefined 
               ]
             : undefined,
           attributes: options.view3D.attributes ? { ...options.view3D.attributes } : undefined,
-          hiddenLine: options.view3D.hiddenLine ? { ...options.view3D.hiddenLine } : undefined
+          hiddenLine: cloneHiddenLineOptions(options.view3D.hiddenLine)
         }
       : undefined
   };
@@ -267,6 +278,34 @@ export class GraphXEngine {
 
   public getHiddenLineOptions(): GraphHiddenLineOptions {
     return this.hiddenLineMgr.getOptions();
+  }
+
+  /** 更新当前引擎的 hidden-line 配置，并立即返回最新 runtime snapshot。 */
+  public setHiddenLineOptions(options?: GraphHiddenLineOptions): GraphHiddenLineSceneSnapshot {
+    const nextOptions = cloneHiddenLineOptions(options);
+    const currentOptions = cloneGraphXOptions(this.currentOptions) ?? {};
+    const currentView3D = currentOptions.view3D ? { ...currentOptions.view3D } : undefined;
+
+    if (nextOptions) {
+      this.currentOptions = {
+        ...currentOptions,
+        view3D: {
+          ...(currentView3D ?? {}),
+          hiddenLine: nextOptions
+        }
+      };
+    } else if (currentView3D) {
+      delete currentView3D.hiddenLine;
+      this.currentOptions = {
+        ...currentOptions,
+        view3D: Object.keys(currentView3D).length > 0 ? currentView3D : undefined
+      };
+    } else {
+      this.currentOptions = Object.keys(currentOptions).length > 0 ? currentOptions : undefined;
+    }
+
+    this.hiddenLineMgr.setOptions(nextOptions);
+    return this.hiddenLineMgr.update();
   }
 
   /** 按公共类型注册一个图形定义。definition.type 会作为 createShape 的调用入口。 */
