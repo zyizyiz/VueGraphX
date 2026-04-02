@@ -20,7 +20,7 @@ export default defineConfig(({ command }) => {
     ],
     resolve: {
       alias: {
-        'vuegraphx': resolve(__dirname, './src'),
+        'vuegraphx': resolve(__dirname, './src/index.ts'),
       },
     },
     server: {

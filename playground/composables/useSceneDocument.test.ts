@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GRAPH_SCENE_DOCUMENT_VERSION } from 'vuegraphx';
+import { GRAPH_SCENE_DOCUMENT_VERSION } from '../../src/index';
 import { useSceneDocument } from './useSceneDocument';
 
 describe('useSceneDocument', () => {
