@@ -8,7 +8,7 @@
 
 > **createMidpointAnnotation**(`key`, `firstPoint`, `secondPoint`, `options?`): [`GraphPointAnnotationSpec`](../interfaces/GraphPointAnnotationSpec.md)
 
-Defined in: [architecture/shapes/composition.ts:606](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/composition.ts#L606)
+Defined in: [architecture/shapes/composition.ts:642](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/composition.ts#L642)
 
 为两点中点创建标注描述。
 

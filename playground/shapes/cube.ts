@@ -13,11 +13,37 @@ interface CubeState {
 }
 
 interface CubePayload {
+  halfEdge?: number;
+  unfoldProgress?: number;
+  rotateProgress?: number;
   hiddenLine?: {
     visible?: GraphHiddenLineEdgeStyle;
     hidden?: GraphHiddenLineEdgeStyle;
   };
 }
+
+const normalizeCubePayload = (payload: unknown): CubePayload => {
+  const data = (typeof payload === 'object' && payload !== null ? payload : {}) as Partial<CubePayload>;
+
+  if (data.halfEdge !== undefined && (typeof data.halfEdge !== 'number' || !Number.isFinite(data.halfEdge) || data.halfEdge <= 0)) {
+    throw new Error('Cube scene payload halfEdge must be a positive number.');
+  }
+
+  if (data.unfoldProgress !== undefined && (typeof data.unfoldProgress !== 'number' || !Number.isFinite(data.unfoldProgress))) {
+    throw new Error('Cube scene payload unfoldProgress must be a finite number.');
+  }
+
+  if (data.rotateProgress !== undefined && (typeof data.rotateProgress !== 'number' || !Number.isFinite(data.rotateProgress))) {
+    throw new Error('Cube scene payload rotateProgress must be a finite number.');
+  }
+
+  return {
+    halfEdge: data.halfEdge ?? 1,
+    unfoldProgress: data.unfoldProgress ?? 0,
+    rotateProgress: data.rotateProgress ?? 0,
+    hiddenLine: data.hiddenLine
+  };
+};
 
 const notifyFastChange = (api: GraphShapeApi<CubeState>) => {
   if (api.state.rafId !== null) cancelAnimationFrame(api.state.rafId);
@@ -117,15 +143,19 @@ const createFacePoints = (api: GraphShapeApi<CubeState>, name: string): Array<()
 export const cubeShapeDefinition = createComposedShapeDefinition<CubePayload, CubeState>({
   type: 'cube',
   supportedModes: '3d',
+  scene: {
+    normalizePayload: normalizeCubePayload
+  },
   create(_context, payload) {
     let hiddenLineHandle: GraphHiddenLineSourceHandle | null = null;
+    const initialPayload = normalizeCubePayload(payload);
 
     return {
       entityType: 'cube',
       initialState: {
         toolbarStyle: { left: '50%', top: 'calc(100% - 5rem)' },
         rafId: null,
-        halfEdge: 1
+        halfEdge: initialPayload.halfEdge ?? 1
       },
       setup(api) {
         const view3d = api.engine.getView3D();
@@ -134,7 +164,7 @@ export const cubeShapeDefinition = createComposedShapeDefinition<CubePayload, Cu
         api.createAnimationTrack({
           id: 'unfold',
           label: '展开',
-          initialProgress: 0,
+          initialProgress: initialPayload.unfoldProgress ?? 0,
           min: 0,
           max: 1,
           step: 0.01,
@@ -146,7 +176,7 @@ export const cubeShapeDefinition = createComposedShapeDefinition<CubePayload, Cu
         api.createAnimationTrack({
           id: 'rotate',
           label: '旋转',
-          initialProgress: 0,
+          initialProgress: initialPayload.rotateProgress ?? 0,
           min: 0,
           max: 1,
           step: 0.01,
@@ -187,10 +217,12 @@ export const cubeShapeDefinition = createComposedShapeDefinition<CubePayload, Cu
         api.createGroup(groupedObjects, { createNativeGroup: false });
         api.board.update();
 
-        const hiddenLineVisible = payload?.hiddenLine?.visible ?? { strokeColor: '#1e293b', strokeWidth: 1.5 };
-        const hiddenLineHidden = payload?.hiddenLine?.hidden ?? { strokeColor: '#1e293b', strokeWidth: 1.2, dash: 2, dashScale: true };
+        const hiddenLineVisible = initialPayload.hiddenLine?.visible ?? { strokeColor: '#1e293b', strokeWidth: 1.5 };
+        const hiddenLineHidden = initialPayload.hiddenLine?.hidden ?? { strokeColor: '#1e293b', strokeWidth: 1.2, dash: 2, dashScale: true };
 
         hiddenLineHandle = api.registerHiddenLineSource({
+          debugLabel: 'shape:cube',
+          tags: ['shape', 'cube', '3d', 'mesh'],
           role: 'both',
           style: {
             visible: hiddenLineVisible,
@@ -220,6 +252,14 @@ export const cubeShapeDefinition = createComposedShapeDefinition<CubePayload, Cu
       },
       onSelectionChange(api) {
         updateToolbarPosition(api);
+      },
+      getScenePayload(api) {
+        return {
+          halfEdge: api.state.halfEdge,
+          unfoldProgress: api.getAnimationTrack('unfold')?.progress ?? 0,
+          rotateProgress: api.getAnimationTrack('rotate')?.progress ?? 0,
+          hiddenLine: initialPayload.hiddenLine
+        } satisfies CubePayload;
       },
       onBoardUpdate(api) {
         if (api.selected) updateToolbarPosition(api);

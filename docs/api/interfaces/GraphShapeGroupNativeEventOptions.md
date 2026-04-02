@@ -6,7 +6,7 @@
 
 # Interface: GraphShapeGroupNativeEventOptions
 
-Defined in: [architecture/shapes/contracts.ts:548](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L548)
+Defined in: [architecture/shapes/contracts.ts:566](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L566)
 
 分组级原生 DOM 事件绑定配置。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/shapes/contracts.ts:548](https://github.com/zyizyiz/Vu
 
 > `optional` **keys**: `string` \| `string`[]
 
-Defined in: [architecture/shapes/contracts.ts:552](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L552)
+Defined in: [architecture/shapes/contracts.ts:570](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L570)
 
 仅针对指定 key 的成员绑定原生事件。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/shapes/contracts.ts:552](https://github.com/zyizyiz/Vu
 
 > `optional` **preventDefault**: `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:557](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L557)
+Defined in: [architecture/shapes/contracts.ts:575](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L575)
 
 绑定后是否自动调用 preventDefault。
 
@@ -36,7 +36,7 @@ Defined in: [architecture/shapes/contracts.ts:557](https://github.com/zyizyiz/Vu
 
 > `optional` **stopPropagation**: `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:562](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L562)
+Defined in: [architecture/shapes/contracts.ts:580](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L580)
 
 绑定后是否自动调用 stopPropagation。
 
@@ -46,7 +46,7 @@ Defined in: [architecture/shapes/contracts.ts:562](https://github.com/zyizyiz/Vu
 
 > `optional` **passive**: `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:567](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L567)
+Defined in: [architecture/shapes/contracts.ts:585](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L585)
 
 原生 addEventListener 的 passive 选项。
 
@@ -56,7 +56,7 @@ Defined in: [architecture/shapes/contracts.ts:567](https://github.com/zyizyiz/Vu
 
 > `optional` **capture**: `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:572](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L572)
+Defined in: [architecture/shapes/contracts.ts:590](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L590)
 
 原生 addEventListener 的 capture 选项。
 
@@ -66,6 +66,6 @@ Defined in: [architecture/shapes/contracts.ts:572](https://github.com/zyizyiz/Vu
 
 > `optional` **once**: `boolean`
 
-Defined in: [architecture/shapes/contracts.ts:577](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L577)
+Defined in: [architecture/shapes/contracts.ts:595](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L595)
 
 原生 addEventListener 的 once 选项。

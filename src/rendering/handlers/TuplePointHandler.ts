@@ -1,5 +1,6 @@
 import * as math from 'mathjs';
 import { InstructionParser } from '../../parsing/InstructionParser';
+import { createCommandRelationTarget } from '../../relation/commandTargets';
 import { RenderContext, RenderHandler } from '../types';
 import { normalizeAndRegister } from '../utils';
 
@@ -36,7 +37,17 @@ export class TuplePointHandler implements RenderHandler {
       };
       const attrs = Object.assign({}, baseAttrs, ctx.extraOptions);
       const pt = board.create('point', [values[0], values[1]], attrs);
-      return normalizeAndRegister(pt, name, ctx.entityMgr);
+      const elements = normalizeAndRegister(pt, name, ctx.entityMgr);
+      const target = createCommandRelationTarget({
+        resolvedType: 'point',
+        label: name || ctx.rawExpr,
+        sourceExpression: ctx.rawExpr,
+        element: elements[0]
+      });
+      if (target) {
+        ctx.relation.registerTarget(target);
+      }
+      return elements;
     }
 
     if (ctx.mode === '3d' && view3d && values.length >= 3) {

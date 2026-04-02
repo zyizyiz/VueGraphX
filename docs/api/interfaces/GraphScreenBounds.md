@@ -6,7 +6,7 @@
 
 # Interface: GraphScreenBounds
 
-Defined in: [architecture/shapes/contracts.ts:474](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L474)
+Defined in: [architecture/shapes/contracts.ts:492](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L492)
 
 屏幕坐标系下的包围盒。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/shapes/contracts.ts:474](https://github.com/zyizyiz/Vu
 
 > **left**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:478](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L478)
+Defined in: [architecture/shapes/contracts.ts:496](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L496)
 
 左边界像素坐标。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/shapes/contracts.ts:478](https://github.com/zyizyiz/Vu
 
 > **right**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:483](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L483)
+Defined in: [architecture/shapes/contracts.ts:501](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L501)
 
 右边界像素坐标。
 
@@ -36,7 +36,7 @@ Defined in: [architecture/shapes/contracts.ts:483](https://github.com/zyizyiz/Vu
 
 > **top**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:488](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L488)
+Defined in: [architecture/shapes/contracts.ts:506](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L506)
 
 上边界像素坐标。
 
@@ -46,7 +46,7 @@ Defined in: [architecture/shapes/contracts.ts:488](https://github.com/zyizyiz/Vu
 
 > **bottom**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:493](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L493)
+Defined in: [architecture/shapes/contracts.ts:511](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L511)
 
 下边界像素坐标。
 
@@ -56,7 +56,7 @@ Defined in: [architecture/shapes/contracts.ts:493](https://github.com/zyizyiz/Vu
 
 > **width**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:498](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L498)
+Defined in: [architecture/shapes/contracts.ts:516](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L516)
 
 包围盒宽度。
 
@@ -66,6 +66,6 @@ Defined in: [architecture/shapes/contracts.ts:498](https://github.com/zyizyiz/Vu
 
 > **height**: `number`
 
-Defined in: [architecture/shapes/contracts.ts:503](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/contracts.ts#L503)
+Defined in: [architecture/shapes/contracts.ts:521](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/contracts.ts#L521)
 
 包围盒高度。

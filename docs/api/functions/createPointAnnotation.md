@@ -8,7 +8,7 @@
 
 > **createPointAnnotation**(`key`, `point`, `options?`): [`GraphPointAnnotationSpec`](../interfaces/GraphPointAnnotationSpec.md)
 
-Defined in: [architecture/shapes/composition.ts:549](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/composition.ts#L549)
+Defined in: [architecture/shapes/composition.ts:585](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/composition.ts#L585)
 
 基于直接点引用创建标注描述。
 

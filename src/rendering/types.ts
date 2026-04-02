@@ -3,6 +3,7 @@ import { EngineMode } from '../types/engine';
 import { BoardManager } from '../board/BoardManager';
 import { EntityManager } from '../entities/EntityManager';
 import { MathScope } from '../math/MathScope';
+import type { GraphRelationTargetRegistration } from '../relation/targets';
 import type {
   GraphHiddenLineOptions,
   GraphHiddenLineSourceDescriptor,
@@ -24,6 +25,17 @@ export interface GraphHiddenLineRenderApi {
   clearOwnerSources(ownerId?: string): void;
 }
 
+export interface GraphRelationRenderBridge {
+  registerTarget(ownerId: string, target: GraphRelationTargetRegistration): void;
+  clearOwnerTargets(ownerId: string): void;
+}
+
+export interface GraphRelationRenderApi {
+  ownerId?: string;
+  registerTarget(target: GraphRelationTargetRegistration): void;
+  clearOwnerTargets(ownerId?: string): void;
+}
+
 export interface RenderContext {
   mode: EngineMode;
   ownerId?: string;
@@ -35,6 +47,7 @@ export interface RenderContext {
   entityMgr: EntityManager;
   mathScope: MathScope;
   hiddenLine: GraphHiddenLineRenderApi;
+  relation: GraphRelationRenderApi;
 }
 
 export interface RenderHandler {

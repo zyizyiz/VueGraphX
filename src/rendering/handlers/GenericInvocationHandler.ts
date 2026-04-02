@@ -1,5 +1,6 @@
 import JXG from 'jsxgraph';
 import { InstructionParser } from '../../parsing/InstructionParser';
+import { createCommandRelationTarget } from '../../relation/commandTargets';
 import { RenderContext, RenderHandler } from '../types';
 import { evaluateInvocationArg, normalizeAndRegister } from '../utils';
 import { resolve2DElementType, resolve3DElementType } from '../jsxgraphCommandCatalog';
@@ -103,7 +104,18 @@ export class GenericInvocationHandler implements RenderHandler {
 
       try {
         const shape = board.create(resolved2DType as any, parsedArgs, attrs);
-        return normalizeAndRegister(shape, name, ctx.entityMgr);
+        const elements = normalizeAndRegister(shape, name, ctx.entityMgr);
+        const target = createCommandRelationTarget({
+          resolvedType: resolved2DType,
+          rawType: invocation.type,
+          label: name || ctx.rawExpr,
+          sourceExpression: ctx.rawExpr,
+          element: elements[0]
+        });
+        if (target) {
+          ctx.relation.registerTarget(target);
+        }
+        return elements;
       } catch (e) {
         throw new Error(`二维指令创建失败(${invocation.type}): ${(e as any)?.message || '未知错误'}`);
       }
@@ -132,6 +144,8 @@ export class GenericInvocationHandler implements RenderHandler {
               const polySource = buildPolylineSource(parsedArgs);
               if (polySource) {
                 ctx.hiddenLine.registerSource({
+                  debugLabel: `command:${lowerType}`,
+                  tags: ['command', '3d', lowerType, 'edge'],
                   role: 'edge',
                   resolve: () => polySource
                 });
@@ -140,6 +154,8 @@ export class GenericInvocationHandler implements RenderHandler {
               const meshSource = buildPolygonMeshSource(parsedArgs);
               if (meshSource) {
                 ctx.hiddenLine.registerSource({
+                  debugLabel: 'command:polygon3d',
+                  tags: ['command', '3d', 'polygon3d', 'mesh'],
                   role: 'both',
                   resolve: () => meshSource
                 });

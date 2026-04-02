@@ -1,29 +1,11 @@
 <template>
   <div v-if="activeMode === '3d' || activeMode === 'geometry'" data-designer-ui="true" class="pointer-events-none absolute inset-0 z-30">
     <div
+      v-if="activeMode !== 'geometry'"
       data-designer-ui="true"
-      class="pointer-events-auto absolute rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur"
-      :class="activeMode === 'geometry' ? 'left-4 top-24' : 'left-4 top-4'"
+      class="pointer-events-auto absolute left-4 top-4 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur"
     >
-      <div v-if="activeMode === 'geometry'" class="flex flex-col gap-2">
-        <button
-          v-for="spec in geometrySolidSpecs"
-          :key="spec.type"
-          draggable="true"
-          @click="createGeometrySolid(spec.type)"
-          @dragstart="onDragStart(spec.type, $event)"
-          class="flex cursor-grab items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
-          :class="spec.badgeClass"
-        >
-          <span class="relative inline-flex h-4 w-4 items-center justify-center">
-            <span class="inline-block h-4 w-4" :class="spec.iconClass"></span>
-          </span>
-          {{ spec.dragLabel }}
-        </button>
-      </div>
-
       <button
-        v-else
         @click="createCube"
         class="flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
       >
@@ -158,11 +140,8 @@ const props = defineProps<{
 const {
   state,
   fastState,
-  geometrySolidSpecs,
   createCube,
-  createGeometrySolid,
   runCapability,
-  onDragStart,
   setTrackProgress,
   playTrackForward,
   playTrackBackward,

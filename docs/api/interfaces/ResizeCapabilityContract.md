@@ -6,7 +6,7 @@
 
 # Interface: ResizeCapabilityContract
 
-Defined in: [architecture/capabilities/contracts.ts:19](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L19)
+Defined in: [architecture/capabilities/contracts.ts:19](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L19)
 
 暴露数值型缩放或尺寸控制的能力契约。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/capabilities/contracts.ts:19](https://github.com/zyizy
 
 > **active**: `boolean`
 
-Defined in: [architecture/capabilities/contracts.ts:23](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L23)
+Defined in: [architecture/capabilities/contracts.ts:23](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L23)
 
 当前 resize 面板或交互是否处于激活态。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/capabilities/contracts.ts:23](https://github.com/zyizy
 
 > **value**: `number`
 
-Defined in: [architecture/capabilities/contracts.ts:28](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L28)
+Defined in: [architecture/capabilities/contracts.ts:28](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L28)
 
 当前尺寸或缩放值。
 
@@ -36,7 +36,7 @@ Defined in: [architecture/capabilities/contracts.ts:28](https://github.com/zyizy
 
 > `optional` **min**: `number`
 
-Defined in: [architecture/capabilities/contracts.ts:33](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L33)
+Defined in: [architecture/capabilities/contracts.ts:33](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L33)
 
 允许的最小值。
 
@@ -46,7 +46,7 @@ Defined in: [architecture/capabilities/contracts.ts:33](https://github.com/zyizy
 
 > `optional` **max**: `number`
 
-Defined in: [architecture/capabilities/contracts.ts:38](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L38)
+Defined in: [architecture/capabilities/contracts.ts:38](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L38)
 
 允许的最大值。
 
@@ -56,7 +56,7 @@ Defined in: [architecture/capabilities/contracts.ts:38](https://github.com/zyizy
 
 > `optional` **step**: `number`
 
-Defined in: [architecture/capabilities/contracts.ts:43](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L43)
+Defined in: [architecture/capabilities/contracts.ts:43](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L43)
 
 建议 UI 使用的调节步长。
 
@@ -66,7 +66,7 @@ Defined in: [architecture/capabilities/contracts.ts:43](https://github.com/zyizy
 
 > **toggle**: () => `void`
 
-Defined in: [architecture/capabilities/contracts.ts:48](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L48)
+Defined in: [architecture/capabilities/contracts.ts:48](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L48)
 
 切换 resize 交互开关。
 
@@ -80,7 +80,7 @@ Defined in: [architecture/capabilities/contracts.ts:48](https://github.com/zyizy
 
 > **setValue**: (`value`) => `void`
 
-Defined in: [architecture/capabilities/contracts.ts:53](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L53)
+Defined in: [architecture/capabilities/contracts.ts:53](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L53)
 
 显式设置数值。
 

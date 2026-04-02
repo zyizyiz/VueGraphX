@@ -121,6 +121,35 @@ Suggested workflow:
 4. If hit/drag behavior needs to bypass JSXGraph's default proxying, prefer `createGroup()` plus `bindNativeEvent()` over ad-hoc DOM hacks inside a demo shape.
 5. If the change affects how users should understand dual-layer mode, update the README and architecture docs as well.
 
+### 5. Extending hidden-line 3D runtime
+
+Use this path when you are:
+
+- improving engine-level hidden-line behavior in 3D scenes
+- adding or refining adapters from render handlers or shapes into hidden-line sources
+- tuning profiles, diagnostics, tessellation, or overlay rendering
+
+Main files:
+
+- `src/rendering/hiddenLine/`
+- `src/engine/GraphXEngine.ts`
+- `src/rendering/handlers/`
+- `playground/components/HiddenLinePanel.vue`
+- `playground/composables/useHiddenLineDebug.ts`
+
+Implementation constraints:
+
+- prefer semantic source registration (`mesh`, `polyline-set`, `curve`, `surface`) over reverse-parsing JSXGraph render nodes
+- keep hidden-line as an engine-level `3d` capability, not a `dual-layer`-only behavior
+- if public options, scene snapshots, or support boundaries change, update README, architecture docs, and hidden-line docs together
+
+Suggested workflow:
+
+1. Decide whether the change belongs in the generic hidden-line manager, a specific render-handler adapter, or playground-only inspection UI.
+2. Extend source registration close to the semantic geometry producer instead of adding late DOM or JSXGraph patch-ups.
+3. Add or update tests around solver behavior, manager snapshots, and adapter registration when support coverage changes.
+4. Regenerate `docs/api/` whenever public hidden-line contracts or engine methods change.
+
 ## Recommended Shape Authoring Pattern
 
 The current recommended pattern looks like this:

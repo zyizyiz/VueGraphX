@@ -1,9 +1,12 @@
 import type { BoardManager } from '../../board/BoardManager';
 import type {
+  GraphHiddenLineDiagnostic,
   GraphHiddenLineCurveSourceData,
   GraphHiddenLineMeshSourceData,
   GraphHiddenLineOptions,
+  GraphHiddenLineProfile,
   GraphHiddenLineSceneSnapshot,
+  GraphHiddenLineSceneStats,
   GraphHiddenLineSourceData,
   GraphHiddenLineSourceDescriptor,
   GraphHiddenLineSourceHandle,
@@ -12,12 +15,13 @@ import type {
   GraphHiddenLineSurfaceSourceData
 } from './contracts';
 import { GraphHiddenLineRegistry } from './registry';
-import { resolveHiddenLineSceneSource, type GraphHiddenLineResolvedSceneSource } from './tessellation';
+import { resolveHiddenLineSceneSourceData, type GraphHiddenLineResolvedSceneSource } from './tessellation';
 import { solveHiddenLineScene } from './solver';
 import { GraphHiddenLineOverlayRenderer } from './overlayRenderer';
 
 const DEFAULT_HIDDEN_LINE_OPTIONS: GraphHiddenLineOptions = {
   enabled: false,
+  profile: 'balanced',
   strategy: 'overlay2d',
   precision: 'balanced',
   debug: false,
@@ -35,6 +39,54 @@ const DEFAULT_HIDDEN_LINE_OPTIONS: GraphHiddenLineOptions = {
   }
 };
 
+const HIDDEN_LINE_PROFILE_DEFAULTS: Record<GraphHiddenLineProfile, Pick<GraphHiddenLineOptions, 'precision' | 'visibleStyle' | 'hiddenStyle' | 'sampling'>> = {
+  performance: {
+    precision: 'balanced',
+    visibleStyle: {},
+    hiddenStyle: {
+      dash: 2,
+      strokeOpacity: 0.55
+    },
+    sampling: {
+      curveSegments: 32,
+      surfaceStepsU: 12,
+      surfaceStepsV: 12,
+      adaptive: true,
+      maxSubdivisions: 2
+    }
+  },
+  balanced: {
+    precision: 'balanced',
+    visibleStyle: {},
+    hiddenStyle: {
+      dash: 2,
+      strokeOpacity: 0.7
+    },
+    sampling: {
+      curveSegments: 64,
+      surfaceStepsU: 24,
+      surfaceStepsV: 24,
+      adaptive: true,
+      maxSubdivisions: 3
+    }
+  },
+  quality: {
+    precision: 'high',
+    visibleStyle: {},
+    hiddenStyle: {
+      dash: 2,
+      strokeOpacity: 0.8
+    },
+    sampling: {
+      curveSegments: 96,
+      surfaceStepsU: 32,
+      surfaceStepsV: 32,
+      adaptive: true,
+      maxSubdivisions: 4
+    }
+  }
+};
+
 const cloneOptions = (options: GraphHiddenLineOptions): GraphHiddenLineOptions => ({
   ...options,
   visibleStyle: options.visibleStyle ? { ...options.visibleStyle } : undefined,
@@ -42,9 +94,25 @@ const cloneOptions = (options: GraphHiddenLineOptions): GraphHiddenLineOptions =
   sampling: options.sampling ? { ...options.sampling } : undefined
 });
 
-type GraphHiddenLineBoardManagerContext =
-  Pick<BoardManager, 'mode'> &
-  Partial<Pick<BoardManager, 'board' | 'view3d'>>;
+const cloneStats = (stats: GraphHiddenLineSceneStats): GraphHiddenLineSceneStats => ({
+  ...stats
+});
+
+const cloneDiagnostics = (diagnostics: GraphHiddenLineDiagnostic[]): GraphHiddenLineDiagnostic[] => diagnostics.map((diagnostic) => ({
+  ...diagnostic
+}));
+
+const createEmptyStats = (): GraphHiddenLineSceneStats => ({
+  activeSourceCount: 0,
+  resolvedSourceCount: 0,
+  skippedSourceCount: 0,
+  disabledSourceCount: 0,
+  emptySourceCount: 0,
+  errorSourceCount: 0,
+  triangleCount: 0,
+  polylineCount: 0,
+  renderedPathCount: 0
+});
 
 const countMeshEdges = (data: GraphHiddenLineMeshSourceData): number => {
   if (data.edges && data.edges.length > 0) return data.edges.length;
@@ -135,17 +203,38 @@ const summarizeSource = (
 
 export const normalizeGraphHiddenLineOptions = (options?: GraphHiddenLineOptions): GraphHiddenLineOptions => ({
   ...DEFAULT_HIDDEN_LINE_OPTIONS,
+  ...HIDDEN_LINE_PROFILE_DEFAULTS[
+    options?.profile
+    ?? (options?.precision === 'high' ? 'quality' : 'balanced')
+  ],
   ...options,
+  profile: options?.profile ?? (options?.precision === 'high' ? 'quality' : DEFAULT_HIDDEN_LINE_OPTIONS.profile),
+  precision: HIDDEN_LINE_PROFILE_DEFAULTS[
+    options?.profile
+    ?? (options?.precision === 'high' ? 'quality' : 'balanced')
+  ].precision,
   visibleStyle: {
     ...DEFAULT_HIDDEN_LINE_OPTIONS.visibleStyle,
+    ...HIDDEN_LINE_PROFILE_DEFAULTS[
+      options?.profile
+      ?? (options?.precision === 'high' ? 'quality' : 'balanced')
+    ].visibleStyle,
     ...options?.visibleStyle
   },
   hiddenStyle: {
     ...DEFAULT_HIDDEN_LINE_OPTIONS.hiddenStyle,
+    ...HIDDEN_LINE_PROFILE_DEFAULTS[
+      options?.profile
+      ?? (options?.precision === 'high' ? 'quality' : 'balanced')
+    ].hiddenStyle,
     ...options?.hiddenStyle
   },
   sampling: {
     ...DEFAULT_HIDDEN_LINE_OPTIONS.sampling,
+    ...HIDDEN_LINE_PROFILE_DEFAULTS[
+      options?.profile
+      ?? (options?.precision === 'high' ? 'quality' : 'balanced')
+    ].sampling,
     ...options?.sampling
   }
 });
@@ -155,9 +244,14 @@ export class GraphHiddenLineManager {
   private readonly overlayRenderer = new GraphHiddenLineOverlayRenderer();
   private options: GraphHiddenLineOptions;
   private revision = 0;
+  private diagnostics: GraphHiddenLineDiagnostic[] = [];
+  private stats: GraphHiddenLineSceneStats = createEmptyStats();
   private snapshot: GraphHiddenLineSceneSnapshot;
 
-  constructor(private readonly boardMgr: GraphHiddenLineBoardManagerContext, options?: GraphHiddenLineOptions) {
+  constructor(
+    private readonly boardMgr: Pick<BoardManager, 'mode'> & Partial<Pick<BoardManager, 'board' | 'view3d'>>,
+    options?: GraphHiddenLineOptions
+  ) {
     this.options = normalizeGraphHiddenLineOptions(options);
     this.snapshot = this.buildSnapshot([]);
   }
@@ -214,6 +308,8 @@ export class GraphHiddenLineManager {
   public update(): GraphHiddenLineSceneSnapshot {
     const summaries: GraphHiddenLineSourceSummary[] = [];
     const resolvedSources: GraphHiddenLineResolvedSceneSource[] = [];
+    const diagnostics: GraphHiddenLineDiagnostic[] = [];
+    const stats = createEmptyStats();
 
     this.revision += 1;
 
@@ -222,18 +318,62 @@ export class GraphHiddenLineManager {
 
     if (this.isEnabled()) {
       this.registry.list().forEach((record) => {
-        if (record.descriptor.enabled === false) return;
+        if (record.descriptor.enabled === false) {
+          stats.disabledSourceCount += 1;
+          stats.skippedSourceCount += 1;
+          return;
+        }
+
+        stats.activeSourceCount += 1;
 
         try {
           const data = record.descriptor.resolve();
-          if (!data) return;
+          if (!data) {
+            stats.emptySourceCount += 1;
+            stats.skippedSourceCount += 1;
+            diagnostics.push({
+              code: 'hidden_line_source_empty',
+              severity: 'warning',
+              message: `Hidden-line source "${record.descriptor.debugLabel ?? record.id}" returned no data.`,
+              sourceId: record.id,
+              ownerId: record.ownerId,
+              debugLabel: record.descriptor.debugLabel
+            });
+            return;
+          }
+
           summaries.push(summarizeSource(record, data, this.options));
 
-          const resolved = resolveHiddenLineSceneSource(record, this.options);
+          const resolved = resolveHiddenLineSceneSourceData(record, data, this.options);
           if (resolved) {
+            stats.resolvedSourceCount += 1;
+            stats.triangleCount += resolved.triangles.length;
+            stats.polylineCount += resolved.polylines.length;
             resolvedSources.push(resolved);
+            return;
           }
+
+          stats.emptySourceCount += 1;
+          stats.skippedSourceCount += 1;
+          diagnostics.push({
+            code: 'hidden_line_source_unresolved',
+            severity: 'warning',
+            message: `Hidden-line source "${record.descriptor.debugLabel ?? record.id}" could not be tessellated into a renderable scene source.`,
+            sourceId: record.id,
+            ownerId: record.ownerId,
+            debugLabel: record.descriptor.debugLabel
+          });
         } catch (error) {
+          stats.errorSourceCount += 1;
+          stats.skippedSourceCount += 1;
+          diagnostics.push({
+            code: 'hidden_line_source_resolve_failed',
+            severity: 'error',
+            message: `Hidden-line source "${record.descriptor.debugLabel ?? record.id}" failed to resolve.`,
+            sourceId: record.id,
+            ownerId: record.ownerId,
+            debugLabel: record.descriptor.debugLabel
+          });
           if (this.options.debug) {
             console.warn(`[GraphHiddenLineManager] resolve failed for ${record.id}`, error);
           }
@@ -243,11 +383,16 @@ export class GraphHiddenLineManager {
 
     if (this.isEnabled() && board && view3d && resolvedSources.length > 0) {
       const solveResult = solveHiddenLineScene(board, view3d, resolvedSources as any, this.options);
+      stats.triangleCount = solveResult.triangleCount;
+      stats.polylineCount = solveResult.polylineCount;
+      stats.renderedPathCount = solveResult.renderedPaths.length;
       this.overlayRenderer.render(board, solveResult.renderedPaths);
     } else {
       this.overlayRenderer.clear();
     }
 
+    this.stats = stats;
+    this.diagnostics = diagnostics;
     this.snapshot = this.buildSnapshot(summaries);
     return this.snapshot;
   }
@@ -258,6 +403,8 @@ export class GraphHiddenLineManager {
 
   private touch(): void {
     this.revision += 1;
+    this.stats = createEmptyStats();
+    this.diagnostics = [];
     this.snapshot = this.buildSnapshot([]);
   }
 
@@ -268,6 +415,8 @@ export class GraphHiddenLineManager {
       sourceCount: this.registry.size(),
       ownerCount: this.registry.ownerCount(),
       options: cloneOptions(this.options),
+      stats: cloneStats(this.stats),
+      diagnostics: cloneDiagnostics(this.diagnostics),
       sources: sources.map((source) => ({
         ...source,
         tags: [...source.tags]

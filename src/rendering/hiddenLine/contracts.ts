@@ -52,8 +52,11 @@ export interface GraphHiddenLineSamplingOptions {
   maxSubdivisions?: number;
 }
 
+export type GraphHiddenLineProfile = 'performance' | 'balanced' | 'quality';
+
 export interface GraphHiddenLineOptions {
   enabled?: boolean;
+  profile?: GraphHiddenLineProfile;
   strategy?: 'overlay2d';
   precision?: 'balanced' | 'high';
   debug?: boolean;
@@ -150,11 +153,36 @@ export interface GraphHiddenLineSourceSummary {
   tags: string[];
 }
 
+export type GraphHiddenLineDiagnosticSeverity = 'info' | 'warning' | 'error';
+
+export interface GraphHiddenLineDiagnostic {
+  code: string;
+  severity: GraphHiddenLineDiagnosticSeverity;
+  message: string;
+  sourceId?: string;
+  ownerId?: string;
+  debugLabel?: string;
+}
+
+export interface GraphHiddenLineSceneStats {
+  activeSourceCount: number;
+  resolvedSourceCount: number;
+  skippedSourceCount: number;
+  disabledSourceCount: number;
+  emptySourceCount: number;
+  errorSourceCount: number;
+  triangleCount: number;
+  polylineCount: number;
+  renderedPathCount: number;
+}
+
 export interface GraphHiddenLineSceneSnapshot {
   revision: number;
   enabled: boolean;
   sourceCount: number;
   ownerCount: number;
   options: GraphHiddenLineOptions;
+  stats: GraphHiddenLineSceneStats;
+  diagnostics: GraphHiddenLineDiagnostic[];
   sources: GraphHiddenLineSourceSummary[];
 }

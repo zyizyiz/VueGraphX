@@ -6,7 +6,7 @@
 
 # Interface: SplitCapabilityContract
 
-Defined in: [architecture/capabilities/contracts.ts:119](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L119)
+Defined in: [architecture/capabilities/contracts.ts:119](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L119)
 
 两阶段拆分流程的能力契约。
 
@@ -16,7 +16,7 @@ Defined in: [architecture/capabilities/contracts.ts:119](https://github.com/zyiz
 
 > **active**: `boolean`
 
-Defined in: [architecture/capabilities/contracts.ts:123](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L123)
+Defined in: [architecture/capabilities/contracts.ts:123](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L123)
 
 当前拆分流程是否已进入编辑态。
 
@@ -26,7 +26,7 @@ Defined in: [architecture/capabilities/contracts.ts:123](https://github.com/zyiz
 
 > **hasDraft**: `boolean`
 
-Defined in: [architecture/capabilities/contracts.ts:128](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L128)
+Defined in: [architecture/capabilities/contracts.ts:128](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L128)
 
 当前是否已存在待确认的草稿结果。
 
@@ -36,7 +36,7 @@ Defined in: [architecture/capabilities/contracts.ts:128](https://github.com/zyiz
 
 > **canConfirm**: `boolean`
 
-Defined in: [architecture/capabilities/contracts.ts:133](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L133)
+Defined in: [architecture/capabilities/contracts.ts:133](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L133)
 
 当前草稿是否满足确认条件。
 
@@ -46,7 +46,7 @@ Defined in: [architecture/capabilities/contracts.ts:133](https://github.com/zyiz
 
 > **toggle**: () => `void`
 
-Defined in: [architecture/capabilities/contracts.ts:138](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L138)
+Defined in: [architecture/capabilities/contracts.ts:138](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L138)
 
 切换拆分流程开关。
 
@@ -60,7 +60,7 @@ Defined in: [architecture/capabilities/contracts.ts:138](https://github.com/zyiz
 
 > **cancel**: () => `void`
 
-Defined in: [architecture/capabilities/contracts.ts:143](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L143)
+Defined in: [architecture/capabilities/contracts.ts:143](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L143)
 
 取消当前拆分流程或草稿。
 
@@ -74,7 +74,7 @@ Defined in: [architecture/capabilities/contracts.ts:143](https://github.com/zyiz
 
 > **confirm**: () => `void`
 
-Defined in: [architecture/capabilities/contracts.ts:148](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/capabilities/contracts.ts#L148)
+Defined in: [architecture/capabilities/contracts.ts:148](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/capabilities/contracts.ts#L148)
 
 确认当前拆分草稿。
 

@@ -12,6 +12,8 @@ export const getEngineModeForPlayground = (mode: PlaygroundMode): EngineMode => 
   return mode;
 };
 
+export const getPlaygroundModeForEngineMode = (mode: EngineMode): PlaygroundMode => mode;
+
 export const getBoardOptionsForPlaygroundMode = (mode: PlaygroundMode, _viewport?: PlaygroundViewportSize): GraphXOptions => {
   if (mode === 'geometry') {
     return { axis: false, showNavigation: false };
@@ -28,7 +30,8 @@ export const getBoardOptionsForPlaygroundMode = (mode: PlaygroundMode, _viewport
         fitToBoard: true,
         rect: [[-8, -8], [16, 16], [[-5, 5], [-5, 5], [-5, 5]]],
         hiddenLine: {
-          enabled: true
+          enabled: true,
+          profile: 'balanced'
         },
         attributes: {
           projection: 'parallel',
@@ -70,7 +73,8 @@ export const getBoardOptionsForPlaygroundMode = (mode: PlaygroundMode, _viewport
     showNavigation: true,
     view3D: {
       hiddenLine: {
-        enabled: true
+        enabled: true,
+        profile: 'balanced'
       }
     }
   };

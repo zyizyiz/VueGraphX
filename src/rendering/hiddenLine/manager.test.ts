@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GraphHiddenLineManager } from './manager';
 
 describe('GraphHiddenLineManager', () => {
@@ -50,6 +50,18 @@ describe('GraphHiddenLineManager', () => {
     expect(snapshot.enabled).toBe(true);
     expect(snapshot.sourceCount).toBe(2);
     expect(snapshot.ownerCount).toBe(2);
+    expect(snapshot.stats).toEqual({
+      activeSourceCount: 2,
+      resolvedSourceCount: 2,
+      skippedSourceCount: 0,
+      disabledSourceCount: 0,
+      emptySourceCount: 0,
+      errorSourceCount: 0,
+      triangleCount: 13,
+      polylineCount: 4,
+      renderedPathCount: 0
+    });
+    expect(snapshot.diagnostics).toEqual([]);
     expect(snapshot.sources).toEqual([
       expect.objectContaining({
         ownerId: 'shape_cube',
@@ -106,6 +118,86 @@ describe('GraphHiddenLineManager', () => {
     expect(manager.clearOwnerSources('shape_a')).toBe(1);
     expect(manager.update().sources).toEqual([
       expect.objectContaining({ ownerId: 'shape_b' })
+    ]);
+  });
+
+  it('resolves each source only once per update cycle', () => {
+    const manager = new GraphHiddenLineManager({ mode: '3d' }, { enabled: true });
+    const resolve = vi.fn(() => ({
+      kind: 'curve' as const,
+      range: [0, 1] as [number, number],
+      evaluate: () => ({ x: 0, y: 0, z: 0 })
+    }));
+
+    manager.registerSource('shape_once', {
+      debugLabel: 'single-resolve',
+      resolve
+    });
+
+    manager.update();
+
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes runtime quality profiles into stable options', () => {
+    const manager = new GraphHiddenLineManager({ mode: '3d' }, {
+      enabled: true,
+      profile: 'quality',
+      sampling: {
+        curveSegments: 80
+      }
+    });
+
+    expect(manager.getOptions()).toEqual(expect.objectContaining({
+      enabled: true,
+      profile: 'quality',
+      precision: 'high',
+      sampling: expect.objectContaining({
+        curveSegments: 80,
+        surfaceStepsU: 32,
+        surfaceStepsV: 32,
+        maxSubdivisions: 4
+      })
+    }));
+  });
+
+  it('reports resolve failures and empty sources in snapshot diagnostics', () => {
+    const manager = new GraphHiddenLineManager({ mode: '3d' }, { enabled: true });
+
+    manager.registerSource('shape_empty', {
+      debugLabel: 'empty-shape',
+      resolve: () => null
+    });
+
+    manager.registerSource('shape_throw', {
+      debugLabel: 'broken-shape',
+      resolve: () => {
+        throw new Error('boom');
+      }
+    });
+
+    const snapshot = manager.update();
+
+    expect(snapshot.stats).toEqual(expect.objectContaining({
+      activeSourceCount: 2,
+      resolvedSourceCount: 0,
+      skippedSourceCount: 2,
+      emptySourceCount: 1,
+      errorSourceCount: 1
+    }));
+    expect(snapshot.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'hidden_line_source_empty',
+        severity: 'warning',
+        ownerId: 'shape_empty',
+        debugLabel: 'empty-shape'
+      }),
+      expect.objectContaining({
+        code: 'hidden_line_source_resolve_failed',
+        severity: 'error',
+        ownerId: 'shape_throw',
+        debugLabel: 'broken-shape'
+      })
     ]);
   });
 });

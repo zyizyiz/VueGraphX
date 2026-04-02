@@ -8,7 +8,7 @@
 
 > **createAnimationCapabilityContract**(`track`): [`AnimationCapabilityContract`](../interfaces/AnimationCapabilityContract.md)
 
-Defined in: [architecture/shapes/composition.ts:476](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/composition.ts#L476)
+Defined in: [architecture/shapes/composition.ts:512](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/composition.ts#L512)
 
 将运行时动画轨道转换为外部 UI 可消费的能力契约。
 

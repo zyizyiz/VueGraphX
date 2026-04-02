@@ -1,4 +1,5 @@
 import type { GraphXEngine } from '../../engine/GraphXEngine';
+import type { GraphSceneShapeNode } from '../../scene/contracts';
 import type { EngineMode } from '../../types/engine';
 import type { ShapeCapabilityTarget } from '../capabilities/contracts';
 
@@ -42,9 +43,26 @@ export interface GraphShapeInstance {
   getCapabilityTarget(): ShapeCapabilityTarget | null;
 
   /**
+   * 返回当前图形实例参与 scene document 导出的内容负载。
+   * 未实现时表示当前实例不提供导出负载。
+   */
+  getScenePayload?(): GraphSceneShapeNode['payload'];
+
+  /**
    * 销毁实例及其持有的 JSXGraph 资源。
    */
   destroy(): void;
+}
+
+/**
+ * 显式声明某类图形可参与公共 scene document 合同的配置。
+ */
+export interface GraphShapeSceneDefinition<Payload = unknown> {
+  /**
+   * 在导入 scene 时对原始 payload 做归一化或校验。
+   * 可以抛出异常让调用方得到恢复失败 diagnostics。
+   */
+  normalizePayload?: (payload: unknown) => Payload;
 }
 
 /**
@@ -785,6 +803,12 @@ export interface GraphShapeDefinition {
    * 该图形定义允许出现的模式；传 all 表示所有模式均可使用。
    */
   supportedModes: EngineMode | EngineMode[] | 'all';
+
+  /**
+   * 可选的 scene document 参与声明。
+   * 只有声明了该字段的图形，才属于公共 scene import/export 的支持范围。
+   */
+  scene?: GraphShapeSceneDefinition;
 
   /**
    * 基于上下文和负载创建图形实例。

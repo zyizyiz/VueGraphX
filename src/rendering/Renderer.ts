@@ -5,7 +5,7 @@ import { Parser } from '../parsing/Parser';
 import { EngineMode } from '../types/engine';
 import { RenderRegistry } from './registry';
 import { createDefaultRegistry } from './handlers/createDefaultRegistry';
-import { GraphHiddenLineRenderBridge, RenderContext } from './types';
+import { GraphHiddenLineRenderBridge, GraphRelationRenderBridge, RenderContext } from './types';
 import JXG from 'jsxgraph';
 
 export class Renderer {
@@ -15,7 +15,8 @@ export class Renderer {
   constructor(
     private boardMgr: BoardManager,
     private entityMgr: EntityManager,
-    private hiddenLineBridge: GraphHiddenLineRenderBridge
+    private hiddenLineBridge: GraphHiddenLineRenderBridge,
+    private relationBridge: GraphRelationRenderBridge
   ) {
     this.mathScope = new MathScope();
     this.registry = createDefaultRegistry();
@@ -51,6 +52,20 @@ export class Renderer {
           const resolvedOwnerId = targetOwnerId ?? ownerId;
           if (resolvedOwnerId) {
             this.hiddenLineBridge.clearOwnerSources(resolvedOwnerId);
+          }
+        }
+      },
+      relation: {
+        ownerId,
+        registerTarget: (target) => {
+          if (ownerId) {
+            this.relationBridge.registerTarget(ownerId, target);
+          }
+        },
+        clearOwnerTargets: (targetOwnerId) => {
+          const resolvedOwnerId = targetOwnerId ?? ownerId;
+          if (resolvedOwnerId) {
+            this.relationBridge.clearOwnerTargets(resolvedOwnerId);
           }
         }
       }

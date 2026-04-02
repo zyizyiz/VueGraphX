@@ -1,5 +1,6 @@
 import JXG from 'jsxgraph';
 import type { GraphHiddenLineOptions } from '../rendering/hiddenLine/contracts';
+import type { GraphRelationAssistOptions } from '../relation/contracts';
 
 /**
  * 引擎对外暴露的画板模式。
@@ -60,6 +61,11 @@ export interface GraphXOptions {
     needShift?: boolean;
     needTwoFingers?: boolean;
   };
+
+  /**
+   * 关系辅助拖拽配置。当前主要用于 geometry 模式下的平行吸附阈值。
+   */
+  relationAssist?: GraphRelationAssistOptions;
 
   /**
    * 3D 视图的布局与属性配置。仅在 3D 画板模式下生效。

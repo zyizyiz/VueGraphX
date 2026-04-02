@@ -98,6 +98,8 @@ export class Surface3DHandler implements RenderHandler {
     ], attrs);
 
     ctx.hiddenLine.registerSource({
+      debugLabel: 'surface-command',
+      tags: ['command', 'surface', '3d'],
       role: 'both',
       style: {
         visible: { strokeColor: attrs.strokeColor, strokeWidth: 1.2 },

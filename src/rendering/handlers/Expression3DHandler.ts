@@ -84,6 +84,8 @@ export class Expression3DHandler implements RenderHandler {
       ], attrs);
 
       ctx.hiddenLine.registerSource({
+        debugLabel: 'expression-surface',
+        tags: ['command', 'expression', 'surface', '3d'],
         role: 'both',
         style: {
           visible: { strokeColor: attrs.strokeColor, strokeWidth: 1.2 },

@@ -6,7 +6,7 @@
 
 # Interface: BaseStyleOptions
 
-Defined in: [types/engine.ts:100](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/types/engine.ts#L100)
+Defined in: [types/engine.ts:106](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/engine.ts#L106)
 
 通常透传给 JSXGraph 元素的通用样式选项。
 
@@ -22,7 +22,7 @@ Defined in: [types/engine.ts:100](https://github.com/zyizyiz/VueGraphX/blob/5bee
 
 > `optional` **name**: `string`
 
-Defined in: [types/engine.ts:104](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/types/engine.ts#L104)
+Defined in: [types/engine.ts:110](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/engine.ts#L110)
 
 元素名称或标签文本。
 
@@ -32,7 +32,7 @@ Defined in: [types/engine.ts:104](https://github.com/zyizyiz/VueGraphX/blob/5bee
 
 > `optional` **withLabel**: `boolean`
 
-Defined in: [types/engine.ts:109](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/types/engine.ts#L109)
+Defined in: [types/engine.ts:115](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/engine.ts#L115)
 
 是否显示标签。
 
@@ -42,7 +42,7 @@ Defined in: [types/engine.ts:109](https://github.com/zyizyiz/VueGraphX/blob/5bee
 
 > `optional` **strokeColor**: `string`
 
-Defined in: [types/engine.ts:114](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/types/engine.ts#L114)
+Defined in: [types/engine.ts:120](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/engine.ts#L120)
 
 描边颜色。
 
@@ -52,7 +52,7 @@ Defined in: [types/engine.ts:114](https://github.com/zyizyiz/VueGraphX/blob/5bee
 
 > `optional` **strokeWidth**: `number`
 
-Defined in: [types/engine.ts:119](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/types/engine.ts#L119)
+Defined in: [types/engine.ts:125](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/engine.ts#L125)
 
 描边宽度。
 
@@ -62,7 +62,7 @@ Defined in: [types/engine.ts:119](https://github.com/zyizyiz/VueGraphX/blob/5bee
 
 > `optional` **fillColor**: `string`
 
-Defined in: [types/engine.ts:124](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/types/engine.ts#L124)
+Defined in: [types/engine.ts:130](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/engine.ts#L130)
 
 填充颜色。
 
@@ -72,6 +72,6 @@ Defined in: [types/engine.ts:124](https://github.com/zyizyiz/VueGraphX/blob/5bee
 
 > `optional` **fillOpacity**: `number`
 
-Defined in: [types/engine.ts:129](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/types/engine.ts#L129)
+Defined in: [types/engine.ts:135](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/types/engine.ts#L135)
 
 填充透明度。

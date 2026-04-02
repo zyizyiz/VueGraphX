@@ -288,7 +288,11 @@ const buildSegmentRuns = (
         Boolean(polyline.ignoreOwnerOcclusion)
       );
       const baseVisibility = polyline.sampleVisibility?.(midWorldPoint) ?? 'auto';
-      const hidden = baseVisibility === 'hidden' || externallyHidden;
+      const hidden = baseVisibility === 'visible'
+        ? false
+        : baseVisibility === 'hidden'
+          ? true
+          : externallyHidden;
 
       if (activeHidden === null || activeHidden !== hidden) {
         if (activePoints.length >= 2 && activeHidden !== null) {

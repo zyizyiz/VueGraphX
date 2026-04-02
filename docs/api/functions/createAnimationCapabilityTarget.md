@@ -8,7 +8,7 @@
 
 > **createAnimationCapabilityTarget**(`tracks`, `options?`): [`GraphAnimationCapabilityTarget`](../interfaces/GraphAnimationCapabilityTarget.md) \| `null`
 
-Defined in: [architecture/shapes/composition.ts:526](https://github.com/zyizyiz/VueGraphX/blob/5bee1dec6ecd05ac28e6fb1cd1de054ab497d0f4/src/architecture/shapes/composition.ts#L526)
+Defined in: [architecture/shapes/composition.ts:562](https://github.com/zyizyiz/VueGraphX/blob/9f72605fb698dc53077546b3d3b04f80b67b45d6/src/architecture/shapes/composition.ts#L562)
 
 同时返回主动画别名与完整动画集合契约。
 
