@@ -83,6 +83,10 @@ const createFakeEngine = () => {
     relationState: new GraphRelationState(),
     relationTargets: new Map(),
     relationSnapshots: [],
+    relationTargetAssistDisposers: new Map(),
+    relationAssistSessions: new Map(),
+    activeRelationDragKey: null,
+    isApplyingRelationAssist: false,
     sceneState: new GraphSceneState(),
     renderer: {
       render: vi.fn((_mode: EngineMode, expression: string, _color: string, _options: unknown, id: string) => {

@@ -20,6 +20,7 @@ import type {
   GraphViewportPadding
 } from '../architecture/shapes/contracts';
 import type {
+  GraphRelationAssistOptions,
   GraphRelationCreateInput,
   GraphRelationCreateResult,
   GraphRelationListener,
@@ -30,9 +31,15 @@ import type {
   GraphRelationTargetRef,
   GraphSceneRelationNode
 } from '../relation/contracts';
+import {
+  areRelationGeometriesEquivalent,
+  normalizeRelationAssistOptions,
+  resolveRelationAssist
+} from '../relation/assist';
 import { evaluateRelations } from '../relation/evaluator';
 import {
   buildRelationTargetKey,
+  type GraphRelationDragSource,
   toRelationTargetDescriptor,
   toRelationTargetRecord,
   type GraphRelationTargetRecord,
@@ -127,6 +134,7 @@ const cloneGraphXOptions = (options?: GraphXOptions): GraphXOptions | undefined 
     boundingbox: cloneBoundingBox(options.boundingbox),
     drag: options.drag ? { ...options.drag } : undefined,
     pan: options.pan ? { ...options.pan } : undefined,
+    relationAssist: options.relationAssist ? { ...options.relationAssist } : undefined,
     view3D: options.view3D
       ? {
           ...options.view3D,
@@ -251,9 +259,17 @@ export class GraphXEngine {
   private currentOptions?: GraphXOptions;
   private entityMgr: EntityManager;
   private hiddenLineMgr: GraphHiddenLineManager;
+  private relationAssistOptions = normalizeRelationAssistOptions();
   private relationState = new GraphRelationState();
   private relationTargets = new Map<string, GraphRelationTargetRecord>();
   private relationSnapshots: GraphRelationSnapshot[] = [];
+  private relationTargetAssistDisposers = new Map<string, () => void>();
+  private relationAssistSessions = new Map<string, {
+    latchedRelationId: string | null;
+    dragSource: GraphRelationDragSource;
+  }>();
+  private activeRelationDragKey: string | null = null;
+  private isApplyingRelationAssist = false;
   private sceneState = new GraphSceneState();
   private renderer: Renderer;
   private shapeDefinitions: Map<string, GraphShapeDefinition> = new Map();
@@ -275,6 +291,7 @@ export class GraphXEngine {
 
     this.entityMgr = new EntityManager();
     this.hiddenLineMgr = new GraphHiddenLineManager(this.boardMgr, options?.view3D?.hiddenLine);
+    this.relationAssistOptions = normalizeRelationAssistOptions(options?.relationAssist);
     this.renderer = new Renderer(this.boardMgr, this.entityMgr, {
       isEnabled: () => this.hiddenLineMgr.isEnabled(),
       getOptions: () => this.hiddenLineMgr.getOptions(),
@@ -321,6 +338,21 @@ export class GraphXEngine {
 
   public getHiddenLineOptions(): GraphHiddenLineOptions {
     return this.hiddenLineMgr.getOptions();
+  }
+
+  public getRelationAssistOptions(): Required<GraphRelationAssistOptions> {
+    return { ...this.relationAssistOptions };
+  }
+
+  public setRelationAssistOptions(options?: GraphRelationAssistOptions): Required<GraphRelationAssistOptions> {
+    const nextOptions = normalizeRelationAssistOptions(options);
+    const currentOptions = cloneGraphXOptions(this.currentOptions) ?? {};
+    this.relationAssistOptions = nextOptions;
+    this.currentOptions = {
+      ...currentOptions,
+      relationAssist: { ...nextOptions }
+    };
+    return this.getRelationAssistOptions();
   }
 
   /** 更新当前引擎的 hidden-line 配置，并立即返回最新 runtime snapshot。 */
@@ -573,7 +605,9 @@ export class GraphXEngine {
 
   private registerRelationTarget(ownerId: string, target: GraphRelationTargetRegistration): void {
     const record = toRelationTargetRecord(ownerId, target);
-    this.relationTargets.set(buildRelationTargetKey(record), record);
+    const key = buildRelationTargetKey(record);
+    this.relationTargets.set(key, record);
+    this.syncRelationTargetAssist(key, record);
     this.refreshRelationState();
   }
 
@@ -581,13 +615,104 @@ export class GraphXEngine {
     if (ownerId) {
       Array.from(this.relationTargets.keys()).forEach((key) => {
         if (key.startsWith(`command:${ownerId}:`) || key.startsWith(`shape:${ownerId}:`)) {
+          this.clearRelationTargetAssist(key);
           this.relationTargets.delete(key);
         }
       });
     } else {
+      Array.from(this.relationTargetAssistDisposers.keys()).forEach((key) => this.clearRelationTargetAssist(key));
       this.relationTargets.clear();
     }
     this.refreshRelationState();
+  }
+
+  private syncRelationTargetAssist(key: string, record: GraphRelationTargetRecord): void {
+    this.clearRelationTargetAssist(key);
+    const subscribeDrag = record.assist?.subscribeDrag;
+    if (!subscribeDrag) return;
+
+    const dispose = subscribeDrag({
+      onStart: (source) => {
+        this.activateRelationAssistDrag(key, source);
+      },
+      onMove: (source) => {
+        this.activateRelationAssistDrag(key, source);
+        this.applyRelationAssistForActiveDrag();
+      },
+      onEnd: () => {
+        this.resetRelationAssistDrag(key);
+      }
+    });
+
+    if (typeof dispose === 'function') {
+      this.relationTargetAssistDisposers.set(key, dispose);
+    }
+  }
+
+  private clearRelationTargetAssist(key: string): void {
+    this.relationTargetAssistDisposers.get(key)?.();
+    this.relationTargetAssistDisposers.delete(key);
+    this.resetRelationAssistDrag(key);
+  }
+
+  private activateRelationAssistDrag(
+    key: string,
+    source: GraphRelationDragSource
+  ): { latchedRelationId: string | null; dragSource: GraphRelationDragSource } {
+    this.activeRelationDragKey = key;
+    const session = this.relationAssistSessions.get(key) ?? { latchedRelationId: null, dragSource: source };
+    session.dragSource = source;
+    this.relationAssistSessions.set(key, session);
+    return session;
+  }
+
+  private resetRelationAssistDrag(key: string): void {
+    this.relationAssistSessions.delete(key);
+    if (this.activeRelationDragKey === key) {
+      this.activeRelationDragKey = null;
+    }
+  }
+
+  private applyRelationAssistForActiveDrag(): void {
+    if (this.isApplyingRelationAssist || !this.activeRelationDragKey) return;
+    const dragKey = this.activeRelationDragKey;
+
+    if (this.boardMgr.mode !== 'geometry') {
+      this.resetRelationAssistDrag(dragKey);
+      return;
+    }
+
+    const activeTarget = this.relationTargets.get(dragKey);
+    if (!activeTarget?.assist?.applyGeometry) return;
+
+    const session = this.relationAssistSessions.get(dragKey) ?? { latchedRelationId: null, dragSource: 'element' as const };
+    this.relationAssistSessions.set(dragKey, session);
+    const resolution = resolveRelationAssist({
+      records: this.relationState.list(),
+      targets: Array.from(this.relationTargets.values()),
+      draggedTargetKey: dragKey,
+      dragSource: session.dragSource,
+      latchedRelationId: session.latchedRelationId,
+      options: this.relationAssistOptions
+    });
+
+    if (!resolution) {
+      session.latchedRelationId = null;
+      return;
+    }
+
+    if (areRelationGeometriesEquivalent(activeTarget.getGeometry(), resolution.geometry)) {
+      session.latchedRelationId = resolution.relationId;
+      return;
+    }
+
+    this.isApplyingRelationAssist = true;
+    try {
+      const applied = activeTarget.assist.applyGeometry(resolution.geometry);
+      session.latchedRelationId = applied ? resolution.relationId : null;
+    } finally {
+      this.isApplyingRelationAssist = false;
+    }
   }
 
   private refreshRelationState(): void {
@@ -702,12 +827,16 @@ export class GraphXEngine {
       Array.from(this.shapeInstances.values()).forEach((instance) => {
         instance.onBoardUp?.(e, this.isClickingObject);
       });
+      if (this.activeRelationDragKey) {
+        this.resetRelationAssistDrag(this.activeRelationDragKey);
+      }
     });
 
     board.on('update', () => {
       Array.from(this.shapeInstances.values()).forEach((instance) => {
         instance.onBoardUpdate?.();
       });
+      this.applyRelationAssistForActiveDrag();
       this.hiddenLineMgr.update();
       this.refreshRelationState();
     });
@@ -738,6 +867,7 @@ export class GraphXEngine {
     if (isRestarted) {
       if (options !== undefined) {
         this.currentOptions = cloneGraphXOptions(options);
+        this.relationAssistOptions = normalizeRelationAssistOptions(options.relationAssist);
       }
       this.hiddenLineMgr.setOptions((options ?? this.currentOptions)?.view3D?.hiddenLine);
       this.clearShapeInstances();
@@ -759,6 +889,7 @@ export class GraphXEngine {
     this.boardMgr.resetBoard(options);
     if (options !== undefined) {
       this.currentOptions = cloneGraphXOptions(options);
+      this.relationAssistOptions = normalizeRelationAssistOptions(options.relationAssist);
     }
     this.hiddenLineMgr.setOptions((options ?? this.currentOptions)?.view3D?.hiddenLine);
     this.hiddenLineMgr.clearAllSources();

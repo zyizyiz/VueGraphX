@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue';
 import type {
+  GraphRelationAssistOptions,
   GraphRelationCreateResult,
   GraphRelationKind,
   GraphRelationSnapshot,
@@ -61,6 +62,14 @@ export function useRelations(options: UseRelationsOptions) {
   const primaryTargetKey = ref('');
   const secondaryTargetKey = ref('');
   const expectedDistance = ref(2);
+  const parallelSnapEnterAngle = ref(2);
+  const parallelSnapExitAngle = ref(3.5);
+  const perpendicularSnapEnterAngle = ref(2);
+  const perpendicularSnapExitAngle = ref(3.5);
+  const equalLengthSnapEnterDelta = ref(0.1);
+  const equalLengthSnapExitDelta = ref(0.2);
+  const distanceAssertionSnapEnterDelta = ref(0.1);
+  const distanceAssertionSnapExitDelta = ref(0.2);
   const lastCreateResult = ref<GraphRelationCreateResult | null>(null);
   const lastMessage = ref('');
 
@@ -128,6 +137,18 @@ export function useRelations(options: UseRelationsOptions) {
 
     if (!engine) return;
 
+    const currentAssistOptions = engine.getRelationAssistOptions?.();
+    if (currentAssistOptions) {
+      parallelSnapEnterAngle.value = currentAssistOptions.parallelSnapEnterAngle;
+      parallelSnapExitAngle.value = currentAssistOptions.parallelSnapExitAngle;
+      perpendicularSnapEnterAngle.value = currentAssistOptions.perpendicularSnapEnterAngle;
+      perpendicularSnapExitAngle.value = currentAssistOptions.perpendicularSnapExitAngle;
+      equalLengthSnapEnterDelta.value = currentAssistOptions.equalLengthSnapEnterDelta;
+      equalLengthSnapExitDelta.value = currentAssistOptions.equalLengthSnapExitDelta;
+      distanceAssertionSnapEnterDelta.value = currentAssistOptions.distanceAssertionSnapEnterDelta;
+      distanceAssertionSnapExitDelta.value = currentAssistOptions.distanceAssertionSnapExitDelta;
+    }
+
     const unsubscribe = engine.subscribeRelations((snapshot) => {
       relations.value = snapshot.relations;
       targets.value = sortTargets(snapshot.targets);
@@ -168,6 +189,33 @@ export function useRelations(options: UseRelationsOptions) {
     return engine.setRelationActive(relation.id, !relation.active);
   };
 
+  const applyRelationAssistOptions = () => {
+    const engine = options.getEngine();
+    if (!engine?.setRelationAssistOptions) return null;
+
+    const nextOptions: GraphRelationAssistOptions = {
+      parallelSnapEnterAngle: Number(parallelSnapEnterAngle.value),
+      parallelSnapExitAngle: Number(parallelSnapExitAngle.value),
+      perpendicularSnapEnterAngle: Number(perpendicularSnapEnterAngle.value),
+      perpendicularSnapExitAngle: Number(perpendicularSnapExitAngle.value),
+      equalLengthSnapEnterDelta: Number(equalLengthSnapEnterDelta.value),
+      equalLengthSnapExitDelta: Number(equalLengthSnapExitDelta.value),
+      distanceAssertionSnapEnterDelta: Number(distanceAssertionSnapEnterDelta.value),
+      distanceAssertionSnapExitDelta: Number(distanceAssertionSnapExitDelta.value)
+    };
+    const applied = engine.setRelationAssistOptions(nextOptions);
+    parallelSnapEnterAngle.value = applied.parallelSnapEnterAngle;
+    parallelSnapExitAngle.value = applied.parallelSnapExitAngle;
+    perpendicularSnapEnterAngle.value = applied.perpendicularSnapEnterAngle;
+    perpendicularSnapExitAngle.value = applied.perpendicularSnapExitAngle;
+    equalLengthSnapEnterDelta.value = applied.equalLengthSnapEnterDelta;
+    equalLengthSnapExitDelta.value = applied.equalLengthSnapExitDelta;
+    distanceAssertionSnapEnterDelta.value = applied.distanceAssertionSnapEnterDelta;
+    distanceAssertionSnapExitDelta.value = applied.distanceAssertionSnapExitDelta;
+    lastMessage.value = `已更新吸附阈值：平行 ${applied.parallelSnapEnterAngle}°/${applied.parallelSnapExitAngle}°，垂直 ${applied.perpendicularSnapEnterAngle}°/${applied.perpendicularSnapExitAngle}°，等长 ${applied.equalLengthSnapEnterDelta}/${applied.equalLengthSnapExitDelta}，距离 ${applied.distanceAssertionSnapEnterDelta}/${applied.distanceAssertionSnapExitDelta}`;
+    return applied;
+  };
+
   return {
     relations,
     targets,
@@ -178,6 +226,14 @@ export function useRelations(options: UseRelationsOptions) {
     primaryTargetKey,
     secondaryTargetKey,
     expectedDistance,
+    parallelSnapEnterAngle,
+    parallelSnapExitAngle,
+    perpendicularSnapEnterAngle,
+    perpendicularSnapExitAngle,
+    equalLengthSnapEnterDelta,
+    equalLengthSnapExitDelta,
+    distanceAssertionSnapEnterDelta,
+    distanceAssertionSnapExitDelta,
     compatibleKinds,
     canCreate,
     lastCreateResult,
@@ -185,6 +241,7 @@ export function useRelations(options: UseRelationsOptions) {
     kindLabelMap,
     createRelation,
     removeRelation,
-    toggleRelation
+    toggleRelation,
+    applyRelationAssistOptions
   };
 }

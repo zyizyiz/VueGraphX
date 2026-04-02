@@ -40,6 +40,19 @@ export type GraphRelationGeometry =
   | GraphRelationSegmentGeometry
   | GraphRelationCircleGeometry;
 
+export interface GraphRelationDragObserver {
+  onStart?: (source: GraphRelationDragSource) => void;
+  onMove?: (source: GraphRelationDragSource) => void;
+  onEnd?: (source: GraphRelationDragSource) => void;
+}
+
+export type GraphRelationDragSource = 'element' | 'point1' | 'point2';
+
+export interface GraphRelationTargetAssistAdapter {
+  subscribeDrag?: (observer: GraphRelationDragObserver) => (() => void) | void;
+  applyGeometry?: (geometry: GraphRelationGeometry) => boolean;
+}
+
 export interface GraphRelationTargetRegistration {
   ownerType?: GraphRelationTargetOwnerType;
   targetId?: string;
@@ -48,10 +61,12 @@ export interface GraphRelationTargetRegistration {
   sourceExpression?: string;
   ownerLabel?: string;
   getGeometry: () => GraphRelationGeometry | null;
+  assist?: GraphRelationTargetAssistAdapter;
 }
 
 export interface GraphRelationTargetRecord extends GraphRelationTargetDescriptor {
   getGeometry: () => GraphRelationGeometry | null;
+  assist?: GraphRelationTargetAssistAdapter;
 }
 
 export const DEFAULT_RELATION_TARGET_ID = 'primary';
@@ -91,5 +106,6 @@ export const toRelationTargetRecord = (
   registration: GraphRelationTargetRegistration
 ): GraphRelationTargetRecord => ({
   ...toRelationTargetDescriptor(ownerId, registration),
-  getGeometry: registration.getGeometry
+  getGeometry: registration.getGeometry,
+  assist: registration.assist
 });

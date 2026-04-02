@@ -73,6 +73,17 @@ export interface GraphRelationStateSnapshot {
   targets: GraphRelationTargetDescriptor[];
 }
 
+export interface GraphRelationAssistOptions {
+  parallelSnapEnterAngle?: number;
+  parallelSnapExitAngle?: number;
+  perpendicularSnapEnterAngle?: number;
+  perpendicularSnapExitAngle?: number;
+  equalLengthSnapEnterDelta?: number;
+  equalLengthSnapExitDelta?: number;
+  distanceAssertionSnapEnterDelta?: number;
+  distanceAssertionSnapExitDelta?: number;
+}
+
 export type GraphRelationListener = (snapshot: GraphRelationStateSnapshot) => void;
 
 export interface GraphSceneRelationNode {

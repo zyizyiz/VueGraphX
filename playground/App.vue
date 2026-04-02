@@ -486,8 +486,8 @@ const isSidebarBottomResizing = ref(false);
 // 当前模式的 Demo 列表
 const currentDemos = computed(() => allDemos[store.activeMode]);
 const SIDEBAR_BOTTOM_MIN_HEIGHT = 220;
-const SIDEBAR_BOTTOM_DEFAULT_HEIGHT = 320;
-const SIDEBAR_BOTTOM_ABSOLUTE_MAX = 520;
+const SIDEBAR_BOTTOM_DEFAULT_HEIGHT = 400;
+const SIDEBAR_BOTTOM_ABSOLUTE_MAX = 720;
 
 const clampSidebarBottomHeight = (value: number) => {
   const min = SIDEBAR_BOTTOM_MIN_HEIGHT;
@@ -504,8 +504,8 @@ const syncSidebarBottomConstraints = () => {
   const sidebarHeight = sidebarRef.value?.clientHeight ?? 0;
   if (!sidebarHeight) return;
 
-  const proportionalMax = Math.floor(sidebarHeight * 0.58);
-  const preserveTopPane = sidebarHeight - 180;
+  const proportionalMax = Math.floor(sidebarHeight * 0.74);
+  const preserveTopPane = sidebarHeight - 120;
   const nextMax = Math.max(
     SIDEBAR_BOTTOM_MIN_HEIGHT,
     Math.min(SIDEBAR_BOTTOM_ABSOLUTE_MAX, proportionalMax, preserveTopPane)

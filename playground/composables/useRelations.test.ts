@@ -12,6 +12,26 @@ const createMockEngine = () => {
   };
 
   return {
+    getRelationAssistOptions: vi.fn(() => ({
+      parallelSnapEnterAngle: 2,
+      parallelSnapExitAngle: 3.5,
+      perpendicularSnapEnterAngle: 2,
+      perpendicularSnapExitAngle: 3.5,
+      equalLengthSnapEnterDelta: 0.1,
+      equalLengthSnapExitDelta: 0.2,
+      distanceAssertionSnapEnterDelta: 0.1,
+      distanceAssertionSnapExitDelta: 0.2
+    })),
+    setRelationAssistOptions: vi.fn((options) => ({
+      parallelSnapEnterAngle: Math.max(0, Number(options.parallelSnapEnterAngle ?? 2)),
+      parallelSnapExitAngle: Math.max(Number(options.parallelSnapEnterAngle ?? 2), Number(options.parallelSnapExitAngle ?? 3.5)),
+      perpendicularSnapEnterAngle: Math.max(0, Number(options.perpendicularSnapEnterAngle ?? 2)),
+      perpendicularSnapExitAngle: Math.max(Number(options.perpendicularSnapEnterAngle ?? 2), Number(options.perpendicularSnapExitAngle ?? 3.5)),
+      equalLengthSnapEnterDelta: Math.max(0, Number(options.equalLengthSnapEnterDelta ?? 0.1)),
+      equalLengthSnapExitDelta: Math.max(Number(options.equalLengthSnapEnterDelta ?? 0.1), Number(options.equalLengthSnapExitDelta ?? 0.2)),
+      distanceAssertionSnapEnterDelta: Math.max(0, Number(options.distanceAssertionSnapEnterDelta ?? 0.1)),
+      distanceAssertionSnapExitDelta: Math.max(Number(options.distanceAssertionSnapEnterDelta ?? 0.1), Number(options.distanceAssertionSnapExitDelta ?? 0.2))
+    })),
     subscribeRelations: vi.fn((listener: (state: typeof snapshot) => void) => {
       listener(snapshot);
       return () => undefined;
@@ -69,5 +89,27 @@ describe('useRelations', () => {
       params: { expectedValue: 5 }
     });
     expect(relationState.lastMessage.value).toContain('已创建');
+
+    relationState.parallelSnapEnterAngle.value = 1.5;
+    relationState.parallelSnapExitAngle.value = 2.5;
+    relationState.perpendicularSnapEnterAngle.value = 2;
+    relationState.perpendicularSnapExitAngle.value = 3;
+    relationState.equalLengthSnapEnterDelta.value = 0.1;
+    relationState.equalLengthSnapExitDelta.value = 0.2;
+    relationState.distanceAssertionSnapEnterDelta.value = 0.1;
+    relationState.distanceAssertionSnapExitDelta.value = 0.2;
+    relationState.applyRelationAssistOptions();
+
+    expect(engine.setRelationAssistOptions).toHaveBeenCalledWith({
+      parallelSnapEnterAngle: 1.5,
+      parallelSnapExitAngle: 2.5,
+      perpendicularSnapEnterAngle: 2,
+      perpendicularSnapExitAngle: 3,
+      equalLengthSnapEnterDelta: 0.1,
+      equalLengthSnapExitDelta: 0.2,
+      distanceAssertionSnapEnterDelta: 0.1,
+      distanceAssertionSnapExitDelta: 0.2
+    });
+    expect(relationState.lastMessage.value).toContain('已更新吸附阈值');
   });
 });
