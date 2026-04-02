@@ -6,8 +6,8 @@ import type {
   GraphSceneLoadResult,
   GraphSceneLoadStatus,
   GraphXEngine
-} from 'vuegraphx';
-import { GRAPH_SCENE_DOCUMENT_VERSION as graphSceneDocumentVersion } from 'vuegraphx';
+} from '../../src/index';
+import { GRAPH_SCENE_DOCUMENT_VERSION as graphSceneDocumentVersion } from '../../src/index';
 import type { PlaygroundMode } from '../types/mode';
 import { getPlaygroundModeForEngineMode } from '../types/mode';
 
