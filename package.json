@@ -1,6 +1,6 @@
 {
   "name": "vuegraphx",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "type": "module",
   "description": "The math and graphics engine core for VueGraphX",
   "license": "Apache-2.0",
