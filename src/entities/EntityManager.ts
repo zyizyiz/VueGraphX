@@ -14,17 +14,22 @@ export class EntityManager {
     const records = this.entityMap.get(cmdId);
     if (!records) return;
 
-    records.forEach(el => {
-      try {
-        if (el && el.name) {
-          this.namedElements.delete(el.name);
+    board?.suspendUpdate?.();
+    try {
+      records.forEach(el => {
+        try {
+          if (el && el.name) {
+            this.namedElements.delete(el.name);
+          }
+          if (board) {
+            board.removeObject(el);
+          }
+        } catch {
         }
-        if (board) {
-          board.removeObject(el);
-        }
-      } catch {
-      }
-    });
+      });
+    } finally {
+      board?.unsuspendUpdate?.();
+    }
     this.entityMap.delete(cmdId);
   }
 
