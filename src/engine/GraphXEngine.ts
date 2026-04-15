@@ -134,6 +134,7 @@ const cloneGraphXOptions = (options?: GraphXOptions): GraphXOptions | undefined 
     boundingbox: cloneBoundingBox(options.boundingbox),
     drag: options.drag ? { ...options.drag } : undefined,
     pan: options.pan ? { ...options.pan } : undefined,
+    zoom: options.zoom ? { ...options.zoom } : undefined,
     relationAssist: options.relationAssist ? { ...options.relationAssist } : undefined,
     view3D: options.view3D
       ? {

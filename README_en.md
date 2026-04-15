@@ -63,6 +63,17 @@ const engine = new GraphXEngine('box', {
   boundingbox: [-5, 5, 5, -5],
   axis: true,
   showNavigation: false,
+  pan: {
+    enabled: true,
+    needShift: false,
+    needTwoFingers: false
+  },
+  zoom: {
+    enabled: true,
+    wheel: true,
+    needShift: false,
+    pinch: true
+  }
 });
 
 const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
@@ -97,6 +108,10 @@ const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
 engine.registerShape(customCircle);
 engine.createShape('circle', { x: 0, y: 0 });
 ```
+
+Zoom is not enabled by default in the library; if you want a draggable viewport plus wheel / pinch zoom, configure `pan` and `zoom` at initialization.  
+If you want touch devices or trackpads to behave as “two-finger move = pan, pinch = zoom”, set `pan.needTwoFingers` to `true`.  
+`showNavigation` only controls the default JSXGraph navigation buttons; it does not disable `zoom.wheel` or `zoom.pinch`.
 
 ### 2. Subscribe to capabilities and drive UI
 
