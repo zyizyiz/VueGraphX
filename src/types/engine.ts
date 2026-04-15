@@ -63,6 +63,71 @@ export interface GraphXOptions {
   };
 
   /**
+   * JSXGraph 画板缩放开关。支持鼠标滚轮和触摸双指 pinch。
+   */
+  zoom?: {
+    /**
+     * 是否启用缩放。
+     */
+    enabled?: boolean;
+
+    /**
+     * 是否允许鼠标滚轮缩放。
+     */
+    wheel?: boolean;
+
+    /**
+     * 鼠标滚轮缩放是否需要按住 Shift。
+     */
+    needShift?: boolean;
+
+    /**
+     * 是否允许触摸设备双指 pinch 缩放。
+     */
+    pinch?: boolean;
+
+    /**
+     * 在 keepaspectratio=false 时，是否允许水平 pinch 缩放。
+     */
+    pinchHorizontal?: boolean;
+
+    /**
+     * 在 keepaspectratio=false 时，是否允许垂直 pinch 缩放。
+     */
+    pinchVertical?: boolean;
+
+    /**
+     * pinch 手势识别灵敏度（角度阈值）。
+     */
+    pinchSensitivity?: number;
+
+    /**
+     * 水平缩放因子。
+     */
+    factorX?: number;
+
+    /**
+     * 垂直缩放因子。
+     */
+    factorY?: number;
+
+    /**
+     * 缩放中心。`auto` 为指针/双指中点，`board` 为画板中心。
+     */
+    center?: 'auto' | 'board';
+
+    /**
+     * 最小缩放值。
+     */
+    min?: number;
+
+    /**
+     * 最大缩放值。
+     */
+    max?: number;
+  };
+
+  /**
    * 关系辅助拖拽配置。当前主要用于 geometry 模式下的平行吸附阈值。
    */
   relationAssist?: GraphRelationAssistOptions;

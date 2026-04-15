@@ -3,6 +3,9 @@ import { EngineMode, GraphXOptions, JXGView3D } from '../types/engine';
 import jsxgraphCssText from '../../node_modules/jsxgraph/distrib/jsxgraph.css?inline';
 
 type View3DRect = NonNullable<NonNullable<GraphXOptions['view3D']>['rect']>;
+type WheelGestureKind = 'zoom' | 'pan' | 'ignore';
+type WheelGestureLikeEvent = Pick<WheelEvent, 'ctrlKey' | 'metaKey' | 'deltaMode'>;
+const WHEEL_DELTA_PIXEL = 0;
 
 const DEFAULT_VIEW3D_RECT: View3DRect = [[-6, -3], [8, 8], [[-5, 5], [-5, 5], [-5, 5]]];
 
@@ -41,6 +44,32 @@ export const buildAdaptiveView3DRect = (
   ];
 };
 
+export const shouldUseTrackpadGestureBridge = (options?: GraphXOptions): boolean => (
+  options?.pan?.enabled !== false && options?.pan?.needTwoFingers === true
+);
+
+export const classifyWheelGesture = (
+  event: WheelGestureLikeEvent,
+  options?: GraphXOptions
+): WheelGestureKind => {
+  const zoomEnabled = options?.zoom?.enabled !== false;
+  const wheelZoomEnabled = options?.zoom?.wheel !== false;
+
+  if ((event.ctrlKey || event.metaKey) && zoomEnabled) {
+    return 'zoom';
+  }
+
+  if (shouldUseTrackpadGestureBridge(options) && event.deltaMode === WHEEL_DELTA_PIXEL) {
+    return 'pan';
+  }
+
+  if (zoomEnabled && wheelZoomEnabled) {
+    return 'zoom';
+  }
+
+  return 'ignore';
+};
+
 /**
  * 供公共引擎门面调用的底层画板生命周期管理器。
  */
@@ -52,6 +81,7 @@ export class BoardManager {
   private containerId: string;
   private globalOptions?: GraphXOptions;
   private baseView3DRect: View3DRect = cloneView3DRect(DEFAULT_VIEW3D_RECT);
+  private disposeTrackpadGestureBridge: (() => void) | null = null;
 
   /**
    * 创建一个绑定到指定 DOM 容器 id 的画板管理器。
@@ -87,6 +117,8 @@ export class BoardManager {
    * 使用当前模式与配置初始化或重建 JSXGraph 画板。
    */
   public initBoard(): void {
+    this.teardownTrackpadGestureBridge();
+
     if (this.board) {
       JXG.JSXGraph.freeBoard(this.board);
       this.view3d = null;
@@ -102,6 +134,9 @@ export class BoardManager {
       keepaspectratio: true,
       showCopyright: false,
       moveTarget: defaultMoveTarget,
+      zoom: {
+        enabled: false
+      },
       selection: {
         enabled: false,
         needShift: true
@@ -120,8 +155,15 @@ export class BoardManager {
     const view3DOptions = this.globalOptions?.view3D;
     const boardOptions = { ...this.globalOptions };
     delete (boardOptions as Partial<GraphXOptions>).view3D;
+    if (shouldUseTrackpadGestureBridge(this.globalOptions) && boardOptions.zoom) {
+      boardOptions.zoom = {
+        ...boardOptions.zoom,
+        wheel: false
+      };
+    }
 
-    this.board = JXG.JSXGraph.initBoard(this.containerId, { ...defaultOptions, ...boardOptions });
+    this.board = JXG.JSXGraph.initBoard(this.containerId, { ...defaultOptions, ...boardOptions } as any);
+    this.setupTrackpadGestureBridge();
 
     if (this.mode === '3d' && view3DOptions?.fitToBoard) {
       this.board.on('boundingbox', () => {
@@ -193,8 +235,66 @@ export class BoardManager {
    * 释放底层 JSXGraph 画板资源。
    */
   public destroy(): void {
+    this.teardownTrackpadGestureBridge();
     if (this.board) {
       JXG.JSXGraph.freeBoard(this.board);
+    }
+  }
+
+  private setupTrackpadGestureBridge(): void {
+    if (!this.board || !shouldUseTrackpadGestureBridge(this.globalOptions)) return;
+
+    const container = this.board.containerObj as HTMLElement | undefined;
+    if (!container) return;
+
+    const onWheel = (event: WheelEvent) => {
+      const action = classifyWheelGesture(event, this.globalOptions);
+      if (action === 'ignore') return;
+
+      event.preventDefault();
+      if (action === 'pan') {
+        this.panBoardByWheel(event);
+        return;
+      }
+      this.zoomBoardByWheel(event);
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    this.disposeTrackpadGestureBridge = () => {
+      container.removeEventListener('wheel', onWheel);
+    };
+  }
+
+  private teardownTrackpadGestureBridge(): void {
+    this.disposeTrackpadGestureBridge?.();
+    this.disposeTrackpadGestureBridge = null;
+  }
+
+  private panBoardByWheel(event: WheelEvent): void {
+    const origin = (this.board as any)?.origin?.scrCoords;
+    if (!origin) return;
+    this.board.moveOrigin(origin[1] - event.deltaX, origin[2] - event.deltaY);
+  }
+
+  private zoomBoardByWheel(event: WheelEvent): void {
+    const zoomOptions = this.globalOptions?.zoom;
+    if (!this.board || zoomOptions?.enabled === false || event.deltaY === 0) return;
+
+    if (zoomOptions?.center === 'board') {
+      if (event.deltaY < 0) {
+        this.board.zoomIn();
+      } else {
+        this.board.zoomOut();
+      }
+      return;
+    }
+
+    const position = this.board.getMousePosition(event);
+    const userPoint = new JXG.Coords(JXG.COORDS_BY_SCREEN, position, this.board).usrCoords;
+    if (event.deltaY < 0) {
+      this.board.zoomIn(userPoint[1], userPoint[2]);
+    } else {
+      this.board.zoomOut(userPoint[1], userPoint[2]);
     }
   }
 }

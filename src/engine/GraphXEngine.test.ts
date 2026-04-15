@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { GraphXOptions } from '../types/engine';
 import { GraphXEngine } from './GraphXEngine';
 import {
   DEFAULT_DISTANCE_ASSERTION_SNAP_ENTER_DELTA,
@@ -102,6 +103,76 @@ describe('GraphXEngine relation assist options', () => {
         equalLengthSnapExitDelta: 0.2,
         distanceAssertionSnapEnterDelta: 0.1,
         distanceAssertionSnapExitDelta: 0.2
+      }
+    });
+  });
+});
+
+describe('GraphXEngine board option cloning', () => {
+  it('stores cloned pan and zoom options when restarting with new board settings', () => {
+    const input: GraphXOptions = {
+      pan: {
+        enabled: true,
+        needShift: false,
+        needTwoFingers: true
+      },
+      zoom: {
+        enabled: true,
+        wheel: true,
+        needShift: false,
+        pinch: true,
+        factorX: 1.1,
+        factorY: 1.2,
+        center: 'board'
+      }
+    };
+
+    const fakeEngine = {
+      boardMgr: {
+        setMode: vi.fn(() => true)
+      },
+      hiddenLineMgr: {
+        setOptions: vi.fn(),
+        clearAllSources: vi.fn()
+      },
+      clearShapeInstances: vi.fn(),
+      clearRelationTargets: vi.fn(),
+      relationState: {
+        clear: vi.fn()
+      },
+      refreshRelationState: vi.fn(),
+      entityMgr: {
+        clearAll: vi.fn()
+      },
+      sceneState: {
+        clearCommands: vi.fn(),
+        clearRelations: vi.fn()
+      },
+      clearVariables: vi.fn(),
+      setupGlobalEvents: vi.fn(),
+      currentOptions: undefined,
+      relationAssistOptions: undefined
+    };
+
+    GraphXEngine.prototype.setMode.call(fakeEngine as any, '2d', input);
+
+    input.pan!.needShift = true;
+    input.zoom!.center = 'auto';
+
+    expect(fakeEngine.currentOptions).toEqual({
+      pan: {
+        enabled: true,
+        needShift: false,
+        needTwoFingers: true
+      },
+      zoom: {
+        enabled: true,
+        wheel: true,
+        needShift: false,
+        pinch: true,
+        factorX: 1.1,
+        factorY: 1.2,
+        center: 'board'
       }
     });
   });

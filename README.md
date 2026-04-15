@@ -83,6 +83,17 @@ const engine = new GraphXEngine('box', {
   boundingbox: [-5, 5, 5, -5],
   axis: true,
   showNavigation: false,
+  pan: {
+    enabled: true,
+    needShift: false,
+    needTwoFingers: false
+  },
+  zoom: {
+    enabled: true,
+    wheel: true,
+    needShift: false,
+    pinch: true
+  }
 });
 
 const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
@@ -117,6 +128,10 @@ const customCircle = createComposedShapeDefinition<{ x: number; y: number }>({
 engine.registerShape(customCircle);
 engine.createShape('circle', { x: 0, y: 0 });
 ```
+
+库默认不会自动开启缩放；如果你需要“画布可拖动 + 滚轮 / 双指缩放”，直接在初始化时配置 `pan` 和 `zoom` 即可。  
+如果你希望触摸设备或触控板使用“双指移动=平移、捏合=缩放”，请把 `pan.needTwoFingers` 设为 `true`。  
+`showNavigation` 只控制 JSXGraph 默认导航按钮的显示，不影响 `zoom.wheel` 或 `zoom.pinch`。
 
 ### 2. 订阅能力并驱动交互
 
