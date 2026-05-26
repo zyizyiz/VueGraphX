@@ -167,7 +167,7 @@ export interface GraphRenderBackend {
     readonly id: string;
     readonly capabilities: GraphBackendCapabilities;
     mount(host: GraphBackendHost, options?: GraphBackendMountOptions): GraphBackendMountResult;
-    create(node: GraphObjectNode, context?: GraphBackendContext): GraphRenderHandle;
+    create(node: GraphObjectNode, context?: GraphBackendContext): GraphOperationResult<GraphRenderHandle>;
     update(handle: GraphRenderHandle, patch: GraphObjectPatch, context?: GraphBackendContext): void;
     remove(handle: GraphRenderHandle): void;
     pick(point: GraphClientPoint, options?: GraphPickOptions): GraphPickResult | null;

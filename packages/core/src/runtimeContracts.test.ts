@@ -48,18 +48,19 @@ const createCoreOnlyTestBackend = (id = 'core-test'): GraphRenderBackend => {
     create: (node, context = {}) => {
       const stored = createGraphObjectNode({ ...node, layerId: context.layerId ?? node.layerId ?? 'content' });
       nodes.set(stored.id, stored);
-      return {
+      const handle = {
         id: `${id}:${stored.id}`,
         objectId: stored.id,
         backendId: id,
         layerId: stored.layerId ?? 'content',
         target: {
-          scope: 'object',
+          scope: 'object' as const,
           objectId: stored.id,
           backendId: id,
           layerId: stored.layerId ?? 'content'
         }
       };
+      return { ok: true, value: handle, diagnostics: [] };
     },
     update: (handle, patch) => {
       const current = nodes.get(handle.objectId);

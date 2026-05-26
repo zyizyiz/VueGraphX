@@ -174,8 +174,10 @@ export class GraphSceneRuntime {
     if (!this.backend) return;
     const previous = this.handlesByObjectId.get(node.id);
     if (previous) this.backend.remove(previous);
-    const handle = this.backend.create(node, this.createContext(node, context));
-    this.handlesByObjectId.set(node.id, cloneHandle(handle));
+    const result = this.backend.create(node, this.createContext(node, context));
+    if (result.ok && result.value) {
+      this.handlesByObjectId.set(node.id, cloneHandle(result.value));
+    }
   }
 
   private createContext(node: GraphObjectNode, context?: GraphBackendContext): GraphBackendContext {

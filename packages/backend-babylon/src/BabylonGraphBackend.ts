@@ -7,6 +7,7 @@ import type {
   GraphClientPoint,
   GraphObjectNode,
   GraphObjectPatch,
+  GraphOperationResult,
   GraphPickOptions,
   GraphPickResult,
   GraphRenderBackend,
@@ -15,7 +16,7 @@ import type {
   GraphViewportSize,
   GraphWorldPoint
 } from '@vuegraphx/core';
-import { createGraphObjectNode, mergeGraphObjectPatch } from '@vuegraphx/core';
+import { createGraphObjectNode, mergeGraphObjectPatch, okResult } from '@vuegraphx/core';
 
 export interface BabylonRuntimePickResult {
   objectId: string;
@@ -43,6 +44,31 @@ export interface BabylonGraphBackendOptions {
   runtime?: BabylonRuntimePort;
   capabilities?: Partial<GraphBackendCapabilities>;
 }
+
+type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
+
+const getBabylonSupportStatus = (node: GraphObjectNode): BackendSupportStatus => (
+  node.type === 'solid' ? 'success' : 'unsupported'
+);
+
+const createBackendSupportDiagnosticResult = (
+  backendId: string,
+  node: GraphObjectNode,
+  status: Exclude<BackendSupportStatus, 'success'>
+): GraphOperationResult<GraphRenderHandle> => ({
+  ok: false,
+  diagnostics: [{
+    code: status === 'partial-support' ? 'backend.partial-support' : 'backend.unsupported-object',
+    message: `Backend ${backendId} reports ${status} for object ${node.id} (${node.type}).`,
+    severity: status === 'partial-support' ? 'warning' : 'error',
+    target: {
+      scope: 'object',
+      objectId: node.id,
+      backendId,
+      layerId: node.layerId ?? 'content'
+    }
+  }]
+});
 
 export class BabylonGraphBackend implements GraphRenderBackend {
   public readonly id: string;
@@ -76,7 +102,11 @@ export class BabylonGraphBackend implements GraphRenderBackend {
     return { backendId: options.backendId ?? this.id, size: this.size };
   }
 
-  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphRenderHandle {
+  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphOperationResult<GraphRenderHandle> {
+    const status = getBabylonSupportStatus(node);
+    if (status !== 'success') {
+      return createBackendSupportDiagnosticResult(this.id, node, status);
+    }
     const stored = createGraphObjectNode(node);
     const layerId = context.layerId ?? stored.layerId ?? 'content';
     const handle: GraphRenderHandle = {
@@ -88,10 +118,8 @@ export class BabylonGraphBackend implements GraphRenderBackend {
     };
     this.nodes.set(stored.id, { ...stored, layerId });
     this.handles.set(handle.id, handle);
-    if (node.type === 'solid') {
-      this.runtime?.createSolid(node, handle, context);
-    }
-    return handle;
+    this.runtime?.createSolid(node, handle, context);
+    return okResult(handle);
   }
 
   public update(handle: GraphRenderHandle, patch: GraphObjectPatch, context: GraphBackendContext = {}): void {
