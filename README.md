@@ -15,7 +15,7 @@
 
 ## 🌟 简介
 
-VueGraphX 提供三条互补的能力主线，长期目标见 [renderer-agnostic roadmap](./docs/renderer-agnostic-roadmap.md)：
+VueGraphX 提供三条互补的能力主线，长期目标见 [renderer-agnostic roadmap](./docs/renderer-agnostic-roadmap.md)；发布前的包兼容、dist/types、tarball 与 semver gate 见 [release compatibility gate](./docs/release-compatibility.md)：
 
 - Renderer-agnostic core：把 scene、viewport、object、relation、capability、picking、drag、layer pass-through 与 backend contract 收敛到核心运行时，JSXGraph/Canvas2D/Babylon 等都只是可替换后端。
 - 独立数学内核：把函数、方程、不等式、解析几何、平面/立体几何、向量、三角函数、统计、基础微积分、参数/隐式曲线和几何构造能力沉淀到 `@vuegraphx/math`。
