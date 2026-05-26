@@ -10,6 +10,11 @@ import {
   type GraphOperationResult
 } from './contracts';
 import {
+  createGraphRelationSnapshot,
+  validateGraphRelationSnapshot,
+  type GraphSceneRelationSnapshot
+} from './relationSnapshot';
+import {
   createGraphSceneObjectIrNode,
   isSupportedGraphSceneObjectIrType,
   unsupportedGraphSceneObjectIrDiagnostic
@@ -22,6 +27,7 @@ export interface GraphRuntimeSceneDocument {
   sceneId: string;
   objects: GraphObjectNode[];
   rootObjectIds: string[];
+  relationSnapshot?: GraphSceneRelationSnapshot;
   meta?: Record<string, unknown>;
 }
 
@@ -432,11 +438,18 @@ export class GraphSceneStore {
   }
 
   public toJSON(meta?: Record<string, unknown>): GraphOperationResult<GraphRuntimeSceneDocument> {
+    const objects = this.listObjects();
+    const relationSnapshot = createGraphRelationSnapshot(objects);
+    if (!relationSnapshot.ok || !relationSnapshot.value) {
+      return { ok: false, diagnostics: relationSnapshot.diagnostics };
+    }
+
     const document: GraphRuntimeSceneDocument = {
       version: GRAPH_RUNTIME_SCENE_VERSION,
       sceneId: this.sceneId,
-      objects: this.listObjects(),
+      objects,
       rootObjectIds: [...this.rootOrder],
+      relationSnapshot: relationSnapshot.value,
       meta: meta ? cloneSerializable(meta) : undefined
     };
 
@@ -468,9 +481,18 @@ export class GraphSceneStore {
       const result = store.addObject(node, { root: document.rootObjectIds.includes(node.id) });
       if (!result.ok) diagnostics.push(...result.diagnostics);
     }
+    if (diagnostics.length > 0) return { ok: false, diagnostics };
 
-    return diagnostics.length > 0
-      ? { ok: false, diagnostics }
-      : okResult(store);
+    if (document.relationSnapshot !== undefined) {
+      const snapshotValidation = validateGraphRelationSnapshot(document.relationSnapshot, store.listObjects());
+      if (!snapshotValidation.ok) {
+        return { ok: false, diagnostics: snapshotValidation.diagnostics };
+      }
+    }
+
+    const computedSnapshot = createGraphRelationSnapshot(store.listObjects());
+    if (!computedSnapshot.ok) return { ok: false, diagnostics: computedSnapshot.diagnostics };
+
+    return okResult(store);
   }
 }

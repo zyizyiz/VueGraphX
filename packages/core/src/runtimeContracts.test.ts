@@ -4,15 +4,19 @@ import {
   GraphInteractionRouter,
   GraphSceneRuntime,
   GraphSceneStore,
+  GRAPH_RELATION_SNAPSHOT_VERSION,
   SUPPORTED_GRAPH_SCENE_OBJECT_IR_TYPES,
+  createGraphRelationSnapshot,
   createGraphCapabilitiesForObject,
   createGraphDragPatch,
   createGraphObjectNode,
   createGraphSceneObjectIrNode,
+  createGraphViewportCoordinateModel,
   executeGraphCapability,
   hasRendererFrameworkLeak,
   mergeGraphObjectPatch,
   unsupportedGraphSceneObjectIrDiagnostic,
+  validateGraphRelationSnapshot,
   type GraphBackendHost,
   type GraphObjectNode,
   type GraphRenderBackend
@@ -279,6 +283,210 @@ describe('renderer-neutral core runtime contracts', () => {
     const loaded = GraphSceneStore.fromJSON(json.value!);
     expect(loaded.ok).toBe(true);
     expect(loaded.value?.listObjects().map((object) => object.type)).toEqual([...SUPPORTED_GRAPH_SCENE_OBJECT_IR_TYPES]);
+  });
+
+  it('round-trips relation and dependency snapshots through scene documents', () => {
+    const pointA = createPointNode('A', 0, 0);
+    const pointB = createPointNode('B', 3, 4);
+    const segment = createGraphSceneObjectIrNode({
+      id: 'segment-ab',
+      objectType: 'segment',
+      payload: {
+        objectType: 'segment',
+        endpoints: [{ objectId: 'A' }, { objectId: 'B' }]
+      },
+      dependencies: ['A', 'B'],
+      relations: ['distance-ab']
+    });
+    const measurement = createGraphSceneObjectIrNode({
+      id: 'distance-ab',
+      objectType: 'measurement',
+      payload: {
+        objectType: 'measurement',
+        measurementKind: 'distance',
+        targets: [{ objectId: 'A' }, { objectId: 'B' }],
+        unit: 'unit'
+      },
+      dependencies: ['A', 'B', 'segment-ab']
+    });
+
+    expect(segment.ok).toBe(true);
+    expect(measurement.ok).toBe(true);
+
+    const store = new GraphSceneStore('relations');
+    for (const node of [pointA, pointB, segment.value!, measurement.value!]) {
+      expect(store.addObject(node).ok).toBe(true);
+    }
+
+    const relationSnapshot = createGraphRelationSnapshot(store.listObjects());
+    expect(relationSnapshot.ok).toBe(true);
+    expect(relationSnapshot.value).toMatchObject({
+      version: GRAPH_RELATION_SNAPSHOT_VERSION,
+      objects: [
+        { objectId: 'segment-ab', dependencyIds: ['A', 'B'], relationIds: ['distance-ab'] },
+        { objectId: 'distance-ab', dependencyIds: ['A', 'B', 'segment-ab'], relationIds: [] }
+      ],
+      relations: [
+        { relationId: 'distance-ab', relationType: 'measurement', dependencyIds: ['A', 'B', 'segment-ab'] }
+      ]
+    });
+
+    const json = store.toJSON({ source: 'relation-test' });
+    expect(json.ok).toBe(true);
+    expect(json.value?.relationSnapshot).toEqual(relationSnapshot.value);
+
+    const loaded = GraphSceneStore.fromJSON(json.value!);
+    expect(loaded.ok).toBe(true);
+    expect(loaded.value?.toJSON().value?.relationSnapshot).toEqual(relationSnapshot.value);
+  });
+
+  it('returns typed diagnostics for missing and invalid relation snapshots', () => {
+    const missingDependency = new GraphSceneStore('missing-dependency');
+    expect(missingDependency.addObject({
+      ...createPointNode('A', 0, 0),
+      dependencies: ['missing-point']
+    }).ok).toBe(true);
+
+    const missingSnapshot = missingDependency.toJSON();
+    expect(missingSnapshot.ok).toBe(false);
+    expect(missingSnapshot.diagnostics[0]).toMatchObject({
+      code: 'relation-snapshot.missing-dependency',
+      severity: 'error',
+      target: { scope: 'object', objectId: 'A' }
+    });
+
+    const invalidSnapshot = validateGraphRelationSnapshot({
+      version: GRAPH_RELATION_SNAPSHOT_VERSION,
+      objects: [{ objectId: 'A', dependencyIds: ['A'], relationIds: [] }],
+      relations: 'invalid'
+    }, [createPointNode('A', 0, 0)]);
+    expect(invalidSnapshot.ok).toBe(false);
+    expect(invalidSnapshot.diagnostics[0]).toMatchObject({
+      code: 'relation-snapshot.invalid-snapshot',
+      severity: 'error',
+      target: { scope: 'scene' }
+    });
+
+    const invalidRelationTarget = validateGraphRelationSnapshot({
+      version: GRAPH_RELATION_SNAPSHOT_VERSION,
+      objects: [{ objectId: 'A', dependencyIds: [], relationIds: ['A'] }],
+      relations: []
+    }, [createPointNode('A', 0, 0)]);
+    expect(invalidRelationTarget.ok).toBe(false);
+    expect(invalidRelationTarget.diagnostics[0]).toMatchObject({
+      code: 'relation-snapshot.invalid-relation-object',
+      severity: 'error',
+      target: { scope: 'relation', relationId: 'A' }
+    });
+  });
+
+  it('defines typed viewport coordinate contracts for 2D, dual-layer 2.5D, and 3D modes', () => {
+    const viewport2d = createGraphViewportCoordinateModel({
+      viewportId: 'vp-2d',
+      mode: '2d',
+      size: { width: 800, height: 600 },
+      layerIds: ['content', 'overlay']
+    });
+    expect(viewport2d.ok).toBe(true);
+    expect(viewport2d.value).toMatchObject({
+      viewportId: 'vp-2d',
+      mode: '2d',
+      worldDimensions: '2d',
+      layerIds: ['content', 'overlay']
+    });
+
+    const dualLayer = createGraphViewportCoordinateModel({
+      viewportId: 'vp-2_5d',
+      mode: 'dual-layer-2_5d',
+      size: { width: 800, height: 600 },
+      layerIds: ['content', 'overlay'],
+      depthPolicy: 'ordered-layers'
+    });
+    expect(dualLayer.ok).toBe(true);
+    expect(dualLayer.value).toMatchObject({
+      mode: 'dual-layer-2_5d',
+      worldDimensions: '2d',
+      layerIds: ['content', 'overlay'],
+      depthPolicy: 'ordered-layers'
+    });
+
+    const viewport3d = createGraphViewportCoordinateModel({
+      viewportId: 'vp-3d',
+      mode: '3d',
+      size: { width: 1024, height: 768 },
+      layerIds: ['content'],
+      camera: {
+        position: { dimension: '3d', x: 0, y: 0, z: 10 },
+        target: { dimension: '3d', x: 0, y: 0, z: 0 },
+        up: { dimension: '3d', x: 0, y: 1, z: 0 }
+      }
+    });
+    expect(viewport3d.ok).toBe(true);
+    expect(viewport3d.value).toMatchObject({
+      mode: '3d',
+      worldDimensions: '3d',
+      camera: {
+        position: { dimension: '3d', x: 0, y: 0, z: 10 },
+        target: { dimension: '3d', x: 0, y: 0, z: 0 }
+      }
+    });
+
+    const unsupportedMode = createGraphViewportCoordinateModel({
+      viewportId: 'vp-4d',
+      mode: '4d',
+      size: { width: 10, height: 10 },
+      layerIds: ['content']
+    });
+    expect(unsupportedMode.ok).toBe(false);
+    expect(unsupportedMode.diagnostics[0]).toMatchObject({
+      code: 'viewport-coordinate.unsupported-mode',
+      severity: 'warning',
+      target: { scope: 'viewport', viewportId: 'vp-4d' }
+    });
+
+    const invalid2dDepth = createGraphViewportCoordinateModel({
+      viewportId: 'vp-2d-invalid',
+      mode: '2d',
+      size: { width: 10, height: 10 },
+      layerIds: ['content'],
+      depthPolicy: 'camera-depth'
+    });
+    expect(invalid2dDepth.ok).toBe(false);
+    expect(invalid2dDepth.diagnostics[0]).toMatchObject({
+      code: 'viewport-coordinate.invalid-model',
+      severity: 'error',
+      target: { scope: 'viewport', viewportId: 'vp-2d-invalid' }
+    });
+
+    const invalidDualLayer = createGraphViewportCoordinateModel({
+      viewportId: 'vp-invalid',
+      mode: 'dual-layer-2_5d',
+      size: { width: 10, height: 10 },
+      layerIds: ['content']
+    });
+    expect(invalidDualLayer.ok).toBe(false);
+    expect(invalidDualLayer.diagnostics[0]).toMatchObject({
+      code: 'viewport-coordinate.invalid-model',
+      severity: 'error',
+      target: { scope: 'viewport', viewportId: 'vp-invalid' }
+    });
+
+    const invalid3dCamera = createGraphViewportCoordinateModel({
+      viewportId: 'vp-3d-invalid',
+      mode: '3d',
+      size: { width: 10, height: 10 },
+      layerIds: ['content'],
+      camera: {
+        position: { dimension: '3d', x: 0, y: 0, z: Number.NaN },
+        target: { dimension: '3d', x: 0, y: 0, z: 0 }
+      }
+    });
+    expect(invalid3dCamera.ok).toBe(false);
+    expect(invalid3dCamera.diagnostics[0]).toMatchObject({
+      code: 'viewport-coordinate.invalid-model',
+      severity: 'error',
+      target: { scope: 'viewport', viewportId: 'vp-3d-invalid' }
+    });
   });
 
   it('returns typed diagnostics for scene object IR families outside the M1 contract', () => {

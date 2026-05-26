@@ -1,5 +1,7 @@
 export * from './contracts';
 export * from './sceneObjectIr';
+export * from './relationSnapshot';
+export * from './viewportCoordinate';
 export * from './backendRegistry';
 export * from './packages';
 export * from './sceneDocument';
