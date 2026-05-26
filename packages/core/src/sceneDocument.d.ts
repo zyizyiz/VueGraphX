@@ -1,10 +1,12 @@
 import { type GraphObjectNode, type GraphObjectPatch, type GraphOperationResult } from './contracts';
+import { type GraphSceneRelationSnapshot } from './relationSnapshot';
 export declare const GRAPH_RUNTIME_SCENE_VERSION = 2;
 export interface GraphRuntimeSceneDocument {
     version: typeof GRAPH_RUNTIME_SCENE_VERSION;
     sceneId: string;
     objects: GraphObjectNode[];
     rootObjectIds: string[];
+    relationSnapshot?: GraphSceneRelationSnapshot;
     meta?: Record<string, unknown>;
 }
 export interface GraphSceneStoreSnapshot {
