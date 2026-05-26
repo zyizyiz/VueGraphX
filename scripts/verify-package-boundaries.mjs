@@ -8,7 +8,7 @@ const rendererPackages = ['jsxgraph', '@babylonjs/core', 'pixi.js', 'fabric', 'k
 const rendererPackageSet = new Set(rendererPackages);
 const packageSourceRoots = [
   { name: '@vuegraphx/core', dir: 'packages/core/src', allowedVueGraphXImports: [] },
-  { name: '@vuegraphx/math', dir: 'packages/math/src', allowedVueGraphXImports: ['@vuegraphx/core'] },
+  { name: '@vuegraphx/math', dir: 'packages/math/src', allowedVueGraphXImports: [] },
   { name: '@vuegraphx/commands', dir: 'packages/commands/src', allowedVueGraphXImports: ['@vuegraphx/core', '@vuegraphx/math'] },
   { name: '@vuegraphx/vue', dir: 'packages/vue/src', allowedVueGraphXImports: ['@vuegraphx/core'] }
 ];
