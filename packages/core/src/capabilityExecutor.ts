@@ -74,6 +74,9 @@ export const executeGraphCapability = (
     return errorResult('capability.missing-object', `Graph object ${input.target.objectId} does not exist.`, input.target);
   }
 
+  const familySupport = validateCapabilityObjectFamily(input.capabilityId, node, input.target);
+  if (familySupport) return familySupport;
+
   switch (input.capabilityId) {
     case 'math.object.select':
       return patchObject(input.scene, node, selectionPatch(node, readBoolean(asRecord(input.payload)?.selected ?? input.payload, true)));
@@ -170,6 +173,26 @@ const patchObject = (
   return updated.ok && updated.value
     ? okResult({ action: 'update', object: updated.value })
     : { ok: false, diagnostics: updated.diagnostics };
+};
+
+const validateCapabilityObjectFamily = (
+  capabilityId: string,
+  node: GraphObjectNode,
+  target: GraphRuntimeTargetRef
+): GraphOperationResult<never> | null => {
+  if (capabilityId.startsWith('math.solid.') && node.type !== 'solid') {
+    return errorResult('capability.partial-support', `Capability ${capabilityId} is only supported for solid scene objects; ${node.type} is not a solid.`, target);
+  }
+
+  if ((capabilityId.startsWith('math.function.') || capabilityId.startsWith('math.equation.')) && node.type !== 'function' && node.type !== 'implicit') {
+    return errorResult('capability.partial-support', `Capability ${capabilityId} is only supported for function or implicit scene objects; ${node.type} is not supported by this family.`, target);
+  }
+
+  if (capabilityId.startsWith('math.vector.') && node.type !== 'vector') {
+    return errorResult('capability.partial-support', `Capability ${capabilityId} is only supported for vector scene objects; ${node.type} is not a vector.`, target);
+  }
+
+  return null;
 };
 
 const executeViewportCapability = (

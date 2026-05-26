@@ -695,6 +695,82 @@ describe('renderer-neutral core runtime contracts', () => {
     expect(scene.listObjects()).toEqual([]);
   });
 
+  it('covers capability executor success, unsupported, partial-support, and diagnostic paths', () => {
+    const scene = new GraphSceneStore('capability-matrix');
+    scene.addObject(createPointNode('A', 0, 0));
+    scene.addObject({
+      id: 'f',
+      kind: 'shape',
+      type: 'function',
+      payload: { objectType: 'function', expression: 'x^2', variable: 'x', parameters: { a: 1 } },
+      layerId: 'content'
+    });
+    scene.addObject({
+      id: 'solid',
+      kind: 'shape',
+      type: 'solid',
+      payload: { objectType: 'solid', solidKind: 'custom', parameters: { family: 'cube', size: 1 } },
+      layerId: 'content'
+    });
+
+    const success = executeGraphCapability({
+      scene,
+      capabilityId: 'math.function.set-expression',
+      target: { scope: 'object', objectId: 'f' },
+      payload: { expression: 'cos(x)' }
+    });
+    expect(success.ok).toBe(true);
+    expect((scene.getObject('f')?.payload as any).expression).toBe('cos(x)');
+
+    const failureMatrix = [
+      {
+        capabilityId: 'math.geometry.nonexistent-command',
+        target: { scope: 'object', objectId: 'f' },
+        expectedCode: 'capability.unsupported',
+        unchangedObjectId: 'f'
+      },
+      {
+        capabilityId: 'math.solid.set-section-plane',
+        target: { scope: 'object', objectId: 'f' },
+        payload: 'xy',
+        expectedCode: 'capability.partial-support',
+        unchangedObjectId: 'f'
+      },
+      {
+        capabilityId: 'math.object.move',
+        target: { scope: 'object', objectId: 'A' },
+        payload: { delta: { dimension: '2d', dx: 'bad', dy: 1 } },
+        expectedCode: 'capability.invalid-delta',
+        unchangedObjectId: 'A'
+      },
+      {
+        capabilityId: 'math.object.set-color',
+        target: { scope: 'object', objectId: 'missing' },
+        payload: '#000',
+        expectedCode: 'capability.missing-object',
+        unchangedObjectId: null
+      }
+    ] as const;
+
+    for (const entry of failureMatrix) {
+      const before = entry.unchangedObjectId ? JSON.stringify(scene.getObject(entry.unchangedObjectId)) : JSON.stringify(scene.listObjects());
+      const result = executeGraphCapability({
+        scene,
+        capabilityId: entry.capabilityId,
+        target: entry.target,
+        payload: 'payload' in entry ? entry.payload : undefined
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics[0]).toMatchObject({
+        code: entry.expectedCode,
+        target: entry.target
+      });
+      const after = entry.unchangedObjectId ? JSON.stringify(scene.getObject(entry.unchangedObjectId)) : JSON.stringify(scene.listObjects());
+      expect(after).toBe(before);
+    }
+  });
+
   it('keeps backend rendering behind GraphSceneRuntime while drag mutates core first', () => {
     const backend = createCoreOnlyTestBackend('runtime-backend');
     const runtime = new GraphSceneRuntime({ backend });
