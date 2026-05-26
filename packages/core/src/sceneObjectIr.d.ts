@@ -169,13 +169,16 @@ export interface CreateGraphSceneObjectIrNodeInput {
     payload: unknown;
     kind?: GraphObjectKind;
     layerId?: GraphLayerId;
+    backendHint?: GraphObjectNode['backendHint'];
     dependencies?: string[];
     children?: string[];
     relations?: string[];
+    capabilities?: GraphObjectNode['capabilities'];
     renderHints?: Record<string, unknown>;
     meta?: Record<string, unknown>;
 }
 export declare const isSupportedGraphSceneObjectIrType: (value: string) => value is GraphSceneObjectIrType;
 export declare const unsupportedGraphSceneObjectIrDiagnostic: (objectType: string, objectId?: string) => GraphSceneObjectIrDiagnostic;
-export declare const invalidGraphSceneObjectIrPayloadDiagnostic: (expectedObjectType: GraphSceneObjectIrType, receivedObjectType: string | undefined, objectId?: string) => GraphSceneObjectIrDiagnostic;
+export declare const invalidGraphSceneObjectIrPayloadDiagnostic: (expectedObjectType: GraphSceneObjectIrType, receivedObjectType: string | undefined, objectId?: string, details?: Record<string, unknown>) => GraphSceneObjectIrDiagnostic;
+export declare const validateGraphSceneObjectIrPayload: (expectedObjectType: GraphSceneObjectIrType, payload: unknown, objectId?: string) => GraphOperationResult<GraphSceneObjectIr>;
 export declare const createGraphSceneObjectIrNode: (input: CreateGraphSceneObjectIrNodeInput) => GraphOperationResult<GraphSceneObjectIrNode>;

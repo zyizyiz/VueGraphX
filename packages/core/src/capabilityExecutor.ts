@@ -393,11 +393,12 @@ const vectorEndpointPatch = (node: GraphObjectNode, payload: unknown): GraphObje
   if (!point || !start || !end || (endpoint !== 'start' && endpoint !== 'end')) return { payload: node.payload };
   const nextStart = endpoint === 'start' ? point : start;
   const nextEnd = endpoint === 'end' ? point : end;
+  const isSceneObjectIrVector = current.objectType === 'vector';
   return {
     payload: {
       ...current,
-      start: nextStart,
-      end: nextEnd,
+      start: isSceneObjectIrVector ? toCoordinatePointSource(nextStart) : nextStart,
+      end: isSceneObjectIrVector ? toCoordinatePointSource(nextEnd) : nextEnd,
       vector: { x: nextEnd.x - nextStart.x, y: nextEnd.y - nextStart.y }
     }
   };
@@ -457,10 +458,16 @@ const isGraphObjectKind = (value: unknown): value is GraphObjectNode['kind'] => 
 const asPoint = (value: unknown): { x: number; y: number } | null => {
   const record = asRecord(value);
   if (!record) return null;
-  const x = readFiniteNumber(record.x);
-  const y = readFiniteNumber(record.y);
+  const coordinates = asRecord(record.coordinates);
+  const source = coordinates ?? record;
+  const x = readFiniteNumber(source.x);
+  const y = readFiniteNumber(source.y);
   return x === null || y === null ? null : { x, y };
 };
+
+const toCoordinatePointSource = (point: { x: number; y: number }): PlainRecord => ({
+  coordinates: { dimension: '2d', x: point.x, y: point.y }
+});
 
 const asDragDelta = (value: unknown): GraphDragDelta | null => {
   const record = asRecord(value);

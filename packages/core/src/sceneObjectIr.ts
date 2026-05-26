@@ -249,9 +249,11 @@ export interface CreateGraphSceneObjectIrNodeInput {
   payload: unknown;
   kind?: GraphObjectKind;
   layerId?: GraphLayerId;
+  backendHint?: GraphObjectNode['backendHint'];
   dependencies?: string[];
   children?: string[];
   relations?: string[];
+  capabilities?: GraphObjectNode['capabilities'];
   renderHints?: Record<string, unknown>;
   meta?: Record<string, unknown>;
 }
@@ -279,7 +281,8 @@ export const unsupportedGraphSceneObjectIrDiagnostic = (
 export const invalidGraphSceneObjectIrPayloadDiagnostic = (
   expectedObjectType: GraphSceneObjectIrType,
   receivedObjectType: string | undefined,
-  objectId?: string
+  objectId?: string,
+  details?: Record<string, unknown>
 ): GraphSceneObjectIrDiagnostic => ({
   code: 'scene-object-ir.invalid-payload',
   message: `Graph scene object ${objectId ?? '<unknown>'} payload must use objectType "${expectedObjectType}".`,
@@ -287,9 +290,38 @@ export const invalidGraphSceneObjectIrPayloadDiagnostic = (
   target: objectTarget(objectId),
   details: {
     expectedObjectType,
-    receivedObjectType
+    receivedObjectType,
+    ...(details ?? {})
   }
 });
+
+export const validateGraphSceneObjectIrPayload = (
+  expectedObjectType: GraphSceneObjectIrType,
+  payload: unknown,
+  objectId?: string
+): GraphOperationResult<GraphSceneObjectIr> => {
+  const payloadObjectType = readGraphSceneObjectIrPayloadType(payload);
+  if (payloadObjectType !== expectedObjectType) {
+    return { ok: false, diagnostics: [invalidGraphSceneObjectIrPayloadDiagnostic(expectedObjectType, payloadObjectType, objectId)] };
+  }
+
+  const payloadRecord = asRecord(payload);
+  const commonError = payloadRecord ? validateCommonSceneObjectIrFields(payloadRecord) : invalidPayload('payload', 'object');
+  const shapeError = commonError ?? validateSceneObjectIrShape(expectedObjectType, payloadRecord);
+  if (shapeError) {
+    return {
+      ok: false,
+      diagnostics: [
+        invalidGraphSceneObjectIrPayloadDiagnostic(expectedObjectType, payloadObjectType, objectId, shapeError)
+      ]
+    };
+  }
+
+  return okResult({
+    ...(payload as GraphSceneObjectIr),
+    schemaVersion: GRAPH_SCENE_OBJECT_IR_VERSION
+  } as GraphSceneObjectIr);
+};
 
 export const createGraphSceneObjectIrNode = (
   input: CreateGraphSceneObjectIrNodeInput
@@ -298,24 +330,22 @@ export const createGraphSceneObjectIrNode = (
     return { ok: false, diagnostics: [unsupportedGraphSceneObjectIrDiagnostic(input.objectType, input.id)] };
   }
 
-  const payloadObjectType = readGraphSceneObjectIrPayloadType(input.payload);
-  if (payloadObjectType !== input.objectType) {
-    return { ok: false, diagnostics: [invalidGraphSceneObjectIrPayloadDiagnostic(input.objectType, payloadObjectType, input.id)] };
+  const payloadResult = validateGraphSceneObjectIrPayload(input.objectType, input.payload, input.id);
+  if (!payloadResult.ok || !payloadResult.value) {
+    return { ok: false, diagnostics: payloadResult.diagnostics };
   }
 
-  const payload = input.payload as GraphSceneObjectIr;
   return okResult(createGraphObjectNode({
     id: input.id,
     kind: input.kind ?? defaultGraphObjectKindForSceneObjectIr(input.objectType),
     type: input.objectType,
-    payload: {
-      ...payload,
-      schemaVersion: GRAPH_SCENE_OBJECT_IR_VERSION
-    },
+    payload: payloadResult.value,
+    backendHint: input.backendHint,
     layerId: input.layerId ?? defaultLayerForSceneObjectIr(input.objectType),
     dependencies: input.dependencies,
     children: input.children,
     relations: input.relations,
+    capabilities: input.capabilities,
     renderHints: input.renderHints,
     meta: input.meta
   }) as GraphSceneObjectIrNode);
@@ -330,6 +360,261 @@ const readGraphSceneObjectIrPayloadType = (payload: unknown): string | undefined
   const objectType = (payload as { objectType?: unknown }).objectType;
   return typeof objectType === 'string' ? objectType : undefined;
 };
+
+type PlainRecord = Record<string, unknown>;
+type ValidationFailure = {
+  path: string;
+  expected: string;
+};
+
+const CONIC_KINDS = new Set<string>(['circle', 'ellipse', 'hyperbola', 'parabola', 'general-conic']);
+const TEXT_FORMATS = new Set<string>(['plain', 'latex', 'markdown']);
+const TRANSFORM_KINDS = new Set<string>(['translation', 'rotation', 'reflection', 'scale', 'matrix', 'custom']);
+const MEASUREMENT_KINDS = new Set<string>(['distance', 'angle', 'length', 'area', 'slope', 'dot-product', 'cross-product', 'volume']);
+const SOLID_KINDS = new Set<string>(['polyhedron', 'sphere', 'cylinder', 'cone', 'prism', 'pyramid', 'surface', 'custom']);
+
+const invalidPayload = (path: string, expected: string): ValidationFailure => ({ path, expected });
+
+const asRecord = (value: unknown): PlainRecord | null => (
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as PlainRecord : null
+);
+
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+
+const isOptionalString = (value: unknown): boolean => value === undefined || typeof value === 'string';
+
+const isOptionalNumber = (value: unknown): boolean => value === undefined || isFiniteNumber(value);
+
+const validateCommonSceneObjectIrFields = (payload: PlainRecord): ValidationFailure | null => {
+  if (payload.schemaVersion !== undefined && payload.schemaVersion !== GRAPH_SCENE_OBJECT_IR_VERSION) {
+    return invalidPayload('schemaVersion', `${GRAPH_SCENE_OBJECT_IR_VERSION}`);
+  }
+  if (!isOptionalString(payload.label)) return invalidPayload('label', 'string');
+  if (payload.style !== undefined && !isSceneStyleIr(payload.style)) return invalidPayload('style', 'GraphSceneStyleIr');
+  if (payload.meta !== undefined && !asRecord(payload.meta)) return invalidPayload('meta', 'record');
+  return null;
+};
+
+const validateSceneObjectIrShape = (
+  objectType: GraphSceneObjectIrType,
+  payload: PlainRecord | null
+): ValidationFailure | null => {
+  if (!payload) return invalidPayload('payload', 'object');
+
+  switch (objectType) {
+    case 'point':
+      return isGraphSceneCoordinate(payload.position) ? null : invalidPayload('position', 'GraphSceneCoordinate');
+    case 'line':
+      return isLineDefinition(payload.definition) ? null : invalidPayload('definition', 'GraphLineDefinitionIr');
+    case 'segment':
+      return isPointSourceTuple(payload.endpoints, 2) ? null : invalidPayload('endpoints', 'two GraphScenePointSource values');
+    case 'ray':
+      return isRayDefinition(payload) ? null : invalidPayload('origin/through|direction', 'ray origin plus through point or direction vector');
+    case 'polygon':
+      return isPointSourceArray(payload.vertices, 3) && (payload.holes === undefined || isPointSourceArrayArray(payload.holes, 3))
+        ? null
+        : invalidPayload('vertices', 'at least three GraphScenePointSource values');
+    case 'conic':
+      return CONIC_KINDS.has(String(payload.conicKind)) && isConicDefinition(payload.definition)
+        ? null
+        : invalidPayload('conicKind/definition', 'valid conic kind and definition');
+    case 'text':
+      return isString(payload.content)
+        && isGraphScenePointSource(payload.anchor)
+        && (payload.format === undefined || TEXT_FORMATS.has(String(payload.format)))
+        ? null
+        : invalidPayload('content/anchor', 'text content and GraphScenePointSource anchor');
+    case 'function':
+      return isString(payload.expression)
+        && isOptionalString(payload.variable)
+        && (payload.domain === undefined || isNumericDomain(payload.domain))
+        && (payload.parameters === undefined || isNumberRecord(payload.parameters))
+        ? null
+        : invalidPayload('expression', 'function expression with optional domain/parameters');
+    case 'parametric':
+      return isString(payload.parameter)
+        && isString(payload.xExpression)
+        && isString(payload.yExpression)
+        && isOptionalString(payload.zExpression)
+        && (payload.domain === undefined || isNumericDomain(payload.domain))
+        && (payload.parameters === undefined || isNumberRecord(payload.parameters))
+        ? null
+        : invalidPayload('parameter/xExpression/yExpression', 'parametric expressions');
+    case 'implicit':
+      return isString(payload.expression)
+        && (payload.variables === undefined || isStringTuple(payload.variables, 2, 3))
+        && (payload.domain === undefined || isNumericDomainRecord(payload.domain))
+        && (payload.parameters === undefined || isNumberRecord(payload.parameters))
+        ? null
+        : invalidPayload('expression', 'implicit expression with optional variables/domain/parameters');
+    case 'vector':
+      return isVectorDefinition(payload) ? null : invalidPayload('start/end|components', 'vector endpoints or components');
+    case 'transform':
+      return TRANSFORM_KINDS.has(String(payload.transformKind))
+        && isGraphSceneObjectRef(payload.target)
+        && !!asRecord(payload.parameters)
+        ? null
+        : invalidPayload('transformKind/target/parameters', 'transform kind, target, and parameter record');
+    case 'measurement':
+      return MEASUREMENT_KINDS.has(String(payload.measurementKind))
+        && isObjectRefArray(payload.targets, 1)
+        && isOptionalString(payload.unit)
+        && isOptionalString(payload.expression)
+        ? null
+        : invalidPayload('measurementKind/targets', 'measurement kind and one or more targets');
+    case 'solid':
+      return SOLID_KINDS.has(String(payload.solidKind))
+        && (payload.vertices === undefined || isWorldPointArray(payload.vertices, '3d'))
+        && (payload.faces === undefined || isNumberArrayArray(payload.faces))
+        && (payload.parameters === undefined || !!asRecord(payload.parameters))
+        ? null
+        : invalidPayload('solidKind', 'solid kind with optional 3D vertices/faces/parameters');
+  }
+};
+
+const isGraphSceneCoordinate = (value: unknown): value is GraphSceneCoordinate => {
+  const point = asRecord(value);
+  if (!point) return false;
+  if (point.dimension === '2d') return isFiniteNumber(point.x) && isFiniteNumber(point.y);
+  if (point.dimension === '3d') return isFiniteNumber(point.x) && isFiniteNumber(point.y) && isFiniteNumber(point.z);
+  return false;
+};
+
+const isGraphSceneObjectRef = (value: unknown): value is GraphSceneObjectRef => {
+  const ref = asRecord(value);
+  return !!ref
+    && isString(ref.objectId)
+    && isOptionalString(ref.componentId)
+    && isOptionalString(ref.relationId)
+    && isOptionalString(ref.role);
+};
+
+const isGraphScenePointSource = (value: unknown): value is GraphScenePointSource => {
+  const source = asRecord(value);
+  return !!source && (
+    isGraphSceneObjectRef(source)
+    || ('coordinates' in source && isGraphSceneCoordinate(source.coordinates))
+  );
+};
+
+const isSceneVectorComponents = (value: unknown): value is GraphSceneVectorComponents => {
+  const vector = asRecord(value);
+  if (!vector || (vector.dimension !== '2d' && vector.dimension !== '3d')) return false;
+  if (!isFiniteNumber(vector.x) || !isFiniteNumber(vector.y)) return false;
+  return vector.dimension === '2d' ? isOptionalNumber(vector.z) : isFiniteNumber(vector.z);
+};
+
+const isNumericDomain = (value: unknown): value is GraphSceneNumericDomain => {
+  const domain = asRecord(value);
+  return !!domain && isOptionalNumber(domain.min) && isOptionalNumber(domain.max) && isOptionalNumber(domain.step);
+};
+
+const isSceneStyleIr = (value: unknown): value is GraphSceneStyleIr => {
+  const style = asRecord(value);
+  return !!style
+    && isOptionalString(style.strokeColor)
+    && isOptionalString(style.fillColor)
+    && isOptionalNumber(style.strokeWidth)
+    && isOptionalNumber(style.opacity)
+    && (style.visible === undefined || typeof style.visible === 'boolean')
+    && (style.lineDash === undefined || isNumberArray(style.lineDash));
+};
+
+const isLineDefinition = (value: unknown): value is GraphLineDefinitionIr => {
+  const definition = asRecord(value);
+  if (!definition) return false;
+  if (definition.mode === 'through-points') return isPointSourceTuple(definition.points, 2);
+  if (definition.mode === 'point-direction') return isGraphScenePointSource(definition.point) && isSceneVectorComponents(definition.direction);
+  if (definition.mode === 'equation') {
+    const coefficients = asRecord(definition.coefficients);
+    return !!coefficients && isFiniteNumber(coefficients.a) && isFiniteNumber(coefficients.b) && isFiniteNumber(coefficients.c);
+  }
+  return false;
+};
+
+const isRayDefinition = (value: PlainRecord): boolean => {
+  if (!isGraphScenePointSource(value.origin)) return false;
+  const hasThrough = value.through !== undefined;
+  const hasDirection = value.direction !== undefined;
+  if (hasThrough === hasDirection) return false;
+  return hasThrough ? isGraphScenePointSource(value.through) : isSceneVectorComponents(value.direction);
+};
+
+const isConicDefinition = (value: unknown): value is GraphConicDefinitionIr => {
+  const definition = asRecord(value);
+  if (!definition) return false;
+  if (definition.mode === 'center-radii') {
+    return isGraphScenePointSource(definition.center)
+      && isFiniteNumber(definition.radiusX)
+      && isOptionalNumber(definition.radiusY)
+      && isOptionalNumber(definition.rotationRadians);
+  }
+  if (definition.mode === 'equation') {
+    return isString(definition.expression) && (definition.variables === undefined || isStringTuple(definition.variables, 2, 2));
+  }
+  if (definition.mode === 'through-points') return isPointSourceArray(definition.points, 3);
+  if (definition.mode === 'focus-directrix') {
+    return isGraphScenePointSource(definition.focus)
+      && isGraphSceneObjectRef(definition.directrix)
+      && isOptionalNumber(definition.eccentricity);
+  }
+  return false;
+};
+
+const isVectorDefinition = (value: PlainRecord): boolean => {
+  const hasStart = value.start !== undefined;
+  const hasEnd = value.end !== undefined;
+  const hasComponents = value.components !== undefined;
+  return (hasStart && hasEnd && !hasComponents && isGraphScenePointSource(value.start) && isGraphScenePointSource(value.end))
+    || (!hasStart && !hasEnd && hasComponents && isSceneVectorComponents(value.components));
+};
+
+const isPointSourceTuple = (value: unknown, length: number): boolean => (
+  Array.isArray(value) && value.length === length && value.every(isGraphScenePointSource)
+);
+
+const isPointSourceArray = (value: unknown, minLength: number): boolean => (
+  Array.isArray(value) && value.length >= minLength && value.every(isGraphScenePointSource)
+);
+
+const isPointSourceArrayArray = (value: unknown, minLength: number): boolean => (
+  Array.isArray(value) && value.every((entry) => isPointSourceArray(entry, minLength))
+);
+
+const isObjectRefArray = (value: unknown, minLength: number): boolean => (
+  Array.isArray(value) && value.length >= minLength && value.every(isGraphSceneObjectRef)
+);
+
+const isStringTuple = (value: unknown, minLength: number, maxLength: number): boolean => (
+  Array.isArray(value)
+  && value.length >= minLength
+  && value.length <= maxLength
+  && value.every(isString)
+);
+
+const isNumberRecord = (value: unknown): value is Record<string, number> => {
+  const record = asRecord(value);
+  return !!record && Object.values(record).every(isFiniteNumber);
+};
+
+const isNumericDomainRecord = (value: unknown): value is Record<string, GraphSceneNumericDomain> => {
+  const record = asRecord(value);
+  return !!record && Object.values(record).every(isNumericDomain);
+};
+
+const isNumberArray = (value: unknown): value is number[] => (
+  Array.isArray(value) && value.every(isFiniteNumber)
+);
+
+const isNumberArrayArray = (value: unknown): boolean => (
+  Array.isArray(value) && value.every(isNumberArray)
+);
+
+const isWorldPointArray = (value: unknown, dimension: GraphWorldPoint['dimension']): boolean => (
+  Array.isArray(value) && value.every((point) => isGraphSceneCoordinate(point) && point.dimension === dimension)
+);
 
 const defaultGraphObjectKindForSceneObjectIr = (objectType: GraphSceneObjectIrType): GraphObjectKind => {
   if (objectType === 'text') return 'overlay';

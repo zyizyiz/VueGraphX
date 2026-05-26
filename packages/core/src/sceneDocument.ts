@@ -9,6 +9,11 @@ import {
   type GraphOperationDiagnostic,
   type GraphOperationResult
 } from './contracts';
+import {
+  createGraphSceneObjectIrNode,
+  isSupportedGraphSceneObjectIrType,
+  unsupportedGraphSceneObjectIrDiagnostic
+} from './sceneObjectIr';
 
 export const GRAPH_RUNTIME_SCENE_VERSION = 2;
 
@@ -62,6 +67,275 @@ const rendererLeakDiagnostic = (id: string): GraphOperationDiagnostic => ({
   target: { scope: 'object', objectId: id }
 });
 
+const sceneSemanticKinds = new Set<GraphObjectNode['kind']>(['shape', 'composite', 'overlay', 'relation']);
+
+const requiresSceneObjectIrValidation = (node: GraphObjectNode): boolean => sceneSemanticKinds.has(node.kind);
+
+const validateSceneObjectNode = (node: GraphObjectNode): GraphOperationResult<GraphObjectNode> => {
+  if (!requiresSceneObjectIrValidation(node)) return okResult(node);
+
+  if (!isSupportedGraphSceneObjectIrType(node.type)) {
+    const legacyInput = readLegacySceneObjectIrInput(node);
+    if (legacyInput && !readPayloadObjectType(node.payload)) {
+      return createSceneObjectIrNode(node, legacyInput.objectType, legacyInput.payload);
+    }
+    return { ok: false, diagnostics: [unsupportedGraphSceneObjectIrDiagnostic(node.type, node.id)] };
+  }
+
+  const result = createSceneObjectIrNode(node, node.type, node.payload);
+  if (result.ok || readPayloadObjectType(node.payload)) return result;
+
+  const legacyInput = readLegacySceneObjectIrInput(node);
+  return legacyInput ? createSceneObjectIrNode(node, legacyInput.objectType, legacyInput.payload) : result;
+};
+
+const createSceneObjectIrNode = (
+  node: GraphObjectNode,
+  objectType: string,
+  payload: unknown
+): GraphOperationResult<GraphObjectNode> => (
+  createGraphSceneObjectIrNode({
+    id: node.id,
+    objectType,
+    payload,
+    kind: node.kind,
+    layerId: node.layerId,
+    backendHint: node.backendHint,
+    dependencies: node.dependencies,
+    children: node.children,
+    relations: node.relations,
+    capabilities: node.capabilities,
+    renderHints: node.renderHints,
+    meta: node.meta
+  })
+);
+
+const readPayloadObjectType = (payload: unknown): string | undefined => {
+  const record = asRecord(payload);
+  return typeof record?.objectType === 'string' ? record.objectType : undefined;
+};
+
+const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: string; payload: unknown } | null => {
+  const payload = asRecord(node.payload);
+  if (!payload) return null;
+
+  if (node.type === 'point') {
+    const point = readPoint2D(payload.point);
+    return point ? {
+      objectType: 'point',
+      payload: { objectType: 'point', position: toWorldPoint2D(point) }
+    } : null;
+  }
+
+  if (node.type === 'line' || node.type === 'segment' || node.type === 'ray') {
+    return readLegacyLinearObjectIrInput(node.type, payload);
+  }
+
+  if (node.type === 'polygon' || node.type === 'polyline') {
+    const geometry = asRecord(payload.geometry);
+    const vertices = readPoint2DArray(geometry?.vertices ?? geometry?.points);
+    return vertices && vertices.length >= (node.type === 'polygon' ? 3 : 2) ? {
+      objectType: 'polygon',
+      payload: {
+        objectType: 'polygon',
+        vertices: vertices.map(toCoordinateSource),
+        closed: node.type === 'polygon'
+      }
+    } : null;
+  }
+
+  if (node.type === 'circle') {
+    const geometry = asRecord(payload.geometry);
+    const center = readPoint2D(geometry?.center);
+    const radius = readFiniteNumber(geometry?.radius);
+    return center && radius !== null ? {
+      objectType: 'conic',
+      payload: {
+        objectType: 'conic',
+        conicKind: 'circle',
+        definition: {
+          mode: 'center-radii',
+          center: toCoordinateSource(center),
+          radiusX: radius,
+          radiusY: radius
+        }
+      }
+    } : null;
+  }
+
+  if (node.type === 'text') {
+    const point = readPoint2D(payload.point);
+    return point && typeof payload.text === 'string' ? {
+      objectType: 'text',
+      payload: {
+        objectType: 'text',
+        content: payload.text,
+        anchor: toCoordinateSource(point),
+        format: 'plain'
+      }
+    } : null;
+  }
+
+  if (node.type === 'function') {
+    return typeof payload.expression === 'string' ? {
+      objectType: 'function',
+      payload: {
+        objectType: 'function',
+        expression: payload.expression,
+        variable: typeof payload.variable === 'string' ? payload.variable : 'x',
+        domain: readLegacyDomain(payload.domain),
+        parameters: readNumberRecord(payload.parameters)
+      }
+    } : null;
+  }
+
+  if (node.type === 'equation') {
+    return typeof payload.expression === 'string' ? {
+      objectType: 'implicit',
+      payload: {
+        objectType: 'implicit',
+        expression: payload.expression,
+        variables: ['x', 'y'],
+        parameters: readNumberRecord(payload.parameters)
+      }
+    } : null;
+  }
+
+  if (node.type === 'vector') {
+    const start = readPoint2D(payload.start);
+    const end = readPoint2D(payload.end);
+    if (start && end) {
+      return {
+        objectType: 'vector',
+        payload: { objectType: 'vector', start: toCoordinateSource(start), end: toCoordinateSource(end) }
+      };
+    }
+    const vector = readPoint2D(payload.vector);
+    return vector ? {
+      objectType: 'vector',
+      payload: { objectType: 'vector', components: { dimension: '2d', x: vector.x, y: vector.y } }
+    } : null;
+  }
+
+  if (node.type === 'solid') {
+    return {
+      objectType: 'solid',
+      payload: {
+        objectType: 'solid',
+        solidKind: 'custom',
+        parameters: {
+          ...(asRecord(payload.parameters) ?? {}),
+          ...(typeof payload.family === 'string' ? { family: payload.family } : {})
+        }
+      }
+    };
+  }
+
+  return null;
+};
+
+const readLegacyLinearObjectIrInput = (
+  type: 'line' | 'segment' | 'ray',
+  payload: Record<string, unknown>
+): { objectType: string; payload: unknown } | null => {
+  const geometry = asRecord(payload.geometry);
+  if (!geometry) return null;
+
+  if (type === 'line') {
+    const point = readPoint2D(geometry.point);
+    const direction = readPoint2D(geometry.direction);
+    return point && direction ? {
+      objectType: 'line',
+      payload: {
+        objectType: 'line',
+        definition: {
+          mode: 'point-direction',
+          point: toCoordinateSource(point),
+          direction: { dimension: '2d', x: direction.x, y: direction.y }
+        }
+      }
+    } : null;
+  }
+
+  if (type === 'segment') {
+    const start = readPoint2D(geometry.start);
+    const end = readPoint2D(geometry.end);
+    return start && end ? {
+      objectType: 'segment',
+      payload: { objectType: 'segment', endpoints: [toCoordinateSource(start), toCoordinateSource(end)] }
+    } : null;
+  }
+
+  const origin = readPoint2D(geometry.origin);
+  const direction = readPoint2D(geometry.direction);
+  return origin && direction ? {
+    objectType: 'ray',
+    payload: {
+      objectType: 'ray',
+      origin: toCoordinateSource(origin),
+      direction: { dimension: '2d', x: direction.x, y: direction.y }
+    }
+  } : null;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => (
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
+);
+
+const readFiniteNumber = (value: unknown): number | null => (
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+);
+
+const readPoint2D = (value: unknown): { x: number; y: number } | null => {
+  const point = asRecord(value);
+  const coordinates = asRecord(point?.coordinates);
+  const source = coordinates ?? point;
+  if (!source) return null;
+  const x = readFiniteNumber(source.x);
+  const y = readFiniteNumber(source.y);
+  return x === null || y === null ? null : { x, y };
+};
+
+const readPoint2DArray = (value: unknown): { x: number; y: number }[] | null => {
+  if (!Array.isArray(value)) return null;
+  const points = value.map(readPoint2D);
+  return points.every((point): point is { x: number; y: number } => !!point) ? points : null;
+};
+
+const readLegacyDomain = (value: unknown): { min?: number; max?: number; step?: number } | undefined => {
+  if (Array.isArray(value) && value.length >= 2) {
+    const min = readFiniteNumber(value[0]);
+    const max = readFiniteNumber(value[1]);
+    return min === null || max === null ? undefined : { min, max };
+  }
+  const domain = asRecord(value);
+  if (!domain) return undefined;
+  return {
+    ...(readFiniteNumber(domain.min) !== null ? { min: readFiniteNumber(domain.min)! } : {}),
+    ...(readFiniteNumber(domain.max) !== null ? { max: readFiniteNumber(domain.max)! } : {}),
+    ...(readFiniteNumber(domain.step) !== null ? { step: readFiniteNumber(domain.step)! } : {})
+  };
+};
+
+const readNumberRecord = (value: unknown): Record<string, number> | undefined => {
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const entries = Object.entries(record);
+  return entries.every(([, entry]) => typeof entry === 'number' && Number.isFinite(entry))
+    ? Object.fromEntries(entries) as Record<string, number>
+    : undefined;
+};
+
+const toWorldPoint2D = (point: { x: number; y: number }): { dimension: '2d'; x: number; y: number } => ({
+  dimension: '2d',
+  x: point.x,
+  y: point.y
+});
+
+const toCoordinateSource = (point: { x: number; y: number }): { coordinates: { dimension: '2d'; x: number; y: number } } => ({
+  coordinates: toWorldPoint2D(point)
+});
+
 export class GraphSceneStore {
   private readonly objectMap = new Map<string, GraphObjectNode>();
   private readonly objectOrder: string[] = [];
@@ -83,7 +357,12 @@ export class GraphSceneStore {
       return { ok: false, diagnostics: [duplicateObjectDiagnostic(node.id)] };
     }
 
-    const stored = createGraphObjectNode(cloneSerializable(node));
+    const validation = validateSceneObjectNode(node);
+    if (!validation.ok || !validation.value) {
+      return { ok: false, diagnostics: validation.diagnostics };
+    }
+
+    const stored = createGraphObjectNode(cloneSerializable(validation.value));
     if (!exists) {
       this.objectOrder.push(stored.id);
     }
@@ -107,8 +386,14 @@ export class GraphSceneStore {
       return { ok: false, diagnostics: [rendererLeakDiagnostic(id)] };
     }
 
-    this.objectMap.set(id, next);
-    return okResult(createGraphObjectNode(next));
+    const validation = validateSceneObjectNode(next);
+    if (!validation.ok || !validation.value) {
+      return { ok: false, diagnostics: validation.diagnostics };
+    }
+
+    const stored = createGraphObjectNode(cloneSerializable(validation.value));
+    this.objectMap.set(id, stored);
+    return okResult(createGraphObjectNode(stored));
   }
 
   public removeObject(id: string): GraphOperationResult<GraphObjectNode> {
@@ -184,7 +469,7 @@ export class GraphSceneStore {
       if (!result.ok) diagnostics.push(...result.diagnostics);
     }
 
-    return diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+    return diagnostics.length > 0
       ? { ok: false, diagnostics }
       : okResult(store);
   }
