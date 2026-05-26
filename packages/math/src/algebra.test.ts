@@ -72,4 +72,27 @@ describe('renderer-free algebra typed results', () => {
     if (!intersections.ok) throw new Error(intersections.error.message);
     expect(intersections.value).toEqual([{ x: expect.closeTo(1), y: expect.closeTo(1) }]);
   });
+
+  it('finds bounded tangent/even-multiplicity numeric roots and intersections', () => {
+    const evenRoots = findFunctionRoots(
+      createFunctionDescriptor('(x - 0.1)^2'),
+      { min: -1, max: 1 },
+      { samples: 64 }
+    );
+    expect(evenRoots.ok).toBe(true);
+    if (!evenRoots.ok) throw new Error(evenRoots.error.message);
+    expect(evenRoots.value).toHaveLength(1);
+    expect(evenRoots.value[0]?.value).toBeCloseTo(0.1, 6);
+
+    const tangentIntersection = intersectFunctions(
+      createFunctionDescriptor('(x - 0.1)^2'),
+      createFunctionDescriptor('0'),
+      { min: -1, max: 1 },
+      { samples: 64 }
+    );
+    expect(tangentIntersection.ok).toBe(true);
+    if (!tangentIntersection.ok) throw new Error(tangentIntersection.error.message);
+    expect(tangentIntersection.value).toHaveLength(1);
+    expect(tangentIntersection.value[0]).toEqual({ x: expect.closeTo(0.1, 6), y: expect.closeTo(0, 6) });
+  });
 });

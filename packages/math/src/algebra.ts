@@ -269,6 +269,34 @@ const bisectRoot = (
   return Math.abs(leftValue) <= Math.abs(rightValue) ? left : right;
 };
 
+const minimizeAbsoluteRootCandidate = (
+  evaluate: (x: number) => number,
+  min: number,
+  max: number,
+  maxIterations: number
+): { x: number; y: number } | null => {
+  let left = min;
+  let right = max;
+
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    const leftThird = left + (right - left) / 3;
+    const rightThird = right - (right - left) / 3;
+    const leftValue = evaluate(leftThird);
+    const rightValue = evaluate(rightThird);
+    if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) return null;
+
+    if (Math.abs(leftValue) <= Math.abs(rightValue)) {
+      right = rightThird;
+    } else {
+      left = leftThird;
+    }
+  }
+
+  const x = (left + right) / 2;
+  const y = evaluate(x);
+  return Number.isFinite(y) ? { x, y } : null;
+};
+
 const findNumericRoots = (
   evaluate: (x: number) => number,
   domain: MathInterval,
@@ -284,8 +312,10 @@ const findNumericRoots = (
   const maxIterations = tolerance.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const roots: MathRoot[] = [];
 
-  let previousX = domain.min;
-  let previousY = evaluate(previousX);
+  let twoPreviousX = domain.min;
+  let twoPreviousY = evaluate(twoPreviousX);
+  let previousX = twoPreviousX;
+  let previousY = twoPreviousY;
   if (Number.isFinite(previousY) && Math.abs(previousY) <= tolerance.epsilon) {
     pushUniqueRoot(roots, previousX, tolerance.epsilon);
   }
@@ -294,6 +324,8 @@ const findNumericRoots = (
     const x = domain.min + ((domain.max - domain.min) * index) / samples;
     const y = evaluate(x);
     if (!Number.isFinite(y)) {
+      twoPreviousX = previousX;
+      twoPreviousY = previousY;
       previousX = x;
       previousY = y;
       continue;
@@ -309,6 +341,26 @@ const findNumericRoots = (
       pushUniqueRoot(roots, root, tolerance.epsilon);
     }
 
+    if (
+      Number.isFinite(twoPreviousY) &&
+      Number.isFinite(previousY) &&
+      Math.abs(previousY) > tolerance.epsilon &&
+      Math.sign(twoPreviousY) === Math.sign(previousY) &&
+      Math.sign(previousY) === Math.sign(y) &&
+      Math.abs(previousY) <= Math.abs(twoPreviousY) &&
+      Math.abs(previousY) <= Math.abs(y)
+    ) {
+      const candidate = minimizeAbsoluteRootCandidate(evaluate, twoPreviousX, x, maxIterations);
+      if (candidate === null) {
+        return failMathResult('MATH_NUMERIC_METHOD_FAILED', target, 'Numeric root search encountered a non-finite local minimum.', meta);
+      }
+      if (Math.abs(candidate.y) <= tolerance.epsilon) {
+        pushUniqueRoot(roots, candidate.x, tolerance.epsilon);
+      }
+    }
+
+    twoPreviousX = previousX;
+    twoPreviousY = previousY;
     previousX = x;
     previousY = y;
   }
