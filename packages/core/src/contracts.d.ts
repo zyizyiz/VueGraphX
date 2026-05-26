@@ -104,6 +104,7 @@ export interface GraphPickOptions {
     layerOrder?: readonly GraphLayerId[];
     tolerancePx?: number;
     targetScopes?: readonly GraphTargetScope[];
+    hitGroups?: readonly string[];
 }
 export interface GraphPickResult {
     target: GraphRuntimeTargetRef;
@@ -112,6 +113,7 @@ export interface GraphPickResult {
     clientPoint: GraphClientPoint;
     worldPoint?: GraphWorldPoint;
     distancePx?: number;
+    hitGroup?: string;
     meta?: Record<string, unknown>;
 }
 export interface GraphPointerSession {

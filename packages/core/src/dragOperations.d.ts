@@ -1,4 +1,4 @@
-import { type GraphObjectNode, type GraphObjectPatch, type GraphOperationResult, type GraphWorldPoint } from './contracts';
+import { type GraphObjectNode, type GraphObjectPatch, type GraphOperationDiagnostic, type GraphOperationResult, type GraphWorldPoint } from './contracts';
 export interface GraphDragDelta2D {
     dimension: '2d';
     dx: number;
@@ -16,4 +16,18 @@ export interface GraphCreateDragPatchOptions {
     startWorldPoint?: GraphWorldPoint;
     currentWorldPoint?: GraphWorldPoint;
 }
+export type GraphDragOperationStatus = 'success' | 'clamped' | 'failure';
+export interface GraphDragBounds2D {
+    dimension: '2d';
+    minX?: number;
+    maxX?: number;
+    minY?: number;
+    maxY?: number;
+}
+export interface GraphDragOperation {
+    status: GraphDragOperationStatus;
+    patch?: GraphObjectPatch;
+    explanation: GraphOperationDiagnostic;
+}
 export declare const createGraphDragPatch: (node: GraphObjectNode, options: GraphCreateDragPatchOptions) => GraphOperationResult<GraphObjectPatch>;
+export declare const resolveGraphDragOperation: (node: GraphObjectNode, options: GraphCreateDragPatchOptions) => GraphOperationResult<GraphDragOperation>;

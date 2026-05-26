@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { GraphInteractionRouter } from '@vuegraphx/core';
 import type {
+  GraphClientPoint,
   GraphObjectNode,
   GraphOperationDiagnostic,
   GraphOperationResult,
+  GraphPickOptions,
+  GraphPickResult,
   GraphRenderBackend,
   GraphRenderHandle
 } from '@vuegraphx/core';
@@ -161,6 +165,67 @@ const createBackendContractMatrix = () => {
   };
 };
 
+const readContractHitGroups = (node: GraphObjectNode): string[] => {
+  const meta = node.meta as Record<string, unknown> | undefined;
+  const hitGroups = Array.isArray(meta?.hitGroups) ? meta.hitGroups : [meta?.hitGroup];
+  const groups = hitGroups.filter((group): group is string => typeof group === 'string' && group.length > 0);
+  return groups.length > 0 ? groups : [node.type, node.kind];
+};
+
+const pickContractPointNode = (
+  node: GraphObjectNode,
+  point: GraphClientPoint,
+  backendId: string,
+  options: GraphPickOptions = {}
+): GraphPickResult | null => {
+  if (options.targetScopes && !options.targetScopes.includes('object')) return null;
+  if (options.layerOrder && !options.layerOrder.includes(node.layerId ?? 'content')) return null;
+  const groups = readContractHitGroups(node);
+  if (options.hitGroups && !groups.some((group) => options.hitGroups?.includes(group))) return null;
+  const payload = node.payload as { point?: { x: number; y: number } };
+  if (!payload.point) return null;
+  const distancePx = Math.hypot(payload.point.x - point.x, payload.point.y - point.y);
+  if (distancePx > (options.tolerancePx ?? 8)) return null;
+  const layerId = node.layerId ?? 'content';
+  return {
+    target: { scope: 'object', objectId: node.id, backendId, layerId },
+    backendId,
+    layerId,
+    clientPoint: { ...point },
+    worldPoint: { dimension: '2d', x: payload.point.x, y: payload.point.y },
+    distancePx,
+    hitGroup: groups[0],
+    meta: { hitGroups: groups }
+  };
+};
+
+const createJsxGraphPickingRuntime = (): JsxGraphRuntimePort => {
+  const nodes = new Map<string, GraphObjectNode>();
+  return {
+    mount: vi.fn(),
+    createObject: vi.fn((node: GraphObjectNode) => {
+      nodes.set(node.id, node);
+    }),
+    updateObject: vi.fn((handle: GraphRenderHandle, patch) => {
+      const current = nodes.get(handle.objectId);
+      if (current) nodes.set(handle.objectId, { ...current, ...patch, payload: patch.payload ?? current.payload });
+    }),
+    removeObject: vi.fn((handle: GraphRenderHandle) => {
+      nodes.delete(handle.objectId);
+    }),
+    pick: vi.fn((point: GraphClientPoint, options: GraphPickOptions = {}) => {
+      for (const node of [...nodes.values()].reverse()) {
+        const pick = pickContractPointNode(node, point, 'jsxgraph-interaction', options);
+        if (pick) return pick;
+      }
+      return null;
+    }),
+    destroy: vi.fn(() => {
+      nodes.clear();
+    })
+  };
+};
+
 describe('shared backend contract adapters', () => {
   it('declares runtime capabilities for every backend in the shared contract matrix', () => {
     const { backends } = createBackendContractMatrix();
@@ -193,6 +258,47 @@ describe('shared backend contract adapters', () => {
       expect(backend.pick({ x: 20, y: 20 })?.target.objectId).toBe('A');
       backend.remove(handle);
       expect(backend.pick({ x: 20, y: 20 })).toBeNull();
+      backend.destroy();
+    }
+  });
+
+  it('runs the same interaction routing fixture across memory, Canvas2D, and a DOM backend adapter', () => {
+    const backends = [
+      createMemoryGraphBackend({ id: 'memory-interaction' }),
+      createCanvas2DGraphBackend({ id: 'canvas2d-interaction' }),
+      createJsxGraphBackend({ id: 'jsxgraph-interaction', runtime: createJsxGraphPickingRuntime() })
+    ];
+
+    for (const backend of backends) {
+      backend.mount(document.createElement('div'), { size: { width: 100, height: 100 } });
+      const createResult = backend.create({
+        ...pointNode,
+        id: `${backend.id}-point`,
+        meta: { hitGroups: ['vertex'] }
+      });
+      expect(createResult.ok).toBe(true);
+
+      const router = new GraphInteractionRouter([
+        { layerId: 'overlay', interactive: false, passThrough: true }
+      ]);
+      router.registerBackend(backend, 'content');
+
+      const routed = router.pickWithDiagnostics({ x: 10, y: 10 }, {
+        layerOrder: ['overlay', 'content'],
+        pickOptions: { hitGroups: ['vertex'] }
+      });
+
+      expect(routed.pick).toMatchObject({
+        backendId: backend.id,
+        hitGroup: 'vertex',
+        target: {
+          scope: 'object',
+          objectId: `${backend.id}-point`,
+          backendId: backend.id,
+          layerId: 'content'
+        }
+      });
+      expect(routed.diagnostics.map((diagnostic) => diagnostic.code)).toContain('pick.layer-pass-through');
       backend.destroy();
     }
   });
