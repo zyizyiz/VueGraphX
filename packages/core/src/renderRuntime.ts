@@ -1,6 +1,7 @@
 import {
   errorResult,
   type GraphBackendContext,
+  type GraphBackendHost,
   type GraphBackendMountOptions,
   type GraphBackendMountResult,
   type GraphDragSession,
@@ -73,7 +74,7 @@ export class GraphSceneRuntime {
     }
   }
 
-  public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+  public mount(host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
     const backend = this.requireBackend();
     return backend.mount(host, options);
   }

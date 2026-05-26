@@ -1,4 +1,4 @@
-import { type GraphBackendContext, type GraphBackendMountOptions, type GraphBackendMountResult, type GraphDragSession, type GraphLayerId, type GraphObjectNode, type GraphObjectPatch, type GraphOperationResult, type GraphRenderBackend, type GraphRenderHandle } from './contracts';
+import { type GraphBackendContext, type GraphBackendHost, type GraphBackendMountOptions, type GraphBackendMountResult, type GraphDragSession, type GraphLayerId, type GraphObjectNode, type GraphObjectPatch, type GraphOperationResult, type GraphRenderBackend, type GraphRenderHandle } from './contracts';
 import { type GraphCreateDragPatchOptions } from './dragOperations';
 import { GraphInteractionRouter } from './eventRouter';
 import { GraphSceneStore, type GraphSceneStoreSnapshot } from './sceneDocument';
@@ -26,7 +26,7 @@ export declare class GraphSceneRuntime {
     private defaultContext;
     constructor(options?: GraphSceneRuntimeOptions);
     setBackend(backend: GraphRenderBackend | null, layerId?: GraphLayerId): void;
-    mount(host: HTMLElement, options?: GraphBackendMountOptions): GraphBackendMountResult;
+    mount(host: GraphBackendHost, options?: GraphBackendMountOptions): GraphBackendMountResult;
     addObject(node: GraphObjectNode, options?: {
         root?: boolean;
         replace?: boolean;

@@ -3,6 +3,7 @@ import {
   mergeGraphObjectPatch,
   type GraphBackendCapabilities,
   type GraphBackendContext,
+  type GraphBackendHost,
   type GraphBackendMountOptions,
   type GraphBackendMountResult,
   type GraphClientPoint,
@@ -45,7 +46,7 @@ export class MemoryGraphBackend implements GraphRenderBackend {
     this.capabilities = { ...DEFAULT_CAPABILITIES, ...(options.capabilities ?? {}) };
   }
 
-  public mount(_host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+  public mount(_host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
     this.mounted = true;
     this.size = options.size ? { ...options.size } : this.size;
     return { backendId: options.backendId ?? this.id, size: this.size };

@@ -1,6 +1,7 @@
 import type {
   GraphBackendCapabilities,
   GraphBackendContext,
+  GraphBackendHost,
   GraphBackendMountOptions,
   GraphBackendMountResult,
   GraphClientPoint,
@@ -65,8 +66,12 @@ export class BabylonGraphBackend implements GraphRenderBackend {
     };
   }
 
-  public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
-    this.runtime?.mount(host, options);
+  public mount(host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+    const hostElement = resolveHostElement(host);
+    if (this.runtime && !hostElement) {
+      throw new Error('BabylonGraphBackend runtime requires an HTMLElement host.');
+    }
+    if (hostElement) this.runtime?.mount(hostElement, options);
     this.size = options.size ? { ...options.size } : this.size;
     return { backendId: options.backendId ?? this.id, size: this.size };
   }
@@ -149,5 +154,12 @@ export class BabylonGraphBackend implements GraphRenderBackend {
     this.runtime?.destroy();
   }
 }
+
+const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
+  if (typeof HTMLElement === 'undefined') return null;
+  if (host instanceof HTMLElement) return host;
+  if (host.resource instanceof HTMLElement) return host.resource;
+  return null;
+};
 
 export const createBabylonGraphBackend = (options?: BabylonGraphBackendOptions): BabylonGraphBackend => new BabylonGraphBackend(options);

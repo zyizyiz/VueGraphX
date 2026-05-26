@@ -1,5 +1,6 @@
 import type {
   GraphBackendContext,
+  GraphBackendHost,
   GraphBackendMountOptions,
   GraphBackendMountResult,
   GraphObjectNode,
@@ -62,14 +63,18 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.showAxes = options.showAxes ?? true;
   }
 
-  public override mount(host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+  public override mount(host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+    const hostElement = resolveHostElement(host);
     const worldBounds = readWorldBounds(options.attributes?.worldBounds);
     if (worldBounds) this.worldBounds = worldBounds;
     if (!this.canvas) {
+      if (!hostElement) {
+        throw new Error('Canvas2DGraphBackend requires an HTMLElement host or a canvas option.');
+      }
       this.canvas = document.createElement('canvas');
-      host.appendChild(this.canvas);
-    } else if (!this.canvas.parentElement && host !== this.canvas) {
-      host.appendChild(this.canvas);
+      hostElement.appendChild(this.canvas);
+    } else if (hostElement && !this.canvas.parentElement && hostElement !== this.canvas) {
+      hostElement.appendChild(this.canvas);
     }
     this.context = getCanvasContext(this.canvas);
     const result = super.mount(host, options);
@@ -388,6 +393,12 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
 
 const readString = (value: unknown, fallback: string): string => typeof value === 'string' ? value : fallback;
 const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
+  if (typeof HTMLElement === 'undefined') return null;
+  if (host instanceof HTMLElement) return host;
+  if (host.resource instanceof HTMLElement) return host.resource;
+  return null;
+};
 const readWorldBounds = (value: unknown): CanvasWorldBounds | null => {
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;
