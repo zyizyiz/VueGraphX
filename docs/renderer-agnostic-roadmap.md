@@ -227,11 +227,13 @@ Acceptance criteria:
 
 Tasks:
 
-1. Keep `npm run release:verify` as the release gate; add backend-specific subsets for faster CI.
-2. Add package README files and examples for each public package.
-3. Add compatibility guide from root `vuegraphx` APIs to scoped packages.
-4. Add semver policy for core IR, math APIs, command DSL, and backend capabilities.
+1. Keep `npm run release:verify` as the release gate; add backend-specific subsets for faster CI. The prepared checklist lives in [release compatibility gate](./release-compatibility.md).
+2. Add package README files and examples for each public package; use the README gap matrix in [release compatibility gate](./release-compatibility.md#root-vuegraphx-migration-guide-skeleton).
+3. Add compatibility guide from root `vuegraphx` APIs to scoped packages; use the migration/deprecation skeleton in [release compatibility gate](./release-compatibility.md#root-vuegraphx-migration-guide-skeleton).
+4. Add semver policy for core IR, math APIs, command DSL, and backend capabilities; draft policy is recorded in [release compatibility gate](./release-compatibility.md#semver-and-compatibility-policy).
 5. Add docs-generated API reference per package.
+
+Current status: M6 is prepared but deferred. The release/compatibility checklist is ready for QA, but the full release gate remains blocked until M0-M5 contracts and tests are stable.
 
 Acceptance criteria:
 
@@ -261,7 +263,7 @@ Use small vertical slices. Avoid parallel agents editing the same core files in 
 6. **Interaction slice** — add picking/drag/layer behavior only after core object and backend support exist.
    - Owner: runtime engineer.
    - Verify: cross-backend behavior tests.
-7. **Release slice** — package docs, dist verification, compatibility notes.
+7. **Release slice** — package docs, dist verification, compatibility notes; start from [release compatibility gate](./release-compatibility.md) and keep M6 deferred until M0-M5 stabilize.
    - Owner: release engineer.
    - Verify: `npm run release:verify`.
 

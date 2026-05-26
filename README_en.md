@@ -15,7 +15,7 @@
 
 ## 🌟 Introduction
 
-VueGraphX exposes three complementary workflows. The long-term target is documented in the [renderer-agnostic roadmap](./docs/renderer-agnostic-roadmap.md):
+VueGraphX exposes three complementary workflows. The long-term target is documented in the [renderer-agnostic roadmap](./docs/renderer-agnostic-roadmap.md), and the package compatibility, dist/types, tarball, and semver release gate is documented in the [release compatibility gate](./docs/release-compatibility.md):
 
 - Renderer-agnostic core: scene, viewport, graph objects, relations, capabilities, picking, dragging, layer pass-through, and backend contracts live in the core runtime; JSXGraph, Canvas2D, Babylon, and future renderers are replaceable backends.
 - Independent math kernel: functions, equations, inequalities, analytic geometry, plane/solid geometry, vectors, trigonometry, statistics, basic calculus, parametric/implicit curves, and geometric construction belong in `@vuegraphx/math`.
