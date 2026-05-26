@@ -1,21 +1,25 @@
 import {
   createGraphCapabilitiesForObject,
   createGraphObjectNode,
-  errorResult,
   okResult,
   type GraphObjectNode,
   type GraphOperationDiagnostic,
   type GraphOperationResult
 } from '@vuegraphx/core';
 import {
+  arcFromCenterPoints,
+  classifyConic2D,
   circleFromCenterPoint,
   circleFromThreePoints,
+  conicFromCoefficients,
+  circumcenter2D,
   distance2D,
   incenter2D,
   incircleFromTriangle,
   intersectCircles2D,
   intersectLineCircle2D,
   intersectLines2D,
+  length2D,
   lineFromPoints,
   midpoint2D,
   parallelogramFromThreePoints,
@@ -27,8 +31,6 @@ import {
   rayFromPoints,
   regularPolygonFromSide,
   rotatePoint2D,
-  arcFromCenterPoints,
-  circumcenter2D,
   sectorFromCenterPoints,
   segmentFromPoints,
   semicircleFromDiameterPoints,
@@ -45,42 +47,23 @@ import {
   type GraphFunctionDescriptor,
   type GraphSolidFamily
 } from '@vuegraphx/math';
+import { getGraphCommandCatalogEntry, type GraphCommandNodeType } from './catalog';
+import { commandError, type GraphCommandDiagnosticCode } from './diagnostics';
+import {
+  GraphCommandSymbolStore,
+  type GraphCommandSymbolRecord,
+  type GraphCommandSymbolTableInput
+} from './symbols';
 
-export type GraphCommandNodeType =
-  | 'point'
-  | 'line'
-  | 'ray'
-  | 'segment'
-  | 'circle'
-  | 'polygon'
-  | 'polyline'
-  | 'regular-polygon'
-  | 'parallelogram'
-  | 'circumcircle'
-  | 'incircle'
-  | 'circumcenter'
-  | 'incenter'
-  | 'arc'
-  | 'sector'
-  | 'semicircle'
-  | 'text'
-  | 'function'
-  | 'equation'
-  | 'vector'
-  | 'coordinate-system'
-  | 'solid'
-  | 'perpendicular-line'
-  | 'parallel-line'
-  | 'midpoint'
-  | 'tangent'
-  | 'derivative'
-  | 'intersection'
-  | 'angle'
-  | 'translated'
-  | 'rotated';
+export { GraphCommandSymbolStore } from './symbols';
+export type { GraphCommandNodeType } from './catalog';
+export type { GraphCommandDiagnostic, GraphCommandDiagnosticCode } from './diagnostics';
+export type { GraphCommandSymbolRecord, GraphCommandSymbolTable, GraphCommandSymbolTableInput } from './symbols';
+
+type GraphCommandOutputNodeType = GraphCommandNodeType | 'measurement';
 
 export interface GraphCommandCompileOptions {
-  symbols?: GraphCommandSymbolTable;
+  symbols?: GraphCommandSymbolTableInput;
   defaultLayerId?: GraphObjectNode['layerId'];
   renderHints?: Record<string, unknown>;
   meta?: Record<string, unknown>;
@@ -88,7 +71,7 @@ export interface GraphCommandCompileOptions {
 
 export interface GraphCommandCompileValue {
   node: GraphObjectNode;
-  symbols: GraphCommandSymbolTable;
+  symbols: GraphCommandSymbolStore;
 }
 
 export interface GraphExpressionCompileOptions extends GraphCommandCompileOptions {
@@ -96,11 +79,9 @@ export interface GraphExpressionCompileOptions extends GraphCommandCompileOption
   fallbackToLegacy?: boolean;
 }
 
-export type GraphCommandSymbolTable = Map<string, GraphObjectNode>;
-
 export interface GraphCommandProgramResult {
   nodes: GraphObjectNode[];
-  symbols: GraphCommandSymbolTable;
+  symbols: GraphCommandSymbolStore;
   diagnostics: GraphOperationDiagnostic[];
 }
 
@@ -124,52 +105,6 @@ interface BracketScanState {
   quote: '"' | '\'' | null;
   escaped: boolean;
 }
-
-const COMMAND_TYPE_ALIASES: Record<string, GraphCommandNodeType> = {
-  point: 'point',
-  line: 'line',
-  ray: 'ray',
-  segment: 'segment',
-  circle: 'circle',
-  polygon: 'polygon',
-  polyline: 'polyline',
-  polygonalchain: 'polyline',
-  regularpolygon: 'regular-polygon',
-  regular_polygon: 'regular-polygon',
-  parallelogram: 'parallelogram',
-  circumcircle: 'circumcircle',
-  circum_circle: 'circumcircle',
-  incircle: 'incircle',
-  in_circle: 'incircle',
-  circumcenter: 'circumcenter',
-  circum_center: 'circumcenter',
-  incenter: 'incenter',
-  in_center: 'incenter',
-  arc: 'arc',
-  sector: 'sector',
-  semicircle: 'semicircle',
-  text: 'text',
-  function: 'function',
-  equation: 'equation',
-  vector: 'vector',
-  coordinatesystem: 'coordinate-system',
-  coordinate_system: 'coordinate-system',
-  solid: 'solid',
-  perpendicularline: 'perpendicular-line',
-  perpendicular_line: 'perpendicular-line',
-  parallelline: 'parallel-line',
-  parallel_line: 'parallel-line',
-  midpoint: 'midpoint',
-  tangent: 'tangent',
-  derivative: 'derivative',
-  intersect: 'intersection',
-  intersection: 'intersection',
-  angle: 'angle',
-  translate: 'translated',
-  translated: 'translated',
-  rotate: 'rotated',
-  rotated: 'rotated'
-};
 
 const createBracketScanState = (): BracketScanState => ({
   depth: 0,
@@ -201,8 +136,6 @@ const consumeBracketAwareChar = (state: BracketScanState, char: string): void =>
   if (char === '(' || char === '[' || char === '{') state.depth += 1;
   if (char === ')' || char === ']' || char === '}') state.depth -= 1;
 };
-
-const normalizeCommandType = (type: string): GraphCommandNodeType | null => COMMAND_TYPE_ALIASES[type.replace(/[-\s]/g, '').toLowerCase()] ?? null;
 
 const stripQuotes = (value: string): string => {
   const trimmed = value.trim();
@@ -337,7 +270,7 @@ const getPointPayload = (node: GraphObjectNode): MathPoint2D | null => {
   return typeof x === 'number' && typeof y === 'number' ? { x, y } : null;
 };
 
-const resolvePoint = (arg: string, symbols: GraphCommandSymbolTable): ResolvedPoint | null => {
+const resolvePoint = (arg: string, symbols: GraphCommandSymbolStore): ResolvedPoint | null => {
   const inline = parseInlinePoint(arg);
   if (inline) return { point: inline };
 
@@ -347,30 +280,81 @@ const resolvePoint = (arg: string, symbols: GraphCommandSymbolTable): ResolvedPo
   return point ? { point, dependency: symbol.id } : null;
 };
 
-const resolvePointList = (args: readonly string[], symbols: GraphCommandSymbolTable): ResolvedPoint[] | null => {
+const resolvePointList = (args: readonly string[], symbols: GraphCommandSymbolStore): ResolvedPoint[] | null => {
   const points = args.map((arg) => resolvePoint(arg, symbols));
   return points.every((point): point is ResolvedPoint => !!point) ? points : null;
 };
 
-const invalidCommand = (message: string): GraphOperationResult<never> => errorResult('commands.invalid-command', message);
+const invalidCommand = (
+  message: string,
+  code: GraphCommandDiagnosticCode = 'commands.invalid-command',
+  details?: Record<string, unknown>
+): GraphOperationResult<never> => commandError(code, message, undefined, details);
+
+const arityError = (message: string, details?: Record<string, unknown>): GraphOperationResult<never> => (
+  invalidCommand(message, 'commands.arity', details)
+);
+
+const invalidArgument = (message: string, details?: Record<string, unknown>): GraphOperationResult<never> => (
+  invalidCommand(message, 'commands.invalid-argument', details)
+);
+
+const invalidReference = (message: string, details?: Record<string, unknown>): GraphOperationResult<never> => (
+  invalidCommand(message, 'commands.invalid-reference', details)
+);
+
+const ambiguousResult = (message: string, details?: Record<string, unknown>): GraphOperationResult<never> => (
+  invalidCommand(message, 'commands.ambiguous-result', details)
+);
+
+const domainError = (message: string, details?: Record<string, unknown>): GraphOperationResult<never> => (
+  invalidCommand(message, 'commands.domain-error', details)
+);
+
+const unsupportedCapability = (message: string, details?: Record<string, unknown>): GraphOperationResult<never> => (
+  invalidCommand(message, 'commands.unsupported-capability', details)
+);
 
 const dependencyIds = (points: readonly ResolvedPoint[]): string[] => [...new Set(points.map((point) => point.dependency).filter((id): id is string => !!id))];
+
+const objectReference = (id: string): { objectId: string } => ({ objectId: id });
+
+const pointSourceFromResolvedPoint = (
+  point: ResolvedPoint
+): { objectId: string } | { coordinates: { dimension: '2d'; x: number; y: number } } => (
+  point.dependency
+    ? objectReference(point.dependency)
+    : { coordinates: { dimension: '2d', x: point.point.x, y: point.point.y } }
+);
+
+const resolveSymbolRecord = (
+  arg: string,
+  symbols: GraphCommandSymbolStore
+): GraphCommandSymbolRecord | null => symbols.resolve(arg.trim());
 
 export const compileGraphCommand = (
   command: string,
   options: GraphCommandCompileOptions = {}
 ): GraphOperationResult<GraphCommandCompileValue> => {
-  const symbols = new Map(options.symbols ?? []);
+  const symbols = new GraphCommandSymbolStore(options.symbols);
   const invocation = parseInvocation(command.trim());
   if (!invocation) {
-    return invalidCommand(`Unsupported command syntax: ${command}`);
+    return invalidCommand(`Unsupported command syntax: ${command}`, 'commands.syntax');
   }
 
-  const type = normalizeCommandType(invocation.type);
-  if (!type) {
-    return invalidCommand(`Unsupported command type: ${invocation.type}`);
+  const catalogEntry = getGraphCommandCatalogEntry(invocation.type);
+  if (!catalogEntry) {
+    return invalidCommand(`Unsupported command type: ${invocation.type}`, 'commands.unsupported-command', {
+      commandType: invocation.type
+    });
+  }
+  if (catalogEntry.support.status === 'unsupported') {
+    return unsupportedCapability(`Command type ${invocation.type} is cataloged but not supported by this compiler yet.`, {
+      commandType: invocation.type
+    });
   }
 
+  const type = catalogEntry.type;
   const id = invocation.name || `${type}-${symbols.size + 1}`;
   const nodeResult = buildCommandNode(id, type, invocation.args, symbols, options.defaultLayerId ?? 'content');
   if (!nodeResult.ok || !nodeResult.value) {
@@ -383,7 +367,7 @@ export const compileGraphCommand = (
     meta: options.meta ? { ...options.meta, ...(nodeResult.value.meta ?? {}) } : nodeResult.value.meta,
     capabilities: createGraphCapabilitiesForObject(nodeResult.value)
   });
-  symbols.set(id, node);
+  symbols.set(id, node, { commandType: type });
   return okResult({ node, symbols });
 };
 
@@ -404,13 +388,13 @@ export const compileGraphExpression = (
 
   const semanticNode = buildSemanticExpressionNode(trimmed, options);
   if (semanticNode) {
-    const symbols = new Map(options.symbols ?? []);
+    const symbols = new GraphCommandSymbolStore(options.symbols);
     symbols.set(semanticNode.id, semanticNode);
     return okResult({ node: semanticNode, symbols });
   }
 
   if (options.fallbackToLegacy !== false) {
-    const symbols = new Map(options.symbols ?? []);
+    const symbols = new GraphCommandSymbolStore(options.symbols);
     const id = options.id ?? `legacy-${symbols.size + 1}`;
     const node = createGraphObjectNode({
       id,
@@ -428,14 +412,14 @@ export const compileGraphExpression = (
     return okResult({ node, symbols });
   }
 
-  return invalidCommand(`Unsupported expression syntax: ${expression}`);
+  return invalidCommand(`Unsupported expression syntax: ${expression}`, 'commands.syntax');
 };
 
 export const compileGraphCommands = (
   commands: readonly string[],
   options: GraphCommandCompileOptions = {}
 ): GraphCommandProgramResult => {
-  let symbols = new Map(options.symbols ?? []);
+  let symbols = new GraphCommandSymbolStore(options.symbols);
   const nodes: GraphObjectNode[] = [];
   const diagnostics: GraphOperationDiagnostic[] = [];
 
@@ -456,7 +440,7 @@ const buildCommandNode = (
   id: string,
   type: GraphCommandNodeType,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
   switch (type) {
@@ -472,6 +456,13 @@ const buildCommandNode = (
       return buildTwoPointNode(id, type, args, symbols, layerId, (points) => ({ start: points[0].point, end: points[1].point, vector: { x: points[1].point.x - points[0].point.x, y: points[1].point.y - points[0].point.y } }));
     case 'circle':
       return buildCircleNode(id, args, symbols, layerId);
+    case 'ellipse':
+    case 'hyperbola':
+      return buildCenterRadiiConicNode(id, type, args, symbols, layerId);
+    case 'parabola':
+      return buildParabolaNode(id, args, symbols, layerId);
+    case 'conic':
+      return buildConicNode(id, args, layerId);
     case 'polygon':
       return buildPolygonNode(id, args, symbols, layerId);
     case 'polyline':
@@ -537,6 +528,14 @@ const buildCommandNode = (
       return buildTranslatedNode(id, args, symbols, layerId);
     case 'rotated':
       return buildRotatedNode(id, args, symbols, layerId);
+    case 'distance':
+      return buildDistanceMeasurementNode(id, args, symbols, layerId);
+    case 'length':
+      return buildLengthMeasurementNode(id, args, symbols, layerId);
+    case 'area':
+      return buildAreaMeasurementNode(id, args, symbols, layerId);
+    case 'slope':
+      return buildSlopeMeasurementNode(id, args, symbols, layerId);
   }
 };
 
@@ -622,13 +621,13 @@ const hashExpression = (expression: string): number => {
 
 const createBaseNode = (
   id: string,
-  type: GraphCommandNodeType,
+  type: GraphCommandOutputNodeType,
   payload: unknown,
   dependencies: string[],
   layerId: GraphObjectNode['layerId']
 ): GraphObjectNode => ({
   id,
-  kind: type === 'text'
+  kind: type === 'text' || type === 'measurement'
     ? 'overlay'
     : ['perpendicular-line', 'parallel-line', 'tangent', 'intersection', 'angle', 'translated', 'rotated'].includes(type)
     ? 'relation'
@@ -640,10 +639,10 @@ const createBaseNode = (
 });
 
 const buildPointNode = (id: string, args: readonly string[], layerId: GraphObjectNode['layerId']): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 2) return invalidCommand('Point requires exactly two numeric arguments.');
+  if (args.length !== 2) return arityError('Point requires exactly two numeric arguments.');
   const x = parseNumber(args[0]);
   const y = parseNumber(args[1]);
-  if (x === null || y === null) return invalidCommand('Point arguments must be finite numbers.');
+  if (x === null || y === null) return invalidArgument('Point arguments must be finite numbers.');
   return okResult(createBaseNode(id, 'point', { point: point2D(x, y) }, [], layerId));
 };
 
@@ -651,13 +650,13 @@ const buildTwoPointNode = (
   id: string,
   type: 'line' | 'ray' | 'segment' | 'vector' | 'semicircle',
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId'],
   createPayload: (points: readonly [ResolvedPoint, ResolvedPoint]) => unknown
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 2) return invalidCommand(`${type} requires exactly two point arguments.`);
+  if (args.length !== 2) return arityError(`${type} requires exactly two point arguments.`);
   const points = resolvePointList(args, symbols);
-  if (!points || points.length !== 2) return invalidCommand(`${type} arguments must reference known points or inline tuples.`);
+  if (!points || points.length !== 2) return invalidReference(`${type} arguments must reference known points or inline tuples.`);
   const pair = [points[0], points[1]] as const;
   return okResult(createBaseNode(id, type, createPayload(pair), dependencyIds(pair), layerId));
 };
@@ -666,13 +665,13 @@ const buildThreePointGeometryNode = (
   id: string,
   type: 'arc' | 'sector',
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId'],
   createPayload: (points: readonly [ResolvedPoint, ResolvedPoint, ResolvedPoint]) => unknown
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 3) return invalidCommand(`${type} requires exactly three point arguments.`);
+  if (args.length !== 3) return arityError(`${type} requires exactly three point arguments.`);
   const points = resolvePointList(args, symbols);
-  if (!points || points.length !== 3) return invalidCommand(`${type} arguments must reference known points or inline tuples.`);
+  if (!points || points.length !== 3) return invalidReference(`${type} arguments must reference known points or inline tuples.`);
   const triple = [points[0], points[1], points[2]] as const;
   return okResult(createBaseNode(id, type, createPayload(triple), dependencyIds(triple), layerId));
 };
@@ -680,32 +679,137 @@ const buildThreePointGeometryNode = (
 const buildCircleNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 2) return invalidCommand('Circle requires a center point plus point or radius.');
+  if (args.length !== 2) return arityError('Circle requires a center point plus point or radius.');
   const center = resolvePoint(args[0], symbols);
-  if (!center) return invalidCommand('Circle center must reference a known point or inline tuple.');
+  if (!center) return invalidReference('Circle center must reference a known point or inline tuple.');
 
   const radius = parseNumber(args[1]);
   if (radius !== null) {
+    if (radius <= 0) return domainError('Circle radius must be positive.', { radius });
     return okResult(createBaseNode(id, 'circle', { geometry: { kind: 'circle', center: center.point, radius } }, dependencyIds([center]), layerId));
   }
 
   const edge = resolvePoint(args[1], symbols);
-  if (!edge) return invalidCommand('Circle second argument must be a finite radius or point.');
-  return okResult(createBaseNode(id, 'circle', { geometry: circleFromCenterPoint(center.point, edge.point) }, dependencyIds([center, edge]), layerId));
+  if (!edge) return invalidReference('Circle second argument must be a finite radius or point.');
+  const geometry = circleFromCenterPoint(center.point, edge.point);
+  if (geometry.radius <= 0) return domainError('Circle point-on-circle must be distinct from its center.');
+  return okResult(createBaseNode(id, 'circle', { geometry }, dependencyIds([center, edge]), layerId));
+};
+
+const buildCenterRadiiConicNode = (
+  id: string,
+  type: 'ellipse' | 'hyperbola',
+  args: readonly string[],
+  symbols: GraphCommandSymbolStore,
+  layerId: GraphObjectNode['layerId']
+): GraphOperationResult<GraphObjectNode> => {
+  if (args.length < 3 || args.length > 4) return arityError(`${type} requires center, radiusX, radiusY, and optional rotation radians.`);
+  const center = resolvePoint(args[0], symbols);
+  if (!center) return invalidReference(`${type} center must reference a known point or inline tuple.`);
+  const radiusX = parseNumber(args[1]);
+  const radiusY = parseNumber(args[2]);
+  const rotationRadians = args[3] === undefined ? undefined : parseNumber(args[3]);
+  if (radiusX === null || radiusY === null || rotationRadians === null) {
+    return invalidArgument(`${type} radii and rotation must be finite numbers.`);
+  }
+  if (radiusX <= 0 || radiusY <= 0) return domainError(`${type} radii must be positive.`, { radiusX, radiusY });
+
+  return okResult(createBaseNode(id, 'conic', {
+    objectType: 'conic',
+    conicKind: type,
+    definition: {
+      mode: 'center-radii',
+      center: pointSourceFromResolvedPoint(center),
+      radiusX,
+      radiusY,
+      rotationRadians
+    }
+  }, dependencyIds([center]), layerId));
+};
+
+const buildParabolaNode = (
+  id: string,
+  args: readonly string[],
+  symbols: GraphCommandSymbolStore,
+  layerId: GraphObjectNode['layerId']
+): GraphOperationResult<GraphObjectNode> => {
+  if (args.length !== 2) return arityError('Parabola requires a focus point and directrix line.');
+  const focus = resolvePoint(args[0], symbols);
+  if (!focus) return invalidReference('Parabola focus must reference a known point or inline tuple.');
+  const directrix = resolveSymbolRecord(args[1], symbols);
+  if (!directrix) return invalidReference('Parabola directrix must reference a known line-like object.');
+  if (!lineGeometryFromNode(directrix.node)) return unsupportedCapability('Parabola directrix must be a line-like object.', { reference: directrix.id });
+
+  return okResult(createBaseNode(id, 'conic', {
+    objectType: 'conic',
+    conicKind: 'parabola',
+    definition: {
+      mode: 'focus-directrix',
+      focus: pointSourceFromResolvedPoint(focus),
+      directrix: objectReference(directrix.id),
+      eccentricity: 1
+    }
+  }, dependencyIds([focus, { point: focus.point, dependency: directrix.id }]), layerId));
+};
+
+const buildConicNode = (
+  id: string,
+  args: readonly string[],
+  layerId: GraphObjectNode['layerId']
+): GraphOperationResult<GraphObjectNode> => {
+  if (args.length !== 1 && args.length !== 6) return arityError('Conic requires either one equation string or six numeric coefficients.');
+
+  if (args.length === 1) {
+    const expression = stripQuotes(args[0]);
+    if (!expression) return invalidArgument('Conic equation must be non-empty.');
+    return okResult(createBaseNode(id, 'conic', {
+      objectType: 'conic',
+      conicKind: 'general-conic',
+      definition: {
+        mode: 'equation',
+        expression,
+        variables: ['x', 'y']
+      }
+    }, [], layerId));
+  }
+
+  const coefficients = args.map(parseNumber);
+  if (coefficients.some((coefficient) => coefficient === null)) {
+    return invalidArgument('Conic coefficients must be finite numbers.');
+  }
+  const [A, B, C, D, E, F] = coefficients as [number, number, number, number, number, number];
+  const conic = conicFromCoefficients({ A, B, C, D, E, F });
+  if (!conic.ok) return domainError(conic.error.message, { coefficients: { A, B, C, D, E, F } });
+  const classification = classifyConic2D(conic.value);
+  if (!classification.ok) return domainError(classification.error.message, { coefficients: { A, B, C, D, E, F } });
+  if (classification.value === 'degenerate') {
+    return domainError('Conic coefficients describe a degenerate conic.', { coefficients: { A, B, C, D, E, F } });
+  }
+
+  return okResult(createBaseNode(id, 'conic', {
+    objectType: 'conic',
+    conicKind: classification.value,
+    definition: {
+      mode: 'equation',
+      expression: `${A}*x^2 + ${B}*x*y + ${C}*y^2 + ${D}*x + ${E}*y + ${F} = 0`,
+      variables: ['x', 'y'],
+      coefficients: { A, B, C, D, E, F }
+    }
+  }, [], layerId));
 };
 
 const buildPolygonNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length < 3) return invalidCommand('Polygon requires at least three points.');
+  if (args.length < 3) return arityError('Polygon requires at least three points.');
   const points = resolvePointList(args, symbols);
-  if (!points) return invalidCommand('Polygon arguments must reference known points or inline tuples.');
+  if (!points) return invalidReference('Polygon arguments must reference known points or inline tuples.');
   const geometry = polygonFromVertices(points.map((point) => point.point));
   return okResult(createBaseNode(id, 'polygon', {
     geometry,
@@ -717,12 +821,12 @@ const buildPolygonNode = (
 const buildPolylineNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length < 2) return invalidCommand('Polyline requires at least two points.');
+  if (args.length < 2) return arityError('Polyline requires at least two points.');
   const points = resolvePointList(args, symbols);
-  if (!points) return invalidCommand('Polyline arguments must reference known points or inline tuples.');
+  if (!points) return invalidReference('Polyline arguments must reference known points or inline tuples.');
   return okResult(createBaseNode(id, 'polyline', {
     geometry: polylineFromPoints(points.map((point) => point.point))
   }, dependencyIds(points), layerId));
@@ -731,17 +835,19 @@ const buildPolylineNode = (
 const buildRegularPolygonNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 3) return invalidCommand('RegularPolygon requires two points and an integer side count.');
+  if (args.length !== 3) return arityError('RegularPolygon requires two points and an integer side count.');
   const points = resolvePointList(args.slice(0, 2), symbols);
   const sides = parseNumber(args[2]);
-  if (!points || points.length !== 2 || sides === null || !Number.isInteger(sides) || sides < 3) {
-    return invalidCommand('RegularPolygon arguments must be two known points plus an integer side count >= 3.');
+  if (!points || points.length !== 2) return invalidReference('RegularPolygon point arguments must reference known points or inline tuples.');
+  if (sides === null || !Number.isInteger(sides)) return invalidArgument('RegularPolygon side count must be an integer.');
+  if (sides < 3) {
+    return domainError('RegularPolygon side count must be >= 3.', { sides });
   }
   const geometry = regularPolygonFromSide(points[0].point, points[1].point, sides);
-  if (!geometry) return invalidCommand('RegularPolygon cannot be built from coincident side points.');
+  if (!geometry) return domainError('RegularPolygon cannot be built from coincident side points.');
   return okResult(createBaseNode(id, 'polygon', {
     geometry,
     area: polygonArea(geometry),
@@ -752,27 +858,27 @@ const buildRegularPolygonNode = (
 
 const buildThreePointDerivedNode = (
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   label: string,
   createNode: (points: readonly [ResolvedPoint, ResolvedPoint, ResolvedPoint]) => GraphObjectNode | null
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 3) return invalidCommand(`${label} requires exactly three point arguments.`);
+  if (args.length !== 3) return arityError(`${label} requires exactly three point arguments.`);
   const points = resolvePointList(args, symbols);
-  if (!points || points.length !== 3) return invalidCommand(`${label} arguments must reference known points or inline tuples.`);
+  if (!points || points.length !== 3) return invalidReference(`${label} arguments must reference known points or inline tuples.`);
   const triple = [points[0], points[1], points[2]] as const;
   const node = createNode(triple);
   return node
     ? okResult(node)
-    : invalidCommand(`${label} cannot be constructed from collinear or degenerate points.`);
+    : domainError(`${label} cannot be constructed from collinear or degenerate points.`);
 };
 
 const buildTextNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length < 2) return invalidCommand('Text requires a point/x,y and text value.');
+  if (args.length < 2) return arityError('Text requires a point/x,y and text value.');
   const firstPoint = resolvePoint(args[0], symbols);
   const point = firstPoint ?? (
     args.length >= 3
@@ -783,10 +889,10 @@ const buildTextNode = (
         })()
       : null
   );
-  if (!point) return invalidCommand('Text position must be a known point, inline tuple, or x,y coordinates.');
+  if (!point) return invalidReference('Text position must be a known point, inline tuple, or x,y coordinates.');
   const textArg = firstPoint ? args[1] : args[2];
   const text = stripQuotes(textArg ?? '');
-  if (!text) return invalidCommand('Text value must be non-empty.');
+  if (!text) return invalidArgument('Text value must be non-empty.');
   return okResult(createBaseNode(id, 'text', {
     point: point.point,
     text
@@ -794,15 +900,17 @@ const buildTextNode = (
 };
 
 const buildFunctionNode = (id: string, args: readonly string[], layerId: GraphObjectNode['layerId']): GraphOperationResult<GraphObjectNode> => {
-  if (args.length < 1) return invalidCommand('Function requires an expression.');
+  if (args.length < 1 || args.length > 3) return arityError('Function requires an expression and optional min/max domain.');
   const min = args[1] === undefined ? null : parseNumber(args[1]);
   const max = args[2] === undefined ? null : parseNumber(args[2]);
+  if ((args[1] !== undefined && min === null) || (args[2] !== undefined && max === null)) return invalidArgument('Function domain bounds must be finite numbers.');
+  if (min !== null && max !== null && min >= max) return domainError('Function domain min must be less than max.', { min, max });
   const domain = min !== null && max !== null ? [min, max] as [number, number] : undefined;
   return okResult(createBaseNode(id, 'function', createFunctionDescriptor(stripQuotes(args[0]), domain), [], layerId));
 };
 
 const buildEquationNode = (id: string, args: readonly string[], layerId: GraphObjectNode['layerId']): GraphOperationResult<GraphObjectNode> => {
-  if (args.length < 1) return invalidCommand('Equation requires an expression.');
+  if (args.length !== 1) return arityError('Equation requires exactly one expression.');
   return okResult(createBaseNode(id, 'equation', createEquationDescriptor(stripQuotes(args[0])), [], layerId));
 };
 
@@ -836,15 +944,15 @@ const buildSolidNode = (id: string, args: readonly string[], layerId: GraphObjec
 const buildPerpendicularLineNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 2) return invalidCommand('PerpendicularLine requires a source object and point.');
+  if (args.length !== 2) return arityError('PerpendicularLine requires a source object and point.');
   const source = symbols.get(args[0].trim());
   const point = resolvePoint(args[1], symbols);
-  if (!source || !point) return invalidCommand('PerpendicularLine requires a known source object and point.');
+  if (!source || !point) return invalidReference('PerpendicularLine requires a known source object and point.');
   const line = lineGeometryFromNode(source);
-  if (!line) return invalidCommand('PerpendicularLine source must be a line-like object.');
+  if (!line) return unsupportedCapability('PerpendicularLine source must be a line-like object.');
   const direction = { x: -line.direction.y, y: line.direction.x };
   return okResult(createBaseNode(id, 'perpendicular-line', {
     relation: 'perpendicular',
@@ -857,14 +965,15 @@ const buildPerpendicularLineNode = (
 const buildParallelLineNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 2) return invalidCommand('ParallelLine requires a source object and point.');
+  if (args.length !== 2) return arityError('ParallelLine requires a source object and point.');
   const source = symbols.get(args[0].trim());
   const point = resolvePoint(args[1], symbols);
   const line = source ? lineGeometryFromNode(source) : null;
-  if (!source || !point || !line) return invalidCommand('ParallelLine requires a known line-like source object and point.');
+  if (!source || !point) return invalidReference('ParallelLine requires a known source object and point.');
+  if (!line) return unsupportedCapability('ParallelLine source must be a line-like object.');
   return okResult(createBaseNode(id, 'parallel-line', {
     relation: 'parallel',
     sourceObjectId: source.id,
@@ -876,29 +985,30 @@ const buildParallelLineNode = (
 const buildMidpointNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 2) return invalidCommand('Midpoint requires exactly two points.');
+  if (args.length !== 2) return arityError('Midpoint requires exactly two points.');
   const points = resolvePointList(args, symbols);
-  if (!points || points.length !== 2) return invalidCommand('Midpoint arguments must reference known points or inline tuples.');
+  if (!points || points.length !== 2) return invalidReference('Midpoint arguments must reference known points or inline tuples.');
   return okResult(createBaseNode(id, 'midpoint', { point: midpoint2D(points[0].point, points[1].point) }, dependencyIds(points), layerId));
 };
 
 const buildTangentNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 2) return invalidCommand('Tangent requires a point and a function.');
+  if (args.length !== 2) return arityError('Tangent requires a point and a function.');
   const point = resolvePoint(args[0], symbols);
   const source = symbols.get(args[1].trim());
   const fn = source ? functionDescriptorFromNode(source) : null;
-  if (!point || !source || !fn) return invalidCommand('Tangent requires a known point and function object.');
+  if (!point || !source) return invalidReference('Tangent requires a known point and function object.');
+  if (!fn) return unsupportedCapability('Tangent source must be a function object.');
   const y = evaluateFunctionDescriptor(fn, point.point.x);
   const dy = evaluateFunctionDescriptor(createDerivativeDescriptor(fn), point.point.x);
-  if (!Number.isFinite(y) || !Number.isFinite(dy)) return invalidCommand('Tangent function cannot be evaluated at the point x-coordinate.');
+  if (!Number.isFinite(y) || !Number.isFinite(dy)) return domainError('Tangent function cannot be evaluated at the point x-coordinate.');
   const tangentPoint = { x: point.point.x, y };
   return okResult(createBaseNode(id, 'tangent', {
     relation: 'tangent',
@@ -912,13 +1022,14 @@ const buildTangentNode = (
 const buildDerivativeNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 1) return invalidCommand('Derivative requires exactly one function argument.');
+  if (args.length !== 1) return arityError('Derivative requires exactly one function argument.');
   const source = symbols.get(args[0].trim());
   const fn = source ? functionDescriptorFromNode(source) : null;
-  if (!source || !fn) return invalidCommand('Derivative requires a known function object.');
+  if (!source) return invalidReference('Derivative requires a known function object.');
+  if (!fn) return unsupportedCapability('Derivative source must be a function object.');
   return okResult(createBaseNode(id, 'derivative', {
     ...createDerivativeDescriptor(fn),
     sourceObjectId: source.id
@@ -928,13 +1039,13 @@ const buildDerivativeNode = (
 const buildIntersectionNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 2) return invalidCommand('Intersect requires two geometric objects.');
+  if (args.length !== 2) return arityError('Intersect requires two geometric objects.');
   const left = symbols.get(args[0].trim());
   const right = symbols.get(args[1].trim());
-  if (!left || !right) return invalidCommand('Intersect arguments must reference known objects.');
+  if (!left || !right) return invalidReference('Intersect arguments must reference known objects.');
 
   const leftLine = lineGeometryFromNode(left);
   const rightLine = lineGeometryFromNode(right);
@@ -950,8 +1061,13 @@ const buildIntersectionNode = (
           ? intersectCircles2D(leftCircle, rightCircle)
           : null;
 
+  if (!intersection) return unsupportedCapability('Intersect currently supports line and circle objects.');
   const points = intersectionToPoints(intersection);
-  if (points.length === 0) return invalidCommand('Intersect could not find finite intersection points.');
+  if (points.length === 0) return domainError('Intersect could not find finite intersection points.');
+  if (points.length > 1) return ambiguousResult('Intersect found multiple points; selector syntax is not implemented yet.', {
+    sourceObjectIds: [left.id, right.id],
+    pointCount: points.length
+  });
   return okResult(createBaseNode(id, 'intersection', {
     point: points[0],
     points,
@@ -962,12 +1078,12 @@ const buildIntersectionNode = (
 const buildAngleNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length !== 3) return invalidCommand('Angle requires three points.');
+  if (args.length !== 3) return arityError('Angle requires three points.');
   const points = resolvePointList(args, symbols);
-  if (!points || points.length !== 3) return invalidCommand('Angle arguments must reference known points or inline tuples.');
+  if (!points || points.length !== 3) return invalidReference('Angle arguments must reference known points or inline tuples.');
   const [a, b, c] = points.map((point) => point.point);
   const left = { x: a.x - b.x, y: a.y - b.y };
   const right = { x: c.x - b.x, y: c.y - b.y };
@@ -983,16 +1099,17 @@ const buildAngleNode = (
 const buildTranslatedNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length < 2) return invalidCommand('Translate requires an object and a vector/delta.');
+  if (args.length < 2 || args.length > 3) return arityError('Translate requires an object and a vector/delta.');
   const source = symbols.get(args[0].trim());
-  if (!source) return invalidCommand('Translate source must reference a known object.');
+  if (!source) return invalidReference('Translate source must reference a known object.');
   const delta = resolveTranslationDelta(args.slice(1), symbols);
-  if (!delta) return invalidCommand('Translate requires dx,dy, vector object, or inline point delta.');
+  if (!delta) return invalidArgument('Translate requires dx,dy, vector object, or inline point delta.');
+  if (!isTransformableNode(source)) return unsupportedCapability('Translate currently supports point, line, ray, segment, circle, polygon, polyline, arc, sector, semicircle, and vector objects.', { objectType: source.type });
   const payload = transformPayload2D(source, (point) => translatePoint2D(point, delta));
-  if (!payload) return invalidCommand('Translate currently supports point, line, ray, segment, circle, polygon, and vector objects.');
+  if (!payload) return unsupportedCapability('Translate could not build a renderer-neutral transform payload.', { objectType: source.type });
   return okResult(createBaseNode(id, 'translated', {
     ...payload,
     transform: { kind: 'translate', delta },
@@ -1003,24 +1120,122 @@ const buildTranslatedNode = (
 const buildRotatedNode = (
   id: string,
   args: readonly string[],
-  symbols: GraphCommandSymbolTable,
+  symbols: GraphCommandSymbolStore,
   layerId: GraphObjectNode['layerId']
 ): GraphOperationResult<GraphObjectNode> => {
-  if (args.length < 2) return invalidCommand('Rotate requires an object and angle in radians.');
+  if (args.length < 2 || args.length > 3) return arityError('Rotate requires an object, angle in radians, and optional center.');
   const source = symbols.get(args[0].trim());
-  if (!source) return invalidCommand('Rotate source must reference a known object.');
+  if (!source) return invalidReference('Rotate source must reference a known object.');
   const angle = parseNumber(args[1]);
-  if (angle === null) return invalidCommand('Rotate angle must be a finite number in radians.');
+  if (angle === null) return invalidArgument('Rotate angle must be a finite number in radians.');
   const center = args[2] ? resolvePoint(args[2], symbols)?.point : { x: 0, y: 0 };
-  if (!center) return invalidCommand('Rotate center must be a known point or inline tuple.');
+  if (!center) return invalidReference('Rotate center must be a known point or inline tuple.');
+  if (!isTransformableNode(source)) return unsupportedCapability('Rotate currently supports point, line, ray, segment, circle, polygon, polyline, arc, sector, semicircle, and vector objects.', { objectType: source.type });
   const payload = transformPayload2D(source, (point) => rotatePoint2D(point, angle, center));
-  if (!payload) return invalidCommand('Rotate currently supports point, line, ray, segment, circle, polygon, and vector objects.');
+  if (!payload) return unsupportedCapability('Rotate could not build a renderer-neutral transform payload.', { objectType: source.type });
   return okResult(createBaseNode(id, 'rotated', {
     ...payload,
     transform: { kind: 'rotate', angle, center },
     sourceObjectId: source.id
   }, [source.id], layerId));
 };
+
+const buildDistanceMeasurementNode = (
+  id: string,
+  args: readonly string[],
+  symbols: GraphCommandSymbolStore,
+  layerId: GraphObjectNode['layerId']
+): GraphOperationResult<GraphObjectNode> => {
+  if (args.length !== 2) return arityError('Distance requires exactly two point references.');
+  const points = resolvePointList(args, symbols);
+  if (!points || points.length !== 2) return invalidReference('Distance arguments must reference known points or inline tuples.');
+  if (!points[0].dependency || !points[1].dependency) return invalidReference('Distance measurements require named point references for dependency tracking.');
+  const value = distance2D(points[0].point, points[1].point);
+  return okResult(createMeasurementNode(
+    id,
+    'distance',
+    value,
+    [points[0].dependency, points[1].dependency],
+    layerId,
+    { points: points.map((point) => point.point) }
+  ));
+};
+
+const buildLengthMeasurementNode = (
+  id: string,
+  args: readonly string[],
+  symbols: GraphCommandSymbolStore,
+  layerId: GraphObjectNode['layerId']
+): GraphOperationResult<GraphObjectNode> => {
+  if (args.length !== 1 && args.length !== 2) return arityError('Length requires one object or two point references.');
+
+  if (args.length === 2) {
+    const points = resolvePointList(args, symbols);
+    if (!points || points.length !== 2) return invalidReference('Length point arguments must reference known points or inline tuples.');
+    if (!points[0].dependency || !points[1].dependency) return invalidReference('Length measurements require named point references for dependency tracking.');
+    const value = distance2D(points[0].point, points[1].point);
+    return okResult(createMeasurementNode(
+      id,
+      'length',
+      value,
+      [points[0].dependency, points[1].dependency],
+      layerId,
+      { points: points.map((point) => point.point) }
+    ));
+  }
+
+  const source = resolveSymbolRecord(args[0], symbols);
+  if (!source) return invalidReference('Length source must reference a known object.');
+  const value = lengthFromNode(source.node);
+  if (value === null) return unsupportedCapability('Length currently supports segment, polyline, circle, vector, arc, sector, and semicircle objects.', { objectType: source.type });
+  return okResult(createMeasurementNode(id, 'length', value, [source.id], layerId));
+};
+
+const buildAreaMeasurementNode = (
+  id: string,
+  args: readonly string[],
+  symbols: GraphCommandSymbolStore,
+  layerId: GraphObjectNode['layerId']
+): GraphOperationResult<GraphObjectNode> => {
+  if (args.length !== 1) return arityError('Area requires exactly one object reference.');
+  const source = resolveSymbolRecord(args[0], symbols);
+  if (!source) return invalidReference('Area source must reference a known object.');
+  const value = areaFromNode(source.node);
+  if (value === null) return unsupportedCapability('Area currently supports polygon, circle, sector, and semicircle objects.', { objectType: source.type });
+  return okResult(createMeasurementNode(id, 'area', value, [source.id], layerId));
+};
+
+const buildSlopeMeasurementNode = (
+  id: string,
+  args: readonly string[],
+  symbols: GraphCommandSymbolStore,
+  layerId: GraphObjectNode['layerId']
+): GraphOperationResult<GraphObjectNode> => {
+  if (args.length !== 1) return arityError('Slope requires exactly one line-like object reference.');
+  const source = resolveSymbolRecord(args[0], symbols);
+  if (!source) return invalidReference('Slope source must reference a known object.');
+  const line = lineGeometryFromNode(source.node);
+  if (!line) return unsupportedCapability('Slope currently supports line-like objects.', { objectType: source.type });
+  if (Math.abs(line.direction.x) <= Number.EPSILON) return domainError('Slope is undefined for vertical lines.', { objectId: source.id });
+  const value = line.direction.y / line.direction.x;
+  return okResult(createMeasurementNode(id, 'slope', value, [source.id], layerId));
+};
+
+const createMeasurementNode = (
+  id: string,
+  measurementKind: 'distance' | 'length' | 'area' | 'slope',
+  value: number,
+  targetIds: readonly string[],
+  layerId: GraphObjectNode['layerId'],
+  extraPayload: Record<string, unknown> = {}
+): GraphObjectNode => createBaseNode(id, 'measurement', {
+  objectType: 'measurement',
+  measurementKind,
+  targets: targetIds.map(objectReference),
+  expression: String(value),
+  value,
+  ...extraPayload
+}, [...new Set(targetIds)], layerId);
 
 const functionDescriptorFromNode = (node: GraphObjectNode): GraphFunctionDescriptor | null => {
   const payload = asRecord(node.payload);
@@ -1062,6 +1277,75 @@ const circleGeometryFromNode = (node: GraphObjectNode): { kind: 'circle'; center
   return null;
 };
 
+const isTransformableNode = (node: GraphObjectNode): boolean => (
+  [
+    'point',
+    'line',
+    'ray',
+    'segment',
+    'circle',
+    'polygon',
+    'polyline',
+    'arc',
+    'sector',
+    'semicircle',
+    'vector',
+    'midpoint',
+    'intersection'
+  ].includes(node.type)
+);
+
+const lengthFromNode = (node: GraphObjectNode): number | null => {
+  const payload = asRecord(node.payload);
+  if (typeof payload?.length === 'number' && Number.isFinite(payload.length)) return payload.length;
+
+  const geometry = asRecord(payload?.geometry);
+  if (geometry?.kind === 'segment' && isPointLike(geometry.start) && isPointLike(geometry.end)) return distance2D(geometry.start, geometry.end);
+  if (geometry?.kind === 'polyline' && Array.isArray(geometry.points)) return pathLength(geometry.points);
+  if (geometry?.kind === 'polygon' && Array.isArray(geometry.vertices)) return closedPathLength(geometry.vertices);
+  if (geometry?.kind === 'circle' && typeof geometry.radius === 'number' && Number.isFinite(geometry.radius)) return 2 * Math.PI * geometry.radius;
+  if ((geometry?.kind === 'arc' || geometry?.kind === 'sector' || geometry?.kind === 'semicircle') && typeof geometry.radius === 'number' && typeof geometry.startAngle === 'number' && typeof geometry.endAngle === 'number') {
+    return Math.abs(geometry.endAngle - geometry.startAngle) * geometry.radius;
+  }
+  if (isPointLike(payload?.start) && isPointLike(payload?.end)) return distance2D(payload.start, payload.end);
+  const vector = asRecord(payload?.vector);
+  if (typeof vector?.x === 'number' && typeof vector.y === 'number') return length2D({ x: vector.x, y: vector.y });
+  return null;
+};
+
+const areaFromNode = (node: GraphObjectNode): number | null => {
+  const payload = asRecord(node.payload);
+  if (typeof payload?.area === 'number' && Number.isFinite(payload.area)) return payload.area;
+
+  const geometry = asRecord(payload?.geometry);
+  if (geometry?.kind === 'polygon' && Array.isArray(geometry.vertices)) {
+    const vertices = geometry.vertices.filter(isPointLike);
+    return vertices.length >= 3 ? polygonArea(polygonFromVertices(vertices)) : null;
+  }
+  if (geometry?.kind === 'circle' && typeof geometry.radius === 'number' && Number.isFinite(geometry.radius)) {
+    return Math.PI * geometry.radius * geometry.radius;
+  }
+  if (geometry?.kind === 'sector' && typeof geometry.radius === 'number' && typeof geometry.startAngle === 'number' && typeof geometry.endAngle === 'number') {
+    return Math.abs(geometry.endAngle - geometry.startAngle) * geometry.radius * geometry.radius / 2;
+  }
+  if (geometry?.kind === 'semicircle' && typeof geometry.radius === 'number' && Number.isFinite(geometry.radius)) {
+    return Math.PI * geometry.radius * geometry.radius / 2;
+  }
+  return null;
+};
+
+const pathLength = (values: unknown[]): number | null => {
+  const points = values.filter(isPointLike);
+  if (points.length !== values.length || points.length < 2) return null;
+  return points.slice(1).reduce((total, point, index) => total + distance2D(points[index], point), 0);
+};
+
+const closedPathLength = (values: unknown[]): number | null => {
+  const points = values.filter(isPointLike);
+  if (points.length !== values.length || points.length < 3) return null;
+  return pathLength([...points, points[0]]);
+};
+
 const intersectionToPoints = (intersection: ReturnType<typeof intersectLines2D> | null): MathPoint2D[] => {
   if (!intersection) return [];
   if (intersection.kind === 'point') return [intersection.point];
@@ -1069,7 +1353,7 @@ const intersectionToPoints = (intersection: ReturnType<typeof intersectLines2D> 
   return [];
 };
 
-const resolveTranslationDelta = (args: readonly string[], symbols: GraphCommandSymbolTable): MathPoint2D | null => {
+const resolveTranslationDelta = (args: readonly string[], symbols: GraphCommandSymbolStore): MathPoint2D | null => {
   if (args.length === 1) {
     const vector = symbols.get(args[0].trim());
     const payload = vector ? asRecord(vector.payload) : null;

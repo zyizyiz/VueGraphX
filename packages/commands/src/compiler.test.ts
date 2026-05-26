@@ -1,8 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { GraphSceneStore } from '@vuegraphx/core';
-import { compileGraphCommand, compileGraphCommands, compileGraphExpression, normalizeLegacyGraphExpression } from './index';
+import {
+  GraphCommandSymbolStore,
+  compileGraphCommand,
+  compileGraphCommands,
+  compileGraphExpression,
+  getGraphCommandCatalogEntry,
+  listGraphCommandCatalog,
+  normalizeLegacyGraphExpression
+} from './index';
 
 describe('renderer-free command compiler', () => {
+  it('exposes command catalog metadata for aliases, arity, parameter types, examples, and support', () => {
+    const circle = getGraphCommandCatalogEntry('Circle');
+    expect(circle).toMatchObject({
+      canonicalName: 'Circle',
+      type: 'circle',
+      arity: { min: 2, max: 2 },
+      support: { status: 'supported' }
+    });
+    expect(circle?.aliases).toContain('Circle');
+    expect(circle?.parameters.map((parameter) => parameter.type)).toEqual(['point', 'number']);
+    expect(circle?.examples[0]).toContain('Circle');
+    expect(circle?.support.coreIrTypes).toContain('conic');
+
+    const polyline = getGraphCommandCatalogEntry('PolygonalChain');
+    expect(polyline?.type).toBe('polyline');
+    expect(getGraphCommandCatalogEntry('regular_polygon')?.type).toBe('regular-polygon');
+
+    const catalog = listGraphCommandCatalog();
+    expect(catalog.map((entry) => entry.canonicalName)).toEqual(expect.arrayContaining(['Point', 'Line', 'Ellipse', 'Distance', 'Area']));
+  });
+
   it('compiles JSXGraph/GeoGebra-style commands into VueGraphX-owned IR', () => {
     const program = compileGraphCommands([
       'A = Point(0, 0)',
@@ -154,6 +183,55 @@ describe('renderer-free command compiler', () => {
     });
   });
 
+  it('compiles conic and measurement commands while tracking symbol dependencies', () => {
+    const program = compileGraphCommands([
+      'A = Point(0, 0)',
+      'B = Point(3, 4)',
+      'C = Point(0, 4)',
+      's = Segment(A, B)',
+      'l = Line(A, B)',
+      'poly = Polygon(A, B, C)',
+      'e = Ellipse(A, 5, 2)',
+      'q = Conic(1, 0, 1, 0, 0, -25)',
+      'd = Distance(A, B)',
+      'len = Length(s)',
+      'area = Area(poly)',
+      'm = Slope(l)'
+    ]);
+
+    expect(program.diagnostics).toEqual([]);
+    expect(program.symbols).toBeInstanceOf(GraphCommandSymbolStore);
+    expect(program.nodes.find((node) => node.id === 'e')).toMatchObject({
+      type: 'conic',
+      payload: {
+        objectType: 'conic',
+        conicKind: 'ellipse'
+      },
+      dependencies: ['A']
+    });
+    expect(program.nodes.find((node) => node.id === 'q')).toMatchObject({
+      type: 'conic',
+      payload: {
+        objectType: 'conic',
+        conicKind: 'circle'
+      }
+    });
+    expect(program.nodes.find((node) => node.id === 'd')).toMatchObject({
+      type: 'measurement',
+      payload: {
+        objectType: 'measurement',
+        measurementKind: 'distance',
+        value: 5
+      },
+      dependencies: ['A', 'B']
+    });
+    expect(program.symbols.resolve('d')?.dependencies).toEqual(['A', 'B']);
+    expect(program.symbols.dependencyIdsFor('m')).toEqual(['l']);
+
+    const store = new GraphSceneStore('conic-measurement');
+    for (const node of program.nodes) expect(store.addObject(node).ok).toBe(true);
+  });
+
   it('keeps commas and brackets inside quoted command arguments', () => {
     const program = compileGraphCommands([
       'A = Point(0, 0)',
@@ -175,7 +253,40 @@ describe('renderer-free command compiler', () => {
   it('returns structured diagnostics for invalid commands', () => {
     const result = compileGraphCommand('Circle(A, Missing)');
     expect(result.ok).toBe(false);
-    expect(result.diagnostics[0].code).toBe('commands.invalid-command');
+    expect(result.diagnostics[0].code).toBe('commands.invalid-reference');
+  });
+
+  it('returns typed diagnostics for arity, domain, ambiguous result, unsupported capability, and unsupported commands', () => {
+    expect(compileGraphCommand('A = Point(1)').diagnostics[0].code).toBe('commands.arity');
+    expect(compileGraphCommand('Foo()').diagnostics[0].code).toBe('commands.unsupported-command');
+
+    const domain = compileGraphCommands([
+      'A = Point(0, 0)',
+      'bad = Circle(A, -1)'
+    ]);
+    expect(domain.diagnostics[0].code).toBe('commands.domain-error');
+
+    const ambiguous = compileGraphCommands([
+      'A = Point(0, 0)',
+      'B = Point(4, 0)',
+      'c1 = Circle(A, 5)',
+      'c2 = Circle(B, 5)',
+      'I = Intersect(c1, c2)'
+    ]);
+    expect(ambiguous.diagnostics[0]).toMatchObject({
+      code: 'commands.ambiguous-result',
+      details: { pointCount: 2 }
+    });
+
+    const unsupported = compileGraphCommands([
+      'A = Point(0, 0)',
+      'label = Text(A, "origin")',
+      'shifted = Translate(label, 1, 2)'
+    ]);
+    expect(unsupported.diagnostics[0]).toMatchObject({
+      code: 'commands.unsupported-capability',
+      details: { objectType: 'text' }
+    });
   });
 
   it('normalizes legacy tuple syntax and compiles semantic expressions into core objects', () => {
