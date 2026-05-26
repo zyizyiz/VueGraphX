@@ -39,11 +39,27 @@ const implicitNode: GraphObjectNode = {
 type BackendContractBackendId = 'memory' | 'canvas2d' | 'jsxgraph' | 'babylon';
 type BackendContractStatus = 'success' | 'unsupported' | 'partial-support';
 
+interface BackendCapabilityExpectation {
+  dimensions: ReadonlyArray<'2d' | '3d'>;
+  pick: boolean;
+  project: boolean;
+  unproject: boolean;
+  drag: boolean;
+  layers: boolean;
+}
+
 interface DeclarativeBackendContractFixture {
   id: string;
   node: GraphObjectNode;
   expectations: Record<BackendContractBackendId, BackendContractStatus>;
 }
+
+const backendCapabilityExpectations: Record<BackendContractBackendId, BackendCapabilityExpectation> = {
+  memory: { dimensions: ['2d'], pick: true, project: true, unproject: true, drag: true, layers: true },
+  canvas2d: { dimensions: ['2d'], pick: true, project: true, unproject: true, drag: true, layers: true },
+  jsxgraph: { dimensions: ['2d', '3d'], pick: true, project: true, unproject: true, drag: true, layers: true },
+  babylon: { dimensions: ['3d'], pick: true, project: true, unproject: true, drag: true, layers: true }
+};
 
 const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
   {
@@ -146,6 +162,23 @@ const createBackendContractMatrix = () => {
 };
 
 describe('shared backend contract adapters', () => {
+  it('declares runtime capabilities for every backend in the shared contract matrix', () => {
+    const { backends } = createBackendContractMatrix();
+
+    for (const backend of backends) {
+      const expected = backendCapabilityExpectations[backend.id as BackendContractBackendId];
+      expect(expected).toBeDefined();
+      expect(backend.capabilities).toMatchObject({
+        pick: expected.pick,
+        project: expected.project,
+        unproject: expected.unproject,
+        drag: expected.drag,
+        layers: expected.layers
+      });
+      expect(backend.capabilities.dimensions).toEqual(expected.dimensions);
+    }
+  });
+
   it('runs create/update/pick/remove lifecycle for memory and Canvas2D backends from the same core node', () => {
     const host = document.createElement('div');
     const backends = [createMemoryGraphBackend({ id: 'memory-contract' }), createCanvas2DGraphBackend({ id: 'canvas-contract' })];
@@ -398,4 +431,3 @@ describe('shared backend contract adapters', () => {
     expect(pick?.worldPoint).toEqual({ dimension: '3d', x: 0, y: 0, z: 1 });
   });
 });
-

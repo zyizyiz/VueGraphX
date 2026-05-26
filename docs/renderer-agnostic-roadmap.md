@@ -71,6 +71,30 @@ Dependency direction: `core contracts -> math typed results -> commands IR -> ba
 | Interaction runtime | Capability/picking/drag/layer primitives exist in core areas. | M5 waits for M1/M4 contracts; memory + Canvas2D + one DOM backend use the same fixture. | Rich relation-aware interaction, layer pass-through, handles, measurements. | Cross-backend interaction contract tests, not DOM-only assertions. |
 | Release / compatibility | Package verification scripts exist. | M6 remains post-contract; no early semver/API lock-in. | Release verify, dist/types checks, migration/deprecation guide. | `npm run release:verify` or scoped release gate when M6 starts. |
 
+### M4 backend capability matrix
+
+This matrix records the first backend parity vertical slice. It is intentionally narrower than the full roadmap: shared contract tests cover representative P0 object families and require typed diagnostics for object families that a backend declares as unsupported or partial.
+
+Status legend:
+
+- Supported: `create()` returns an ok core handle with no renderer object leakage.
+- Partial: `create()` returns `ok: false` with a `backend.partial-support` warning diagnostic.
+- Unsupported: `create()` returns `ok: false` with a `backend.unsupported-object` error diagnostic.
+- Placeholder: package boundary exists, but it is not counted as contract support.
+
+| Backend | Tier | Declared runtime capabilities | P0/P1 object-family status in shared contract tests | Known gaps |
+|---|---|---|---|---|
+| Memory fixture | Test-only | pick, project, unproject, drag, layers, 2D | Point, solid, and implicit fixtures are accepted to prove renderer-free source compatibility. | Not a production renderer; no visual output guarantee. |
+| JSXGraph | P0/P1 | pick, project, unproject, drag, layers, 2D and 3D | Point and stable 2D geometry/function/vector/measurement families are supported. Solids, implicit curves, and parametric curves return partial-support diagnostics. | JSXGraph remains renderer-owned only; it must not become math/core truth. Broader curve and 3D parity still needs later slices. |
+| Canvas2D | P0/P1 | pick, project, unproject, drag, layers, 2D | Point and stable 2D drawable geometry/function/vector/measurement families are supported. Solids return partial-support diagnostics. Implicit curves return unsupported diagnostics. | Canvas2D is the 2D proof backend and still lacks production export hooks and broader curve sampling. |
+| Babylon | P0/P1 | pick, project, unproject, drag, layers, 3D | Solids are supported. Point and implicit-curve fixtures return unsupported diagnostics because they are outside the current 3D solid slice. | Curves, surfaces, measurements, drag handles, and richer material/camera controls remain later Babylon parity work. |
+| Pixi | P2 | Placeholder package boundary only | Not in the shared contract PASS set. | Experimental until a retained 2D adapter is implemented with typed diagnostics. |
+| Fabric | P2 | Placeholder package boundary only | Not in the shared contract PASS set. | Experimental until object-editing canvas workflows are implemented with typed diagnostics. |
+| Konva | P2 | Placeholder package boundary only | Not in the shared contract PASS set. | Experimental until retained Canvas layers/events are implemented with typed diagnostics. |
+| Three | P2 | Placeholder package boundary only | Not in the shared contract PASS set. | Experimental until alternative 3D rendering/raycasting is implemented with typed diagnostics. |
+
+Every unsupported or partial result in the shared contract tests must include a typed diagnostic target with `scope: object`, `objectId`, `backendId`, and `layerId`. This prevents silent no-op behavior and keeps the same scene/command source switchable across backends where the target capability is supported.
+
 ### Required evidence format for milestone comments
 
 Every M0-M6 milestone result must include:
