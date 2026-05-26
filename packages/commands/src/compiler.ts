@@ -47,7 +47,7 @@ import {
   type GraphFunctionDescriptor,
   type GraphSolidFamily
 } from '@vuegraphx/math';
-import { getGraphCommandCatalogEntry, type GraphCommandNodeType } from './catalog';
+import { getGraphCommandCatalogEntry, type GraphCommandCatalogEntry, type GraphCommandNodeType } from './catalog';
 import { commandError, type GraphCommandDiagnosticCode } from './diagnostics';
 import {
   GraphCommandSymbolStore,
@@ -295,6 +295,32 @@ const arityError = (message: string, details?: Record<string, unknown>): GraphOp
   invalidCommand(message, 'commands.arity', details)
 );
 
+const validateCatalogArity = (
+  entry: GraphCommandCatalogEntry,
+  actual: number,
+  invokedName: string
+): GraphOperationResult<true> => {
+  const { min, max, variadic } = entry.arity;
+  const tooFew = actual < min;
+  const tooMany = !variadic && max !== undefined && actual > max;
+  if (!tooFew && !tooMany) return okResult(true);
+
+  const expected = max === undefined || variadic
+    ? `at least ${min}`
+    : min === max
+      ? `${min}`
+      : `${min}-${max}`;
+  return arityError(`${entry.canonicalName} expects ${expected} argument${expected === '1' ? '' : 's'}; received ${actual}.`, {
+    commandType: entry.type,
+    canonicalName: entry.canonicalName,
+    invokedName,
+    expectedMin: min,
+    expectedMax: max,
+    variadic: !!variadic,
+    actual
+  });
+};
+
 const invalidArgument = (message: string, details?: Record<string, unknown>): GraphOperationResult<never> => (
   invalidCommand(message, 'commands.invalid-argument', details)
 );
@@ -353,6 +379,9 @@ export const compileGraphCommand = (
       commandType: invocation.type
     });
   }
+
+  const arityValidation = validateCatalogArity(catalogEntry, invocation.args.length, invocation.type);
+  if (!arityValidation.ok) return { ok: false, diagnostics: arityValidation.diagnostics };
 
   const type = catalogEntry.type;
   const id = invocation.name || `${type}-${symbols.size + 1}`;
@@ -919,12 +948,17 @@ const buildSolidNode = (id: string, args: readonly string[], layerId: GraphObjec
   const parameters = getSolidDefaultParameters(family);
   const origin: { x?: number; y?: number; z?: number } = {};
   for (const arg of args.slice(1)) {
-    const [key, rawValue] = arg.split('=').map((entry) => entry.trim());
-    const value = rawValue === undefined ? null : parseNumber(rawValue);
-    if (key && value !== null) {
-      if (key === 'x' || key === 'y' || key === 'z') origin[key] = value;
-      else parameters[key] = value;
+    const [key, rawValue, ...extra] = arg.split('=').map((entry) => entry.trim());
+    const value = rawValue === undefined || extra.length > 0 ? null : parseNumber(rawValue);
+    if (!key || value === null) {
+      return invalidArgument('Solid parameters after the family must be finite numeric keyword arguments.', {
+        commandType: 'solid',
+        argument: arg,
+        expected: 'key=value'
+      });
     }
+    if (key === 'x' || key === 'y' || key === 'z') origin[key] = value;
+    else parameters[key] = value;
   }
   return okResult(createBaseNode(
     id,

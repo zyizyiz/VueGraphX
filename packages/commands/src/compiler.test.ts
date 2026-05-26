@@ -20,9 +20,14 @@ describe('renderer-free command compiler', () => {
       support: { status: 'supported' }
     });
     expect(circle?.aliases).toContain('Circle');
-    expect(circle?.parameters.map((parameter) => parameter.type)).toEqual(['point', 'number']);
+    expect(circle?.parameters.map((parameter) => parameter.type)).toEqual(['point', ['number', 'point']]);
     expect(circle?.examples[0]).toContain('Circle');
     expect(circle?.support.coreIrTypes).toContain('conic');
+
+    const translate = getGraphCommandCatalogEntry('Translate');
+    expect(translate?.parameters.map((parameter) => parameter.type)).toEqual(['object', ['number', 'vector'], 'number']);
+    expect(translate?.parameters[1]).toMatchObject({ name: 'dxOrVector' });
+    expect(translate?.parameters[2]).toMatchObject({ name: 'dy', optional: true });
 
     const polyline = getGraphCommandCatalogEntry('PolygonalChain');
     expect(polyline?.type).toBe('polyline');
@@ -258,6 +263,9 @@ describe('renderer-free command compiler', () => {
 
   it('returns typed diagnostics for arity, domain, ambiguous result, unsupported capability, and unsupported commands', () => {
     expect(compileGraphCommand('A = Point(1)').diagnostics[0].code).toBe('commands.arity');
+    expect(compileGraphCommand('CoordinateSystem(1, 2)').diagnostics[0].code).toBe('commands.arity');
+    const symbols = compileGraphCommands(['A = Point(0, 0)']).symbols;
+    expect(compileGraphCommand('Text(A, "a", "b", "c")', { symbols }).diagnostics[0].code).toBe('commands.arity');
     expect(compileGraphCommand('Foo()').diagnostics[0].code).toBe('commands.unsupported-command');
 
     const domain = compileGraphCommands([
@@ -286,6 +294,11 @@ describe('renderer-free command compiler', () => {
     expect(unsupported.diagnostics[0]).toMatchObject({
       code: 'commands.unsupported-capability',
       details: { objectType: 'text' }
+    });
+
+    expect(compileGraphCommand('bad = Solid("cube", bad)').diagnostics[0]).toMatchObject({
+      code: 'commands.invalid-argument',
+      details: { argument: 'bad' }
     });
   });
 

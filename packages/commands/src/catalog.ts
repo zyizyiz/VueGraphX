@@ -60,9 +60,11 @@ export interface GraphCommandArity {
   variadic?: boolean;
 }
 
+export type GraphCommandParameterTypeSpec = GraphCommandParameterType | readonly GraphCommandParameterType[];
+
 export interface GraphCommandParameterMeta {
   name: string;
-  type: GraphCommandParameterType;
+  type: GraphCommandParameterTypeSpec;
   optional?: boolean;
   variadic?: boolean;
   description?: string;
@@ -88,7 +90,7 @@ export interface GraphCommandCatalogEntry {
 
 const parameter = (
   name: string,
-  type: GraphCommandParameterType,
+  type: GraphCommandParameterTypeSpec,
   options: Omit<GraphCommandParameterMeta, 'name' | 'type'> = {}
 ): GraphCommandParameterMeta => ({ name, type, ...options });
 
@@ -145,7 +147,7 @@ export const GRAPH_COMMAND_CATALOG: readonly GraphCommandCatalogEntry[] = [
     type: 'circle',
     aliases: ['Circle'],
     arity: { min: 2, max: 2 },
-    parameters: [parameter('center', 'point'), parameter('radiusOrPoint', 'number', { description: 'May also be a point on the circle.' })],
+    parameters: [parameter('center', 'point'), parameter('radiusOrPoint', ['number', 'point'], { description: 'Finite radius, point reference, or inline point tuple on the circle.' })],
     examples: ['c = Circle(A, 3)', 'c = Circle(A, B)'],
     support: support(['conic'])
   },
@@ -406,7 +408,7 @@ export const GRAPH_COMMAND_CATALOG: readonly GraphCommandCatalogEntry[] = [
     type: 'translated',
     aliases: ['Translate', 'Translated'],
     arity: { min: 2, max: 3 },
-    parameters: [parameter('object', 'object'), parameter('delta', 'vector')],
+    parameters: [parameter('object', 'object'), parameter('dxOrVector', ['number', 'vector']), parameter('dy', 'number', { optional: true })],
     examples: ['shifted = Translate(A, 1, 2)'],
     support: support(['transform'])
   },
@@ -473,7 +475,10 @@ export const listGraphCommandCatalog = (): GraphCommandCatalogEntry[] => (
   GRAPH_COMMAND_CATALOG.map((entry) => ({
     ...entry,
     aliases: [...entry.aliases],
-    parameters: entry.parameters.map((entryParameter) => ({ ...entryParameter })),
+    parameters: entry.parameters.map((entryParameter) => ({
+      ...entryParameter,
+      type: Array.isArray(entryParameter.type) ? [...entryParameter.type] : entryParameter.type
+    })),
     examples: [...entry.examples],
     support: {
       ...entry.support,
