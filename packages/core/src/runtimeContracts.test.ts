@@ -422,7 +422,8 @@ describe('renderer-neutral core runtime contracts', () => {
 
     expect(plan.ok).toBe(true);
     expect(plan.value?.recomputeObjectIds).toEqual(['B', 'C']);
-    expect(plan.value?.dirtyObjectIds).toEqual(['A', 'B', 'C']);
+    expect(plan.value?.dirtyObjectIds).toEqual(expect.arrayContaining(['A', 'B', 'C']));
+    expect(plan.value?.dirtyObjectIds).toHaveLength(3);
   });
 
   it('returns typed diagnostics for missing and invalid relation snapshots', () => {

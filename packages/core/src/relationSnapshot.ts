@@ -176,7 +176,7 @@ export const createGraphRelationInvalidationPlan = (
   const dirtyObjectIds = [
     ...changedObjectIds,
     ...removedObjectIds,
-    ...recomputeObjectIds
+    ...dependentDirtyObjectIds
   ];
 
   return okResult({
