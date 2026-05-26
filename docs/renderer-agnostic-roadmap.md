@@ -34,6 +34,54 @@ Verified on branch `agent/ceo/717e79c5` from `origin/dev-1.3`:
 6. Legacy root APIs may remain for compatibility, but new features land in package-owned source first.
 7. Tests must include renderer-free unit tests plus at least one cross-backend contract test for every shared behavior.
 
+## M0 architecture intake matrix
+
+This section is the M0 intake artifact for subsequent implementation issues. It records package ownership, dependency direction, priority tiers, feature/capability coverage, and the evidence format that every milestone must report before entering review.
+
+### Package ownership and dependency direction
+
+| Package / surface | Owns | May depend on | Must not depend on / become |
+|---|---|---|---|
+| `@vuegraphx/core` | Scene documents, viewport, graph object IR, relations, capabilities, diagnostics, picking/drag/layer pass-through contracts, backend adapter contracts. | Renderer-free shared types/utilities. | JSXGraph, Canvas2D, Babylon, Vue, DOM, or any backend object as semantic truth. |
+| `@vuegraphx/math` | Renderer-free math kernel: typed results, tolerance, domain errors, numeric diagnostics, geometry/formula helpers. | Math libraries and renderer-free shared type contracts only. | Vue/DOM/backend imports; backend-specific objects; a full CAS commitment in the first implementation slice. |
+| `@vuegraphx/commands` | Command catalog, aliases, arity/type metadata, parser/compiler, symbol table, command diagnostics. | `@vuegraphx/core` IR contracts and public `@vuegraphx/math` APIs. | Direct JSXGraph/Canvas/Babylon calls; 100% GeoGebra/JSXGraph syntax compatibility as an M0-M3 promise. |
+| `@vuegraphx/backend-*` | Projection from core IR/math typed results into renderer-specific objects; declared capability implementation. | `@vuegraphx/core` contracts and public math results. | Source of truth for scene semantics; silent no-op on unsupported capability. |
+| `vuegraphx` / `@vuegraphx/vue` | Compatibility and Vue integration surface, examples, consumer ergonomics. | Stable scoped packages and selected backend integrations. | Canonical owner of core/math/command/backend semantics. |
+
+Dependency direction: `core contracts -> math typed results -> commands IR -> backend adapters -> vue/root integration`. Backends consume declarations; they do not define architecture. If shared diagnostic/type definitions are needed between math and core, they should be kept renderer-free and reviewed during M1/M2 rather than introduced ad hoc.
+
+### Priority tiers for roadmap execution
+
+| Tier | Scope | Rationale |
+|---|---|---|
+| P0 | Renderer-agnostic positioning; core IR/capability diagnostics; renderer-free math typed results for a first algebra/analytic geometry slice; command IR foundation; JSXGraph/Canvas2D/Babylon declared capability parity for selected object families; evidence format. | Establishes the architecture contract and prevents further JSXGraph-wrapper drift. |
+| P1 | Shared picking/drag/layer pass-through runtime; broader command catalog; backend parity expansion; migration/compatibility docs for root APIs. | Builds interactive parity after the core contract is stable. |
+| P2 | Pixi/Fabric/Konva/Three production adapters; full curriculum-level math expansion; release hardening/semver/API docs after contracts stabilize. | Valuable extensions, but risky to promise before P0/P1 contract slices are proven. |
+
+### Feature / capability matrix
+
+| Area | Current baseline | P0 target | Later targets | Evidence required |
+|---|---|---|---|---|
+| Public positioning | README now names renderer-agnostic goals; older examples still mention JSXGraph as an available renderer/style dependency. | Root docs clearly say VueGraphX is not a JSXGraph wrapper and link this roadmap. | Package-level README/API docs per public package. | README/README_en diff or explicit no-diff evidence. |
+| Package responsibility | Scoped packages exist for core/math/commands/vue/backends. | Ownership table and dependency direction are documented before implementation. | Automated import-boundary checks stay green for new packages. | M0 matrix + `npm run verify:packages`. |
+| Core scene/capability contract | Core has runtime contracts, scene documents, capability model/executor, event routing, drag operations. | M1 issue must harden IR + typed diagnostics before backend/runtime work. | Full object family coverage and cross-backend contract fixtures. | Renderer-free round-trip + capability diagnostic tests. |
+| Math kernel | Math package has functions/geometry/solids/tests but is not complete curriculum coverage. | First math slice returns stable typed results with tolerance/domain diagnostics and no renderer imports. | Broader algebra, analytic geometry, plane/solid geometry, trigonometry, statistics, calculus, curves, relation solving. | Renderer-free math unit tests with numeric tolerance and edge cases. |
+| Command DSL | Starter compiler exists. | Catalog/symbol/diagnostics foundation compiles only to core IR. | Wider JSXGraph/GeoGebra-like command families and migration aliases where practical. | Compiler success + diagnostic tests; no renderer imports. |
+| Backend adapters | JSXGraph/Canvas2D/Babylon have real source; Pixi/Fabric/Konva/Three are placeholders. | Declared P0 object families render consistently across supported JSXGraph/Canvas2D/Babylon capabilities. | Additional production backends after locked capability matrix. | Shared backend contract tests + typed unsupported diagnostics. |
+| Interaction runtime | Capability/picking/drag/layer primitives exist in core areas. | M5 waits for M1/M4 contracts; memory + Canvas2D + one DOM backend use the same fixture. | Rich relation-aware interaction, layer pass-through, handles, measurements. | Cross-backend interaction contract tests, not DOM-only assertions. |
+| Release / compatibility | Package verification scripts exist. | M6 remains post-contract; no early semver/API lock-in. | Release verify, dist/types checks, migration/deprecation guide. | `npm run release:verify` or scoped release gate when M6 starts. |
+
+### Required evidence format for milestone comments
+
+Every M0-M6 milestone result must include:
+
+1. Requirement mapping: which Discovery/Architecture clause is covered and which non-goals remain out of scope.
+2. Change scope: changed files plus explicit confirmation that forbidden package/source areas were not touched.
+3. Test evidence: exact command(s), result, and failure logs if the environment prevents execution.
+4. Diagnostics evidence where relevant: typed unsupported/partial/domain errors, not silent no-ops.
+5. Review routing: Code Review Gate before QA; no direct parent issue merge/done from implementation.
+6. Three-line retrospective: waste observed, prevention rule, whether process/agent/skill updates are needed.
+
 ## Milestone plan
 
 ### M0 — Governance and public positioning
