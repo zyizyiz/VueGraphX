@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { GraphObjectNode } from '@vuegraphx/core';
+import type {
+  GraphObjectNode,
+  GraphOperationDiagnostic,
+  GraphOperationResult,
+  GraphRenderBackend,
+  GraphRenderHandle
+} from '@vuegraphx/core';
 import type { BabylonRuntimePort } from '@vuegraphx/backend-babylon';
 import type { JsxGraphRuntimePort } from '@vuegraphx/backend-jsxgraph';
 import { createBabylonGraphBackend } from '@vuegraphx/backend-babylon';
@@ -22,6 +28,123 @@ const solidNode: GraphObjectNode = {
   layerId: 'content'
 };
 
+const implicitNode: GraphObjectNode = {
+  id: 'implicit-circle',
+  kind: 'shape',
+  type: 'implicit',
+  payload: { objectType: 'implicit', expression: 'x^2 + y^2 = 1', variables: ['x', 'y'] },
+  layerId: 'content'
+};
+
+type BackendContractBackendId = 'memory' | 'canvas2d' | 'jsxgraph' | 'babylon';
+type BackendContractStatus = 'success' | 'unsupported' | 'partial-support';
+
+interface DeclarativeBackendContractFixture {
+  id: string;
+  node: GraphObjectNode;
+  expectations: Record<BackendContractBackendId, BackendContractStatus>;
+}
+
+const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
+  {
+    id: 'point-2d',
+    node: pointNode,
+    expectations: {
+      memory: 'success',
+      canvas2d: 'success',
+      jsxgraph: 'success',
+      babylon: 'unsupported'
+    }
+  },
+  {
+    id: 'solid-3d',
+    node: solidNode,
+    expectations: {
+      memory: 'success',
+      canvas2d: 'partial-support',
+      jsxgraph: 'partial-support',
+      babylon: 'success'
+    }
+  },
+  {
+    id: 'implicit-curve',
+    node: implicitNode,
+    expectations: {
+      memory: 'success',
+      canvas2d: 'unsupported',
+      jsxgraph: 'partial-support',
+      babylon: 'unsupported'
+    }
+  }
+] as const;
+
+const createBackendContractDiagnostic = (
+  backend: GraphRenderBackend,
+  fixture: DeclarativeBackendContractFixture,
+  status: Exclude<BackendContractStatus, 'success'>
+): GraphOperationDiagnostic => {
+  const code = status === 'partial-support'
+    ? 'backend.partial-support'
+    : 'backend.unsupported-object';
+  return {
+    code,
+    message: `Backend ${backend.id} reports ${status} for object ${fixture.node.id} (${fixture.node.type}).`,
+    severity: status === 'partial-support' ? 'warning' : 'error',
+    target: {
+      scope: 'object',
+      objectId: fixture.node.id,
+      backendId: backend.id,
+      layerId: fixture.node.layerId ?? 'content'
+    }
+  };
+};
+
+const getBackendContractStatus = (
+  backend: GraphRenderBackend,
+  fixture: DeclarativeBackendContractFixture
+): BackendContractStatus => fixture.expectations[backend.id as BackendContractBackendId] ?? 'unsupported';
+
+const runDeclarativeBackendContractFixture = (
+  backend: GraphRenderBackend,
+  fixture: DeclarativeBackendContractFixture
+): GraphOperationResult<GraphRenderHandle> => backend.create(fixture.node);
+
+const expectCreatedHandle = (result: GraphOperationResult<GraphRenderHandle>): GraphRenderHandle => {
+  expect(result.ok).toBe(true);
+  expect(result.diagnostics).toEqual([]);
+  expect(result.value).toBeDefined();
+  return result.value!;
+};
+
+const createBackendContractMatrix = () => {
+  const jsxGraphRuntime: JsxGraphRuntimePort = {
+    mount: vi.fn(),
+    createObject: vi.fn(),
+    updateObject: vi.fn(),
+    removeObject: vi.fn(),
+    destroy: vi.fn()
+  };
+  const babylonRuntime: BabylonRuntimePort = {
+    mount: vi.fn(),
+    createSolid: vi.fn(),
+    updateSolid: vi.fn(),
+    remove: vi.fn(),
+    pick: vi.fn(() => null),
+    destroy: vi.fn()
+  };
+
+  return {
+    jsxGraphRuntime,
+    babylonRuntime,
+    backends: [
+      createMemoryGraphBackend(),
+      createCanvas2DGraphBackend(),
+      createJsxGraphBackend({ runtime: jsxGraphRuntime }),
+      createBabylonGraphBackend({ runtime: babylonRuntime })
+    ]
+  };
+};
+
 describe('shared backend contract adapters', () => {
   it('runs create/update/pick/remove lifecycle for memory and Canvas2D backends from the same core node', () => {
     const host = document.createElement('div');
@@ -29,7 +152,7 @@ describe('shared backend contract adapters', () => {
 
     for (const backend of backends) {
       backend.mount(host, { size: { width: 100, height: 100 } });
-      const handle = backend.create(pointNode);
+      const handle = expectCreatedHandle(backend.create(pointNode));
       expect(handle.target.objectId).toBe('A');
       expect(backend.pick({ x: 10, y: 10 })?.target.objectId).toBe('A');
       expect(backend.pick({ x: 10, y: 10 }, { targetScopes: ['handle'] })).toBeNull();
@@ -37,6 +160,43 @@ describe('shared backend contract adapters', () => {
       expect(backend.pick({ x: 20, y: 20 })?.target.objectId).toBe('A');
       backend.remove(handle);
       expect(backend.pick({ x: 20, y: 20 })).toBeNull();
+      backend.destroy();
+    }
+  });
+
+  it('runs one declarative backend contract fixture matrix across memory, Canvas2D, JSXGraph, and Babylon', () => {
+    const { backends, jsxGraphRuntime, babylonRuntime } = createBackendContractMatrix();
+
+    for (const backend of backends) {
+      backend.mount(document.createElement('div'), { size: { width: 100, height: 100 } });
+    }
+
+    for (const fixture of backendContractFixtures) {
+      for (const backend of backends) {
+        const status = getBackendContractStatus(backend, fixture);
+        const result = runDeclarativeBackendContractFixture(backend, fixture);
+
+        if (status === 'success') {
+          expect(result.ok).toBe(true);
+          expect(result.value?.target).toMatchObject({
+            scope: 'object',
+            objectId: fixture.node.id,
+            backendId: backend.id,
+            layerId: fixture.node.layerId ?? 'content'
+          });
+          expect(JSON.stringify(result.value)).not.toMatch(/JXG|GeometryElement|Board|BABYLON|Mesh/);
+          backend.remove(result.value!);
+        } else {
+          expect(result.ok).toBe(false);
+          expect(result.diagnostics).toEqual([createBackendContractDiagnostic(backend, fixture, status)]);
+        }
+      }
+    }
+
+    expect(jsxGraphRuntime.createObject).toHaveBeenCalledTimes(1);
+    expect(babylonRuntime.createSolid).toHaveBeenCalledTimes(1);
+
+    for (const backend of backends) {
       backend.destroy();
     }
   });
@@ -119,7 +279,7 @@ describe('shared backend contract adapters', () => {
     };
     const backend = createJsxGraphBackend({ runtime });
     backend.mount(document.createElement('div'));
-    const handle = backend.create(pointNode);
+    const handle = expectCreatedHandle(backend.create(pointNode));
     backend.update(handle, { payload: { point: { x: 11, y: 12 } } });
     backend.remove(handle);
     backend.destroy();
@@ -144,28 +304,28 @@ describe('shared backend contract adapters', () => {
     const runtime = createJsxGraphRuntime({}, { board });
     const backend = createJsxGraphBackend({ runtime });
     backend.mount(document.createElement('div'));
-    const line = backend.create({
+    const line = expectCreatedHandle(backend.create({
       id: 'l',
       kind: 'shape',
       type: 'line',
       payload: { geometry: { kind: 'line', point: { x: 0, y: 0 }, direction: { x: 2, y: 0 } } },
       renderHints: { strokeColor: '#f00' },
       layerId: 'content'
-    });
-    const circle = backend.create({
+    }));
+    const circle = expectCreatedHandle(backend.create({
       id: 'c',
       kind: 'shape',
       type: 'circle',
       payload: { geometry: { kind: 'circle', center: { x: 0, y: 0 }, radius: 2 } },
       layerId: 'content'
-    });
-    backend.create({
+    }));
+    expectCreatedHandle(backend.create({
       id: 'f',
       kind: 'shape',
       type: 'function',
       payload: { expression: 'x^2', variable: 'x', domain: [-1, 1] },
       layerId: 'content'
-    });
+    }));
     backend.create({
       id: 'df',
       kind: 'relation',
@@ -229,7 +389,7 @@ describe('shared backend contract adapters', () => {
     };
     const backend = createBabylonGraphBackend({ runtime });
     backend.mount(document.createElement('div'));
-    const handle = backend.create(solidNode);
+    const handle = expectCreatedHandle(backend.create(solidNode));
     const pick = backend.pick({ x: 5, y: 5 });
 
     expect(handle.objectId).toBe('cube');
@@ -238,3 +398,4 @@ describe('shared backend contract adapters', () => {
     expect(pick?.worldPoint).toEqual({ dimension: '3d', x: 0, y: 0, z: 1 });
   });
 });
+

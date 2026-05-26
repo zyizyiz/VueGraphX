@@ -1,11 +1,13 @@
 import type {
   GraphBackendCapabilities,
   GraphBackendContext,
+  GraphBackendHost,
   GraphBackendMountOptions,
   GraphBackendMountResult,
   GraphClientPoint,
   GraphObjectNode,
   GraphObjectPatch,
+  GraphOperationResult,
   GraphPickOptions,
   GraphPickResult,
   GraphRenderBackend,
@@ -14,7 +16,7 @@ import type {
   GraphViewportSize,
   GraphWorldPoint
 } from '@vuegraphx/core';
-import { createGraphObjectNode, mergeGraphObjectPatch } from '@vuegraphx/core';
+import { createGraphObjectNode, mergeGraphObjectPatch, okResult } from '@vuegraphx/core';
 
 export interface JsxGraphRuntimePort {
   mount(host: HTMLElement, options?: GraphBackendMountOptions): void;
@@ -34,6 +36,36 @@ export interface JsxGraphBackendOptions {
   runtime?: JsxGraphRuntimePort;
   capabilities?: Partial<GraphBackendCapabilities>;
 }
+
+type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
+
+const JSXGRAPH_SUPPORTED_TYPES = new Set(['point', 'text', 'angle', 'circle', 'arc', 'sector', 'semicircle', 'polygon', 'segment', 'line', 'ray', 'polyline', 'function', 'derivative', 'vector', 'measurement']);
+const JSXGRAPH_PARTIAL_TYPES = new Set(['solid', 'implicit', 'parametric']);
+
+const getJsxGraphSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
+  if (JSXGRAPH_SUPPORTED_TYPES.has(node.type)) return 'success';
+  if (JSXGRAPH_PARTIAL_TYPES.has(node.type)) return 'partial-support';
+  return 'unsupported';
+};
+
+const createBackendSupportDiagnosticResult = (
+  backendId: string,
+  node: GraphObjectNode,
+  status: Exclude<BackendSupportStatus, 'success'>
+): GraphOperationResult<GraphRenderHandle> => ({
+  ok: false,
+  diagnostics: [{
+    code: status === 'partial-support' ? 'backend.partial-support' : 'backend.unsupported-object',
+    message: `Backend ${backendId} reports ${status} for object ${node.id} (${node.type}).`,
+    severity: status === 'partial-support' ? 'warning' : 'error',
+    target: {
+      scope: 'object',
+      objectId: node.id,
+      backendId,
+      layerId: node.layerId ?? 'content'
+    }
+  }]
+});
 
 export class JsxGraphBackend implements GraphRenderBackend {
   public readonly id: string;
@@ -57,13 +89,21 @@ export class JsxGraphBackend implements GraphRenderBackend {
     this.runtime = options.runtime ?? null;
   }
 
-  public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
-    this.runtime?.mount(host, options);
+  public mount(host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+    const hostElement = resolveHostElement(host);
+    if (this.runtime && !hostElement) {
+      throw new Error('JsxGraphBackend runtime requires an HTMLElement host.');
+    }
+    if (hostElement) this.runtime?.mount(hostElement, options);
     this.size = options.size ? { ...options.size } : this.size;
     return { backendId: options.backendId ?? this.id, size: this.size };
   }
 
-  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphRenderHandle {
+  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphOperationResult<GraphRenderHandle> {
+    const status = getJsxGraphSupportStatus(node);
+    if (status !== 'success') {
+      return createBackendSupportDiagnosticResult(this.id, node, status);
+    }
     const stored = createGraphObjectNode(node);
     const layerId = context.layerId ?? stored.layerId ?? 'content';
     const handle: GraphRenderHandle = {
@@ -76,7 +116,7 @@ export class JsxGraphBackend implements GraphRenderBackend {
     this.nodes.set(stored.id, { ...stored, layerId });
     this.handles.set(handle.id, handle);
     this.runtime?.createObject(node, handle, context);
-    return handle;
+    return okResult(handle);
   }
 
   public update(handle: GraphRenderHandle, patch: GraphObjectPatch, context: GraphBackendContext = {}): void {
@@ -121,5 +161,12 @@ export class JsxGraphBackend implements GraphRenderBackend {
     this.runtime?.destroy();
   }
 }
+
+const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
+  if (typeof HTMLElement === 'undefined') return null;
+  if (host instanceof HTMLElement) return host;
+  if (host.resource instanceof HTMLElement) return host.resource;
+  return null;
+};
 
 export const createJsxGraphBackend = (options?: JsxGraphBackendOptions): JsxGraphBackend => new JsxGraphBackend(options);

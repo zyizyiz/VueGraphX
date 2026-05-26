@@ -1,11 +1,13 @@
 import type {
   GraphBackendCapabilities,
   GraphBackendContext,
+  GraphBackendHost,
   GraphBackendMountOptions,
   GraphBackendMountResult,
   GraphClientPoint,
   GraphObjectNode,
   GraphObjectPatch,
+  GraphOperationResult,
   GraphPickOptions,
   GraphPickResult,
   GraphRenderBackend,
@@ -14,7 +16,7 @@ import type {
   GraphViewportSize,
   GraphWorldPoint
 } from '@vuegraphx/core';
-import { createGraphObjectNode, mergeGraphObjectPatch } from '@vuegraphx/core';
+import { createGraphObjectNode, mergeGraphObjectPatch, okResult } from '@vuegraphx/core';
 
 export interface BabylonRuntimePickResult {
   objectId: string;
@@ -43,6 +45,31 @@ export interface BabylonGraphBackendOptions {
   capabilities?: Partial<GraphBackendCapabilities>;
 }
 
+type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
+
+const getBabylonSupportStatus = (node: GraphObjectNode): BackendSupportStatus => (
+  node.type === 'solid' ? 'success' : 'unsupported'
+);
+
+const createBackendSupportDiagnosticResult = (
+  backendId: string,
+  node: GraphObjectNode,
+  status: Exclude<BackendSupportStatus, 'success'>
+): GraphOperationResult<GraphRenderHandle> => ({
+  ok: false,
+  diagnostics: [{
+    code: status === 'partial-support' ? 'backend.partial-support' : 'backend.unsupported-object',
+    message: `Backend ${backendId} reports ${status} for object ${node.id} (${node.type}).`,
+    severity: status === 'partial-support' ? 'warning' : 'error',
+    target: {
+      scope: 'object',
+      objectId: node.id,
+      backendId,
+      layerId: node.layerId ?? 'content'
+    }
+  }]
+});
+
 export class BabylonGraphBackend implements GraphRenderBackend {
   public readonly id: string;
   public readonly capabilities: GraphBackendCapabilities;
@@ -65,13 +92,21 @@ export class BabylonGraphBackend implements GraphRenderBackend {
     };
   }
 
-  public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
-    this.runtime?.mount(host, options);
+  public mount(host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+    const hostElement = resolveHostElement(host);
+    if (this.runtime && !hostElement) {
+      throw new Error('BabylonGraphBackend runtime requires an HTMLElement host.');
+    }
+    if (hostElement) this.runtime?.mount(hostElement, options);
     this.size = options.size ? { ...options.size } : this.size;
     return { backendId: options.backendId ?? this.id, size: this.size };
   }
 
-  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphRenderHandle {
+  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphOperationResult<GraphRenderHandle> {
+    const status = getBabylonSupportStatus(node);
+    if (status !== 'success') {
+      return createBackendSupportDiagnosticResult(this.id, node, status);
+    }
     const stored = createGraphObjectNode(node);
     const layerId = context.layerId ?? stored.layerId ?? 'content';
     const handle: GraphRenderHandle = {
@@ -83,10 +118,8 @@ export class BabylonGraphBackend implements GraphRenderBackend {
     };
     this.nodes.set(stored.id, { ...stored, layerId });
     this.handles.set(handle.id, handle);
-    if (node.type === 'solid') {
-      this.runtime?.createSolid(node, handle, context);
-    }
-    return handle;
+    this.runtime?.createSolid(node, handle, context);
+    return okResult(handle);
   }
 
   public update(handle: GraphRenderHandle, patch: GraphObjectPatch, context: GraphBackendContext = {}): void {
@@ -149,5 +182,12 @@ export class BabylonGraphBackend implements GraphRenderBackend {
     this.runtime?.destroy();
   }
 }
+
+const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
+  if (typeof HTMLElement === 'undefined') return null;
+  if (host instanceof HTMLElement) return host;
+  if (host.resource instanceof HTMLElement) return host.resource;
+  return null;
+};
 
 export const createBabylonGraphBackend = (options?: BabylonGraphBackendOptions): BabylonGraphBackend => new BabylonGraphBackend(options);

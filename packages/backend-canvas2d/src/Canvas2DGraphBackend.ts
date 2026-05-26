@@ -1,9 +1,11 @@
 import type {
   GraphBackendContext,
+  GraphBackendHost,
   GraphBackendMountOptions,
   GraphBackendMountResult,
   GraphObjectNode,
   GraphObjectPatch,
+  GraphOperationResult,
   GraphRenderHandle,
   GraphViewportSize
 } from '@vuegraphx/core';
@@ -47,6 +49,36 @@ interface CanvasDrawablePayload {
   end?: { x: number; y: number };
 }
 
+type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
+
+const CANVAS2D_SUPPORTED_TYPES = new Set(['point', 'text', 'angle', 'circle', 'arc', 'sector', 'semicircle', 'polygon', 'segment', 'line', 'ray', 'polyline', 'function', 'vector', 'measurement']);
+const CANVAS2D_PARTIAL_TYPES = new Set(['solid']);
+
+const getCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
+  if (CANVAS2D_SUPPORTED_TYPES.has(node.type)) return 'success';
+  if (CANVAS2D_PARTIAL_TYPES.has(node.type)) return 'partial-support';
+  return 'unsupported';
+};
+
+const createBackendSupportDiagnosticResult = (
+  backendId: string,
+  node: GraphObjectNode,
+  status: Exclude<BackendSupportStatus, 'success'>
+): GraphOperationResult<GraphRenderHandle> => ({
+  ok: false,
+  diagnostics: [{
+    code: status === 'partial-support' ? 'backend.partial-support' : 'backend.unsupported-object',
+    message: `Backend ${backendId} reports ${status} for object ${node.id} (${node.type}).`,
+    severity: status === 'partial-support' ? 'warning' : 'error',
+    target: {
+      scope: 'object',
+      objectId: node.id,
+      backendId,
+      layerId: node.layerId ?? 'content'
+    }
+  }]
+});
+
 export class Canvas2DGraphBackend extends MemoryGraphBackend {
   private canvas: HTMLCanvasElement | null;
   private context: CanvasRenderingContext2D | null = null;
@@ -62,14 +94,18 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.showAxes = options.showAxes ?? true;
   }
 
-  public override mount(host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+  public override mount(host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+    const hostElement = resolveHostElement(host);
     const worldBounds = readWorldBounds(options.attributes?.worldBounds);
     if (worldBounds) this.worldBounds = worldBounds;
     if (!this.canvas) {
+      if (!hostElement) {
+        throw new Error('Canvas2DGraphBackend requires an HTMLElement host or a canvas option.');
+      }
       this.canvas = document.createElement('canvas');
-      host.appendChild(this.canvas);
-    } else if (!this.canvas.parentElement && host !== this.canvas) {
-      host.appendChild(this.canvas);
+      hostElement.appendChild(this.canvas);
+    } else if (hostElement && !this.canvas.parentElement && hostElement !== this.canvas) {
+      hostElement.appendChild(this.canvas);
     }
     this.context = getCanvasContext(this.canvas);
     const result = super.mount(host, options);
@@ -77,10 +113,14 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     return result;
   }
 
-  public override create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphRenderHandle {
-    const handle = super.create(node, context);
-    this.flush();
-    return handle;
+  public override create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphOperationResult<GraphRenderHandle> {
+    const status = getCanvas2DSupportStatus(node);
+    if (status !== 'success') {
+      return createBackendSupportDiagnosticResult(this.id, node, status);
+    }
+    const result = super.create(node, context);
+    if (result.ok) this.flush();
+    return result;
   }
 
   public override update(handle: GraphRenderHandle, patch: GraphObjectPatch, context: GraphBackendContext = {}): void {
@@ -388,6 +428,12 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
 
 const readString = (value: unknown, fallback: string): string => typeof value === 'string' ? value : fallback;
 const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
+  if (typeof HTMLElement === 'undefined') return null;
+  if (host instanceof HTMLElement) return host;
+  if (host.resource instanceof HTMLElement) return host.resource;
+  return null;
+};
 const readWorldBounds = (value: unknown): CanvasWorldBounds | null => {
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;

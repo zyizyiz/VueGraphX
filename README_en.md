@@ -1,6 +1,6 @@
 <div align="center">
   <h1>🌌 VueGraphX</h1>
-  <p><strong>Interactive math and geometry engine built on Vue 3 + JSXGraph</strong></p>
+  <p><strong>Renderer-agnostic interactive math graph, geometry visualization, and computation engine</strong></p>
 
   <p>
     <a href="https://www.npmjs.com/package/vuegraphx"><img src="https://img.shields.io/npm/v/vuegraphx?color=42b883&style=for-the-badge" alt="NPM Version" /></a>
@@ -15,10 +15,11 @@
 
 ## 🌟 Introduction
 
-VueGraphX exposes two complementary workflows:
+VueGraphX exposes three complementary workflows. The long-term target is documented in the [renderer-agnostic roadmap](./docs/renderer-agnostic-roadmap.md):
 
-- Expression rendering for 2D/3D math expressions and geometry commands.
-- Shape runtime authoring built around shape definitions plus a capability-first interaction model.
+- Renderer-agnostic core: scene, viewport, graph objects, relations, capabilities, picking, dragging, layer pass-through, and backend contracts live in the core runtime; JSXGraph, Canvas2D, Babylon, and future renderers are replaceable backends.
+- Independent math kernel: functions, equations, inequalities, analytic geometry, plane/solid geometry, vectors, trigonometry, statistics, basic calculus, parametric/implicit curves, and geometric construction belong in `@vuegraphx/math`.
+- Command DSL: JSXGraph/GeoGebra-style commands compile to VueGraphX core IR, then each backend renders according to its declared capabilities.
 
 The playground also includes an experimental dual-layer mode:
 

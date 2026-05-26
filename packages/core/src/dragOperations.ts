@@ -89,6 +89,16 @@ const translatePayload = (payload: PlainRecord, delta: GraphDragDelta): PlainRec
     changed = true;
   }
 
+  if (isWorldPoint2D(payload.position) && delta.dimension === '2d') {
+    payload.position = translateWorldPoint2D(payload.position, delta);
+    changed = true;
+  }
+
+  if (isWorldPoint3D(payload.position) && delta.dimension === '3d') {
+    payload.position = translateWorldPoint3D(payload.position, delta);
+    changed = true;
+  }
+
   if (isPoint3D(payload.origin) && delta.dimension === '3d') {
     payload.origin = translatePoint3D(payload.origin, delta);
     changed = true;
@@ -161,12 +171,40 @@ const isPoint3D = (value: unknown): value is MutablePoint3D => {
     && typeof point.z === 'number' && Number.isFinite(point.z);
 };
 
+const isWorldPoint2D = (value: unknown): value is GraphWorldPoint & { dimension: '2d' } => {
+  if (typeof value !== 'object' || value === null) return false;
+  const point = value as Partial<GraphWorldPoint>;
+  return point.dimension === '2d' && typeof point.x === 'number' && Number.isFinite(point.x)
+    && typeof point.y === 'number' && Number.isFinite(point.y);
+};
+
+const isWorldPoint3D = (value: unknown): value is GraphWorldPoint & { dimension: '3d' } => {
+  if (typeof value !== 'object' || value === null) return false;
+  const point = value as Partial<GraphWorldPoint>;
+  return point.dimension === '3d' && typeof point.x === 'number' && Number.isFinite(point.x)
+    && typeof point.y === 'number' && Number.isFinite(point.y)
+    && typeof point.z === 'number' && Number.isFinite(point.z);
+};
+
 const translatePoint2D = (point: MutablePoint2D, delta: GraphDragDelta2D): MutablePoint2D => ({
   x: point.x + delta.dx,
   y: point.y + delta.dy
 });
 
 const translatePoint3D = (point: MutablePoint3D, delta: GraphDragDelta3D): MutablePoint3D => ({
+  x: point.x + delta.dx,
+  y: point.y + delta.dy,
+  z: point.z + delta.dz
+});
+
+const translateWorldPoint2D = (point: GraphWorldPoint & { dimension: '2d' }, delta: GraphDragDelta2D): GraphWorldPoint & { dimension: '2d' } => ({
+  ...point,
+  x: point.x + delta.dx,
+  y: point.y + delta.dy
+});
+
+const translateWorldPoint3D = (point: GraphWorldPoint & { dimension: '3d' }, delta: GraphDragDelta3D): GraphWorldPoint & { dimension: '3d' } => ({
+  ...point,
   x: point.x + delta.dx,
   y: point.y + delta.dy,
   z: point.z + delta.dz

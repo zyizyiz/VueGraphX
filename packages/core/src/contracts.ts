@@ -38,6 +38,15 @@ export interface GraphViewportSize {
   height: number;
 }
 
+export interface GraphBackendHost {
+  id?: string;
+  hostId?: string;
+  hostKind?: string;
+  size?: GraphViewportSize;
+  hostAttributes?: Record<string, unknown>;
+  resource?: unknown;
+}
+
 export interface GraphViewportRef {
   viewportId: string;
   sceneId?: string;
@@ -184,8 +193,8 @@ export interface GraphRenderBackend {
   readonly id: string;
   readonly capabilities: GraphBackendCapabilities;
 
-  mount(host: HTMLElement, options?: GraphBackendMountOptions): GraphBackendMountResult;
-  create(node: GraphObjectNode, context?: GraphBackendContext): GraphRenderHandle;
+  mount(host: GraphBackendHost, options?: GraphBackendMountOptions): GraphBackendMountResult;
+  create(node: GraphObjectNode, context?: GraphBackendContext): GraphOperationResult<GraphRenderHandle>;
   update(handle: GraphRenderHandle, patch: GraphObjectPatch, context?: GraphBackendContext): void;
   remove(handle: GraphRenderHandle): void;
 

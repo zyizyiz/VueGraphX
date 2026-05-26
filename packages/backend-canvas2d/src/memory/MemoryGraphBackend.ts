@@ -1,13 +1,16 @@
 import {
   createGraphObjectNode,
   mergeGraphObjectPatch,
+  okResult,
   type GraphBackendCapabilities,
   type GraphBackendContext,
+  type GraphBackendHost,
   type GraphBackendMountOptions,
   type GraphBackendMountResult,
   type GraphClientPoint,
   type GraphObjectNode,
   type GraphObjectPatch,
+  type GraphOperationResult,
   type GraphPickOptions,
   type GraphPickResult,
   type GraphRenderBackend,
@@ -45,13 +48,13 @@ export class MemoryGraphBackend implements GraphRenderBackend {
     this.capabilities = { ...DEFAULT_CAPABILITIES, ...(options.capabilities ?? {}) };
   }
 
-  public mount(_host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+  public mount(_host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
     this.mounted = true;
     this.size = options.size ? { ...options.size } : this.size;
     return { backendId: options.backendId ?? this.id, size: this.size };
   }
 
-  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphRenderHandle {
+  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphOperationResult<GraphRenderHandle> {
     const stored = createGraphObjectNode(node);
     const layerId = context.layerId ?? stored.layerId ?? 'content';
     const handle: GraphRenderHandle = {
@@ -63,7 +66,7 @@ export class MemoryGraphBackend implements GraphRenderBackend {
     };
     this.nodes.set(stored.id, { ...stored, layerId });
     this.handles.set(handle.id, handle);
-    return { ...handle, target: { ...handle.target } };
+    return okResult({ ...handle, target: { ...handle.target } });
   }
 
   public update(handle: GraphRenderHandle, patch: GraphObjectPatch, context: GraphBackendContext = {}): void {

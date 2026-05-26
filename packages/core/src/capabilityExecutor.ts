@@ -74,6 +74,9 @@ export const executeGraphCapability = (
     return errorResult('capability.missing-object', `Graph object ${input.target.objectId} does not exist.`, input.target);
   }
 
+  const familySupport = validateCapabilityObjectFamily(input.capabilityId, node, input.target);
+  if (familySupport) return familySupport;
+
   switch (input.capabilityId) {
     case 'math.object.select':
       return patchObject(input.scene, node, selectionPatch(node, readBoolean(asRecord(input.payload)?.selected ?? input.payload, true)));
@@ -170,6 +173,26 @@ const patchObject = (
   return updated.ok && updated.value
     ? okResult({ action: 'update', object: updated.value })
     : { ok: false, diagnostics: updated.diagnostics };
+};
+
+const validateCapabilityObjectFamily = (
+  capabilityId: string,
+  node: GraphObjectNode,
+  target: GraphRuntimeTargetRef
+): GraphOperationResult<never> | null => {
+  if (capabilityId.startsWith('math.solid.') && node.type !== 'solid') {
+    return errorResult('capability.partial-support', `Capability ${capabilityId} is only supported for solid scene objects; ${node.type} is not a solid.`, target);
+  }
+
+  if ((capabilityId.startsWith('math.function.') || capabilityId.startsWith('math.equation.')) && node.type !== 'function' && node.type !== 'implicit') {
+    return errorResult('capability.partial-support', `Capability ${capabilityId} is only supported for function or implicit scene objects; ${node.type} is not supported by this family.`, target);
+  }
+
+  if (capabilityId.startsWith('math.vector.') && node.type !== 'vector') {
+    return errorResult('capability.partial-support', `Capability ${capabilityId} is only supported for vector scene objects; ${node.type} is not a vector.`, target);
+  }
+
+  return null;
 };
 
 const executeViewportCapability = (
@@ -393,11 +416,12 @@ const vectorEndpointPatch = (node: GraphObjectNode, payload: unknown): GraphObje
   if (!point || !start || !end || (endpoint !== 'start' && endpoint !== 'end')) return { payload: node.payload };
   const nextStart = endpoint === 'start' ? point : start;
   const nextEnd = endpoint === 'end' ? point : end;
+  const isSceneObjectIrVector = current.objectType === 'vector';
   return {
     payload: {
       ...current,
-      start: nextStart,
-      end: nextEnd,
+      start: isSceneObjectIrVector ? toCoordinatePointSource(nextStart) : nextStart,
+      end: isSceneObjectIrVector ? toCoordinatePointSource(nextEnd) : nextEnd,
       vector: { x: nextEnd.x - nextStart.x, y: nextEnd.y - nextStart.y }
     }
   };
@@ -457,10 +481,16 @@ const isGraphObjectKind = (value: unknown): value is GraphObjectNode['kind'] => 
 const asPoint = (value: unknown): { x: number; y: number } | null => {
   const record = asRecord(value);
   if (!record) return null;
-  const x = readFiniteNumber(record.x);
-  const y = readFiniteNumber(record.y);
+  const coordinates = asRecord(record.coordinates);
+  const source = coordinates ?? record;
+  const x = readFiniteNumber(source.x);
+  const y = readFiniteNumber(source.y);
   return x === null || y === null ? null : { x, y };
 };
+
+const toCoordinatePointSource = (point: { x: number; y: number }): PlainRecord => ({
+  coordinates: { dimension: '2d', x: point.x, y: point.y }
+});
 
 const asDragDelta = (value: unknown): GraphDragDelta | null => {
   const record = asRecord(value);

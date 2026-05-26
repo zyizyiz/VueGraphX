@@ -1722,8 +1722,9 @@ export class GraphXEngine {
   private renderCommandCoreObjectWithJsxGraphBackend(commandId: string, node: GraphObjectNode): boolean {
     if (!this.canRenderCoreNodeWithJsxGraphBackend(node)) return false;
     const backend = this.ensureJsxGraphCommandBackend();
-    const handle = backend.create(node, { layerId: node.layerId ?? 'content' });
-    this.jsxGraphCommandHandles.set(node.id, handle);
+    const result = backend.create(node, { layerId: node.layerId ?? 'content' });
+    if (!result.ok || !result.value) return false;
+    this.jsxGraphCommandHandles.set(node.id, result.value);
     this.commandRenderPath?.set(commandId, 'backend-jsxgraph');
     backend.flush?.();
     return true;
