@@ -1,6 +1,6 @@
 <div align="center">
   <h1>🌌 VueGraphX</h1>
-  <p><strong>基于 Vue 3 + JSXGraph 的互动数学与几何可视化引擎</strong></p>
+  <p><strong>Renderer-agnostic 的互动数学图形、几何可视化与数学计算引擎</strong></p>
 
   <p>
     <a href="https://www.npmjs.com/package/vuegraphx"><img src="https://img.shields.io/npm/v/vuegraphx?color=42b883&style=for-the-badge" alt="NPM Version" /></a>
@@ -15,11 +15,11 @@
 
 ## 🌟 简介
 
-VueGraphX 提供两条互补的能力主线：
+VueGraphX 提供三条互补的能力主线，长期目标见 [renderer-agnostic roadmap](./docs/renderer-agnostic-roadmap.md)：
 
-- 表达式渲染：把 2D/3D 数学表达式、几何指令交给统一渲染管线执行。
-- 图形运行时：把具体图形实现收敛为 shape definition，再通过统一 capability API 暴露交互能力。
-- scene document：把当前公开内容导出为稳定文档，并按“整体替换 + diagnostics”语义重新加载。
+- Renderer-agnostic core：把 scene、viewport、object、relation、capability、picking、drag、layer pass-through 与 backend contract 收敛到核心运行时，JSXGraph/Canvas2D/Babylon 等都只是可替换后端。
+- 独立数学内核：把函数、方程、不等式、解析几何、平面/立体几何、向量、三角函数、统计、基础微积分、参数/隐式曲线和几何构造能力沉淀到 `@vuegraphx/math`。
+- 指令 DSL：把 JSXGraph/GeoGebra 风格命令编译为 VueGraphX core IR，由后端按能力渲染。
 
 当前 playground 还提供一个实验性的双层模式（dual-layer）：
 
