@@ -1,6 +1,6 @@
 <template>
   <div class="h-screen w-full flex flex-col bg-slate-50 overflow-hidden text-slate-800 font-sans selection:bg-sky-100 selection:text-sky-900">
-    
+
     <!-- 顶部功能模式栏 -->
     <header class="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0 z-20 shadow-sm relative">
       <div class="flex items-center gap-4">
@@ -9,7 +9,7 @@
         </h1>
         <div class="h-5 w-px bg-slate-200 mx-2"></div>
         <nav class="flex items-center gap-1">
-          <button 
+          <button
             v-for="mode in availableModes" :key="mode.id"
             @click="switchMode(mode.id)"
             class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
@@ -20,10 +20,30 @@
           </button>
         </nav>
       </div>
-      
+
       <div class="flex items-center gap-3">
+        <label class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-600">
+          <span>后端</span>
+          <select
+            :value="activeRendererBackend"
+            class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            @change="handleRendererBackendChange"
+          >
+            <option
+              v-for="backend in rendererBackends"
+              :key="backend.id"
+              :value="backend.id"
+              :disabled="!isRendererBackendSupported(backend.id)"
+            >
+              {{ backend.label }}
+            </option>
+          </select>
+        </label>
+        <span class="hidden max-w-[220px] truncate text-[11px] text-slate-400 lg:inline">
+          {{ rendererBackendHint }}
+        </span>
         <button
-          v-if="supportsSceneDocument"
+          v-if="supportsSceneDocument && !isCoreRendererActive"
           @click="showScenePanel = !showScenePanel"
           class="text-xs font-semibold px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded transition-colors hidden sm:block"
         >
@@ -38,24 +58,24 @@
     <div class="flex-1 flex overflow-hidden relative">
       <!-- 左侧控制面板 -->
       <aside ref="sidebarRef" class="w-80 sm:w-96 bg-white border-r border-slate-200 shadow-[2px_0_8px_rgba(0,0,0,0.02)] flex flex-col z-10 shrink-0 h-full min-h-0">
-        
+
         <!-- 指令多行表单流列表 -->
         <div v-if="store.activeMode !== 'dual-layer'" class="flex-1 overflow-y-auto overflow-x-hidden p-2">
-          <div 
+          <div
             v-for="(cmd, index) in store.commands" :key="cmd.id"
             class="group relative border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors"
           >
             <div class="absolute left-0 top-0 bottom-0 w-12 flex flex-col items-center justify-start pt-5 border-r border-slate-100">
               <span class="text-[10px] text-slate-400 font-bold mb-1.5">{{ index + 1 }}</span>
-              <div 
+              <div
                 class="w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-sm transition-all"
                 :style="{ backgroundColor: cmd.color, opacity: cmd.visible ? 1 : 0.4 }"
               ></div>
             </div>
-            
+
             <div class="pl-14 pr-10 py-3 relative">
               <!-- LaTeX 实时渲染预览 (当输入包含反斜杠时出现) -->
-              <div 
+              <div
                 v-if="cmd.expression.includes('\\') && !cmd.isFocused"
                 class="text-base font-mono mb-1 px-0.5 cursor-text"
                 @click="cmd.isFocused = true"
@@ -82,8 +102,8 @@
                 <span class="truncate">{{ cmd.error }}</span>
               </p>
             </div>
-            
-            <button 
+
+            <button
               @click="removeLine(cmd.id)"
               class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all rounded-md hover:bg-red-50"
             >
@@ -92,8 +112,8 @@
               </svg>
             </button>
           </div>
-          
-          <div 
+
+          <div
             @click="store.addCommand('')"
             class="pl-14 py-4 text-slate-400 hover:text-sky-600 font-medium text-sm cursor-text border-b border-transparent transition-colors flex items-center gap-2"
           >
@@ -101,7 +121,7 @@
           </div>
         </div>
 
-        <DualLayerPanel 
+        <DualLayerPanel
           v-else-if="store.activeMode === 'dual-layer'"
           @add-shape="handleAddDualLayerShape"
         />
@@ -120,7 +140,7 @@
           </button>
 
           <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div v-if="supportsSceneDocument && showScenePanel" class="border-t border-slate-100 bg-white px-4 py-4 space-y-3">
+            <div v-if="supportsSceneDocument && !isCoreRendererActive && showScenePanel" class="border-t border-slate-100 bg-white px-4 py-4 space-y-3">
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Scene Document</p>
@@ -181,8 +201,13 @@
               </div>
             </div>
 
-            <RelationPanel :engine="engineRef" :active-mode="store.activeMode" />
-            <HiddenLinePanel :engine="engineRef" :active-mode="store.activeMode" />
+            <div v-if="isCoreRendererActive" class="border-t border-slate-100 bg-white px-4 py-4">
+              <div class="rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-[11px] leading-5 text-sky-800">
+                {{ coreRendererPanelMessage }}
+              </div>
+            </div>
+            <RelationPanel v-else :engine="engineRef" :active-mode="store.activeMode" />
+            <HiddenLinePanel v-if="!isCoreRendererActive" :engine="engineRef" :active-mode="store.activeMode" />
 
             <!-- Demo 示例区（多卡片可切换） -->
             <div class="border-t border-slate-100 bg-slate-50/80">
@@ -190,15 +215,15 @@
                 <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">📚 示例场景</span>
                 <span class="text-xs text-slate-400">点击卡片一键载入</span>
               </div>
-              
+
               <div class="flex gap-2 px-3 pb-3 overflow-x-auto scrollbar-hide">
                 <button
                   v-for="(demo, idx) in currentDemos"
                   :key="idx"
                   @click="loadSelectedDemo(idx)"
                   class="demo-card flex-shrink-0 w-36 p-2.5 text-left rounded-lg border transition-all duration-150 cursor-pointer"
-                  :class="activeDemo === idx 
-                    ? 'border-sky-300 bg-sky-50 shadow-sm' 
+                  :class="activeDemo === idx
+                    ? 'border-sky-300 bg-sky-50 shadow-sm'
                     : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'"
                 >
                   <div class="text-lg mb-1">{{ demo.emoji }}</div>
@@ -212,7 +237,7 @@
       </aside>
 
       <!-- 图形处理层 -->
-      <main 
+      <main
         class="flex-1 relative bg-white flex items-center justify-center m-0 sm:m-4 shadow-sm border border-slate-200 overflow-hidden sm:rounded-xl z-0"
         @dragover="onDragOver"
         @drop="onDrop"
@@ -228,10 +253,10 @@
             ref="graphContainerRef"
           ></div>
           <!-- 顶层 2D 层：仅在 dual-layer 模式下显示 -->
-          <div 
-            v-if="store.activeMode === 'dual-layer'" 
-            id="vuegraphx-mount-2d" 
-            class="absolute inset-0 jxgbox z-10 pointer-events-none" 
+          <div
+            v-if="store.activeMode === 'dual-layer'"
+            id="vuegraphx-mount-2d"
+            class="absolute inset-0 jxgbox z-10 pointer-events-none"
             ref="graphContainerRef2d"
           ></div>
           <div
@@ -268,8 +293,8 @@
             </span>
           </div>
         </div>
-        <ExternalCircleDesigner v-if="store.activeMode === 'geometry'" :engine="engineRef" :active-mode="store.activeMode" />
-        <ExternalCubeDesigner :engine="engineRef" :active-mode="store.activeMode as EngineMode" />
+        <ExternalCircleDesigner v-if="store.activeMode === 'geometry' && !isCoreRendererActive" :engine="engineRef" :active-mode="store.activeMode" />
+        <ExternalCubeDesigner v-if="!isCoreRendererActive" :engine="engineRef" :active-mode="store.activeMode as EngineMode" />
         <component
           v-if="store.activeMode === 'dual-layer'"
           :is="ExternalCircleDesigner"
@@ -287,8 +312,17 @@ import { shallowRef, ref, onMounted, onUnmounted, nextTick, computed, watch } fr
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { GraphXEngine, type EngineMode } from 'vuegraphx';
+import { GraphSceneRuntime } from '@vuegraphx/core';
+import { createCanvas2DGraphBackend, type Canvas2DGraphBackend } from '@vuegraphx/backend-canvas2d';
+import {
+  createBabylonGraphBackend,
+  createBabylonRuntime,
+  type BabylonGraphBackend,
+  type BabylonNamespaceLike
+} from '@vuegraphx/backend-babylon';
 import { useFormulaStore, type CommandItem } from './stores/formula';
 import { useSceneDocument } from './composables/useSceneDocument';
+import { buildPlaygroundBabylonScene, buildPlaygroundCanvasScene, PLAYGROUND_CANVAS_WORLD_BOUNDS } from './renderers/canvasScene';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 import DualLayerPanel from './components/DualLayerPanel.vue';
@@ -319,6 +353,14 @@ const availableModes: {id: PlaygroundMode, label: string, icon: string}[] = [
   { id: '3d', label: '3D计算器', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' },
   { id: 'geometry', label: '几何区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>' },
   { id: 'dual-layer', label: '双层区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>' }
+];
+
+type PlaygroundRenderBackend = 'jsxgraph' | 'canvas2d' | 'babylon';
+
+const rendererBackends: { id: PlaygroundRenderBackend; label: string }[] = [
+  { id: 'jsxgraph', label: 'JSXGraph' },
+  { id: 'canvas2d', label: 'Canvas2D Core' },
+  { id: 'babylon', label: 'Babylon Core' }
 ];
 
 // ===== 各模式的多 Demo 示例库 =====
@@ -377,6 +419,16 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
     },
   ],
   '3d': [
+    {
+      emoji: '🧊',
+      title: 'Babylon 立体后端',
+      desc: '切换到 Babylon Core 后端后渲染同一份 Solid 指令',
+      commands: [
+        'cube = Solid("cube", size=2, x=-2)',
+        'sphere = Solid("sphere", radius=1.2, x=1.6)',
+        'cylinder = Solid("cylinder", radius=0.8, height=2.5, x=4)'
+      ]
+    },
     {
       emoji: '🌊',
       title: '波浪曲面',
@@ -443,6 +495,23 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       commands: ['A = (0, 3)', 'B = (-3, -2)', 'C = (3, -2)', 'Segment(A, B)', 'Segment(B, C)', 'Segment(C, A)']
     },
     {
+      emoji: '🧩',
+      title: 'Core 几何指令',
+      desc: '同一组点驱动多边形、内外接圆与中心点，可在 JSXGraph / Canvas2D 间切换',
+      commands: [
+        'A = (-2, -1)',
+        'B = (2, -1)',
+        'C = (0, 2)',
+        'regular = RegularPolygon(A, B, 5)',
+        'para = Parallelogram(A, B, C)',
+        'circ = Circumcircle(A, B, C)',
+        'inc = Incircle(A, B, C)',
+        'cc = Circumcenter(A, B, C)',
+        'ic = Incenter(A, B, C)',
+        'label = Text(ic, "incenter")'
+      ]
+    },
+    {
       emoji: '🔵',
       title: '同心圆',
       desc: '以原点为圆心的多重圆形',
@@ -453,7 +522,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       title: '菱形作图',
       desc: '四点对称作菱形',
       commands: [
-        'A = (0, 2)', 'B = (2, 0)', 'C = (0, -2)', 'D = (-2, 0)', 
+        'A = (0, 2)', 'B = (2, 0)', 'C = (0, -2)', 'D = (-2, 0)',
         { expr: 'Polygon(A, B, C, D)', options: { fillColor: '#f43f5e', fillOpacity: 0.3, strokeWidth: 3, dash: 2 } }
       ]
     },
@@ -474,6 +543,12 @@ const activeDemo = ref<number>(-1);
 
 const engineRef = shallowRef<GraphXEngine | null>(null);
 const engineRef2d = shallowRef<GraphXEngine | null>(null);
+const canvasBackendRef = shallowRef<Canvas2DGraphBackend | null>(null);
+const canvasRuntimeRef = shallowRef<GraphSceneRuntime | null>(null);
+const babylonBackendRef = shallowRef<BabylonGraphBackend | null>(null);
+const babylonRuntimeRef = shallowRef<GraphSceneRuntime | null>(null);
+const activeRendererBackend = ref<PlaygroundRenderBackend>('jsxgraph');
+const babylonRuntimeError = ref('');
 const graphContainerRef2d = ref<HTMLElement | null>(null);
 const dualLayerPassClicks = ref(0);
 const dualLayerPassText = ref('');
@@ -485,6 +560,29 @@ const isSidebarBottomResizing = ref(false);
 
 // 当前模式的 Demo 列表
 const currentDemos = computed(() => allDemos[store.activeMode]);
+const supportsCanvasRenderer = computed(() => store.activeMode === '2d' || store.activeMode === 'geometry');
+const supportsBabylonRenderer = computed(() => store.activeMode === '3d');
+const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'canvas2d' && supportsCanvasRenderer.value);
+const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
+const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
+const rendererBackendHint = computed(() => {
+  if (isBabylonRendererActive.value) return babylonRuntimeError.value || '同一份指令已切到 Babylon core 立体后端';
+  if (store.activeMode === '3d') return '3D 默认由 JSXGraph view3d 承载，可切 Babylon Core 渲染 Solid(...)';
+  if (store.activeMode === 'dual-layer') return '双层模式固定使用 JSXGraph 双实例';
+  return isCanvasRendererActive.value ? '同一份指令已切到 core Canvas2D 后端' : '兼容 JSXGraph 渲染';
+});
+const coreRendererPanelMessage = computed(() => {
+  if (isBabylonRendererActive.value) {
+    return babylonRuntimeError.value
+      || 'Babylon 后端正在通过 GraphSceneRuntime 渲染 core Solid(...) 立体对象；曲面/函数会在输入行显示不支持，避免伪装成已迁移。';
+  }
+  return 'Canvas2D 后端正在用同一份指令渲染 core IR。JSXGraph 专属的场景文档、关系面板、拖拽设计器暂不展示；不支持的指令会直接标在对应输入行上，避免误以为已经完整迁移。';
+});
+const isRendererBackendSupported = (backend: PlaygroundRenderBackend): boolean => (
+  backend === 'jsxgraph'
+  || (backend === 'canvas2d' && supportsCanvasRenderer.value)
+  || (backend === 'babylon' && supportsBabylonRenderer.value)
+);
 const SIDEBAR_BOTTOM_MIN_HEIGHT = 220;
 const SIDEBAR_BOTTOM_DEFAULT_HEIGHT = 400;
 const SIDEBAR_BOTTOM_ABSOLUTE_MAX = 720;
@@ -573,12 +671,14 @@ const stopSidebarResizeObserver = () => {
 
 const startResizeObserver = () => {
   stopResizeObserver();
-  if (!graphContainerRef.value || !engineRef.value) return;
+  if (!graphContainerRef.value || (!engineRef.value && !canvasBackendRef.value && !babylonBackendRef.value)) return;
 
   modeResizeObserver = new ResizeObserver(() => {
     if (modeResizeRaf !== null) cancelAnimationFrame(modeResizeRaf);
     modeResizeRaf = requestAnimationFrame(() => {
       modeResizeRaf = null;
+      if (canvasBackendRef.value) canvasBackendRef.value.resize(getGraphViewportSize());
+      if (babylonBackendRef.value) babylonBackendRef.value.resize(getGraphViewportSize());
       if (engineRef.value) engineRef.value.resize();
       if (engineRef2d.value) engineRef2d.value.resize();
     });
@@ -636,65 +736,178 @@ watch(
   }
 );
 
-const initEngines = async (options: { syncCommands?: boolean } = {}) => {
-  if (graphContainerRef.value) {
-    engineRef.value = new GraphXEngine('vuegraphx-mount', getBoardOptionsForCurrentMode(store.activeMode));
-    engineRef.value.setMode(getEngineModeForPlayground(store.activeMode));
-    if (store.activeMode === 'dual-layer') {
-      registerDualLayerBottomShapes(engineRef.value);
-    } else {
-      registerPlaygroundShapes(engineRef.value);
-    }
-    
-    if (store.activeMode === 'dual-layer' && graphContainerRef2d.value) {
-      engineRef2d.value = new GraphXEngine('vuegraphx-mount-2d', {
-        axis: false,
-        showNavigation: false,
-        showCopyright: false
-      });
-      engineRef2d.value.setMode('2d');
-      registerDualLayerTopShapes(engineRef2d.value);
-    }
-    
-    if (options.syncCommands !== false) {
-      syncAllToEngine();
-    }
-    startResizeObserver();
+const destroyPrimaryRenderer = () => {
+  if (engineRef.value) {
+    engineRef.value.destroy();
+    engineRef.value = null;
   }
+  if (engineRef2d.value) {
+    engineRef2d.value.destroy();
+    engineRef2d.value = null;
+  }
+  if (canvasRuntimeRef.value) {
+    canvasRuntimeRef.value.clear();
+    canvasRuntimeRef.value = null;
+  }
+  if (canvasBackendRef.value) {
+    canvasBackendRef.value.destroy();
+    canvasBackendRef.value = null;
+  }
+  if (babylonRuntimeRef.value) {
+    babylonRuntimeRef.value.clear();
+    babylonRuntimeRef.value = null;
+  }
+  if (babylonBackendRef.value) {
+    babylonBackendRef.value.destroy();
+    babylonBackendRef.value = null;
+  }
+};
+
+const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
+  const host = graphContainerRef.value;
+  if (!host) return;
+
+  host.replaceChildren();
+  const backend = createCanvas2DGraphBackend({
+    id: 'playground-canvas2d',
+    pixelRatio: window.devicePixelRatio || 1,
+    worldBounds: PLAYGROUND_CANVAS_WORLD_BOUNDS,
+    showAxes: true
+  });
+  backend.mount(host, {
+    size: getGraphViewportSize(),
+    attributes: { worldBounds: PLAYGROUND_CANVAS_WORLD_BOUNDS }
+  });
+  canvasBackendRef.value = backend;
+  canvasRuntimeRef.value = new GraphSceneRuntime({
+    backend,
+    defaultContext: { layerId: 'content' }
+  });
+
+  if (options.syncCommands !== false) {
+    syncAllToEngine();
+  }
+  startResizeObserver();
+};
+
+const loadBabylonNamespace = async (): Promise<BabylonNamespaceLike> => {
+  const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<BabylonNamespaceLike>;
+  return dynamicImport('@babylonjs/core');
+};
+
+const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => {
+  const host = graphContainerRef.value;
+  if (!host) return;
+
+  host.replaceChildren();
+  babylonRuntimeError.value = '';
+  try {
+    const BABYLON = await loadBabylonNamespace();
+    const runtimePort = createBabylonRuntime(BABYLON, {
+      attachCameraControl: true,
+      canvasPointerEvents: 'auto'
+    });
+    const backend = createBabylonGraphBackend({
+      id: 'playground-babylon',
+      runtime: runtimePort
+    });
+    backend.mount(host, { size: getGraphViewportSize() });
+    babylonBackendRef.value = backend;
+    babylonRuntimeRef.value = new GraphSceneRuntime({
+      backend,
+      defaultContext: { layerId: 'content' }
+    });
+  } catch (error) {
+    babylonRuntimeError.value = `Babylon Core 无法加载：${error instanceof Error ? error.message : String(error)}。请安装 @babylonjs/core 后再使用该后端。`;
+  }
+
+  if (options.syncCommands !== false) {
+    syncAllToEngine();
+  }
+  startResizeObserver();
+};
+
+const initJsxGraphRenderer = (options: { syncCommands?: boolean } = {}) => {
+  if (!graphContainerRef.value) return;
+
+  engineRef.value = new GraphXEngine('vuegraphx-mount', getBoardOptionsForCurrentMode(store.activeMode));
+  engineRef.value.setMode(getEngineModeForPlayground(store.activeMode));
+  if (store.activeMode === 'dual-layer') {
+    registerDualLayerBottomShapes(engineRef.value);
+  } else {
+    registerPlaygroundShapes(engineRef.value);
+  }
+
+  if (store.activeMode === 'dual-layer' && graphContainerRef2d.value) {
+    engineRef2d.value = new GraphXEngine('vuegraphx-mount-2d', {
+      axis: false,
+      showNavigation: false,
+      showCopyright: false
+    });
+    engineRef2d.value.setMode('2d');
+    registerDualLayerTopShapes(engineRef2d.value);
+  }
+
+  if (options.syncCommands !== false) {
+    syncAllToEngine();
+  }
+  startResizeObserver();
+};
+
+const initEngines = async (options: { syncCommands?: boolean } = {}) => {
+  if (isCanvasRendererActive.value) {
+    initCanvasRenderer(options);
+    return;
+  }
+
+  if (isBabylonRendererActive.value) {
+    await initBabylonRenderer(options);
+    return;
+  }
+
+  initJsxGraphRenderer(options);
 };
 
 onUnmounted(() => {
   stopResizeObserver();
   stopSidebarResizeObserver();
   stopSidebarBottomResize();
-  if (engineRef.value) {
-    engineRef.value.destroy();
-    engineRef.value = null;
-  }
-  if (engineRef2d.value) {
-    engineRef2d.value.destroy();
-    engineRef2d.value = null;
-  }
+  destroyPrimaryRenderer();
 });
 
 const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolean } = {}) => {
   if (store.activeMode === mode) return;
   store.activeMode = mode;
   activeDemo.value = -1;
+  if (mode === '3d' || mode === 'dual-layer') {
+    activeRendererBackend.value = 'jsxgraph';
+  } else if (!isRendererBackendSupported(activeRendererBackend.value)) {
+    activeRendererBackend.value = 'jsxgraph';
+  }
 
   stopResizeObserver();
-  
-  if (engineRef.value) {
-    engineRef.value.destroy();
-    engineRef.value = null;
-  }
-  if (engineRef2d.value) {
-    engineRef2d.value.destroy();
-    engineRef2d.value = null;
-  }
+  destroyPrimaryRenderer();
 
   await waitForUiPaint();
   initEngines(options);
+};
+
+const switchRendererBackend = async (backend: PlaygroundRenderBackend) => {
+  if (activeRendererBackend.value === backend) return;
+  activeRendererBackend.value = isRendererBackendSupported(backend) ? backend : 'jsxgraph';
+  showScenePanel.value = false;
+
+  stopResizeObserver();
+  destroyPrimaryRenderer();
+  await waitForUiPaint();
+  initEngines({ syncCommands: true });
+};
+
+const handleRendererBackendChange = (event: Event) => {
+  const backend = (event.target as HTMLSelectElement | null)?.value;
+  if (backend === 'jsxgraph' || backend === 'canvas2d' || backend === 'babylon') {
+    switchRendererBackend(backend);
+  }
 };
 
 const handleAddDualLayerShape = (layer: '2d' | '3d', type: string) => {
@@ -713,8 +926,9 @@ const handleLineEnter = (_id: string, index: number) => {
 
 const executeSingle = (id: string) => {
   const cmd = store.commands.find(c => c.id === id) as CommandItem & { isFocused?: boolean } | undefined;
+  if (isCoreRendererActive.value) return;
   if (!cmd || !engineRef.value) return;
-  
+
   if (!cmd.expression.trim()) {
     engineRef.value.removeCommand(cmd.id);
     store.updateCommand(cmd.id, '');
@@ -731,16 +945,58 @@ const executeSingle = (id: string) => {
 
 const removeLine = (id: string) => {
   store.removeCommand(id);
-  if (engineRef.value) engineRef.value.removeCommand(id);
+  if (isCoreRendererActive.value) {
+    syncAllToEngine();
+  } else if (engineRef.value) {
+    engineRef.value.removeCommand(id);
+  }
 };
 
 const clearAll = () => {
   store.clearCommands();
   if (engineRef.value) engineRef.value.clearBoard();
+  if (canvasBackendRef.value) canvasBackendRef.value.clear();
+  if (babylonRuntimeRef.value) babylonRuntimeRef.value.clear();
   activeDemo.value = -1;
 };
 
 const syncAllToEngine = () => {
+  if (isCanvasRendererActive.value) {
+    const backend = canvasBackendRef.value;
+    const runtime = canvasRuntimeRef.value;
+    if (!backend || !runtime) return;
+    runtime.clear();
+    const result = buildPlaygroundCanvasScene(store.commands);
+    const failedCommandIds = new Set(result.diagnostics.map((diagnostic) => diagnostic.commandId));
+    store.commands.forEach((command) => {
+      const diagnostic = result.diagnostics.find((item) => item.commandId === command.id);
+      store.setCommandError(command.id, diagnostic?.message ?? '');
+    });
+    for (const node of result.nodes) runtime.addObject(node);
+    if (failedCommandIds.size === 0) backend.flush();
+    return;
+  }
+
+  if (isBabylonRendererActive.value) {
+    const backend = babylonBackendRef.value;
+    const runtime = babylonRuntimeRef.value;
+    if (!backend || !runtime) {
+      store.commands.forEach((command) => {
+        if (command.expression.trim()) store.setCommandError(command.id, babylonRuntimeError.value || 'Babylon 后端未初始化。');
+      });
+      return;
+    }
+    runtime.clear();
+    const result = buildPlaygroundBabylonScene(store.commands);
+    store.commands.forEach((command) => {
+      const diagnostic = result.diagnostics.find((item) => item.commandId === command.id);
+      store.setCommandError(command.id, diagnostic?.message ?? '');
+    });
+    for (const node of result.nodes) runtime.addObject(node);
+    backend.flush();
+    return;
+  }
+
   if (engineRef.value) engineRef.value.clearVariables();
   store.commands.forEach(cmd => executeSingle(cmd.id));
   // 批量创建图元后 JSXGraph 不会自动重绘，必须手动触发
@@ -755,6 +1011,8 @@ const loadSelectedDemo = (idx: number) => {
   store.injectDemo(store.activeMode, demo.commands);
   // 使用 resetBoard 完全重置 JSXGraph 内部状态，避免 clearBoard/removeObject 的副作用
   if (engineRef.value) engineRef.value.resetBoard(getBoardOptionsForCurrentMode(store.activeMode));
+  if (canvasRuntimeRef.value) canvasRuntimeRef.value.clear();
+  if (babylonRuntimeRef.value) babylonRuntimeRef.value.clear();
   nextTick(() => {
     syncAllToEngine();
   });

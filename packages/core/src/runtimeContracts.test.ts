@@ -1,0 +1,401 @@
+import { describe, expect, it } from 'vitest';
+import {
+  DEFAULT_GRAPH_LAYER_ORDER,
+  GraphInteractionRouter,
+  GraphSceneRuntime,
+  GraphSceneStore,
+  createGraphCapabilitiesForObject,
+  createGraphDragPatch,
+  createGraphObjectNode,
+  executeGraphCapability,
+  hasRendererFrameworkLeak,
+  mergeGraphObjectPatch,
+  type GraphObjectNode,
+  type GraphRenderBackend
+} from './index';
+
+const createPointNode = (id: string, x: number, y: number) => createGraphObjectNode({
+  id,
+  kind: 'shape',
+  type: 'point',
+  payload: { point: { x, y } },
+  layerId: 'content'
+});
+
+const createCoreOnlyTestBackend = (id = 'core-test'): GraphRenderBackend => {
+  const nodes = new Map<string, GraphObjectNode>();
+
+  return {
+    id,
+    capabilities: {
+      pick: true,
+      project: true,
+      unproject: true,
+      drag: true,
+      layers: true,
+      dimensions: ['2d']
+    },
+    mount: (_host, options = {}) => ({ backendId: options.backendId ?? id, size: options.size }),
+    create: (node, context = {}) => {
+      const stored = createGraphObjectNode({ ...node, layerId: context.layerId ?? node.layerId ?? 'content' });
+      nodes.set(stored.id, stored);
+      return {
+        id: `${id}:${stored.id}`,
+        objectId: stored.id,
+        backendId: id,
+        layerId: stored.layerId ?? 'content',
+        target: {
+          scope: 'object',
+          objectId: stored.id,
+          backendId: id,
+          layerId: stored.layerId ?? 'content'
+        }
+      };
+    },
+    update: (handle, patch) => {
+      const current = nodes.get(handle.objectId);
+      if (current) nodes.set(handle.objectId, mergeGraphObjectPatch(current, patch));
+    },
+    remove: (handle) => {
+      nodes.delete(handle.objectId);
+    },
+    pick: (point, options = {}) => {
+      const tolerance = options.tolerancePx ?? 8;
+      for (const node of [...nodes.values()].reverse()) {
+        const layerId = node.layerId ?? 'content';
+        if (options.layerOrder && !options.layerOrder.includes(layerId)) continue;
+        const payload = node.payload as { point?: { x: number; y: number } };
+        if (!payload.point) continue;
+        const distancePx = Math.hypot(payload.point.x - point.x, payload.point.y - point.y);
+        if (distancePx <= tolerance) {
+          return {
+            target: { scope: 'object', objectId: node.id, backendId: id, layerId },
+            backendId: id,
+            layerId,
+            clientPoint: { ...point },
+            worldPoint: { dimension: '2d', x: payload.point.x, y: payload.point.y },
+            distancePx
+          };
+        }
+      }
+      return null;
+    },
+    project: (point) => ({ x: point.x, y: point.y }),
+    unproject: (point) => ({ dimension: '2d', x: point.x, y: point.y }),
+    resize: () => {},
+    destroy: () => {
+      nodes.clear();
+    }
+  };
+};
+
+describe('renderer-neutral core runtime contracts', () => {
+  it('detects renderer-owned data before it can enter scene truth', () => {
+    expect(hasRendererFrameworkLeak({ payload: { point: { x: 1, y: 2 } } })).toBe(false);
+    expect(hasRendererFrameworkLeak({ payload: { element: 'mathematical-term' } })).toBe(false);
+    expect(hasRendererFrameworkLeak({ payload: { board: { id: 'JXG board' } } })).toBe(true);
+    expect(hasRendererFrameworkLeak({ payload: 'BABYLON.Mesh' })).toBe(true);
+  });
+
+  it('stores and serializes scene objects without backend references', () => {
+    const store = new GraphSceneStore('math-scene');
+    const added = store.addObject(createPointNode('A', 0, 0));
+    expect(added.ok).toBe(true);
+
+    const patch = store.updateObject('A', { payload: { point: { x: 2, y: 3 } }, renderHints: { strokeColor: '#f00' } });
+    expect(patch.ok).toBe(true);
+    expect(patch.value?.payload).toEqual({ point: { x: 2, y: 3 } });
+
+    const json = store.toJSON({ source: 'test' });
+    expect(json.ok).toBe(true);
+    expect(JSON.stringify(json.value)).not.toMatch(/JXG|BABYLON|HTMLCanvasElement/);
+
+    const loaded = GraphSceneStore.fromJSON(json.value!);
+    expect(loaded.ok).toBe(true);
+    expect(loaded.value?.getObject('A')?.payload).toEqual({ point: { x: 2, y: 3 } });
+  });
+
+  it('merges object patches while keeping removable backend hints out of core state', () => {
+    const node = createPointNode('A', 0, 0);
+    const merged = mergeGraphObjectPatch({ ...node, backendHint: 'jsxgraph' }, { backendHint: null, meta: { source: 'command' } });
+    expect(merged.backendHint).toBeUndefined();
+    expect(merged.meta).toEqual({ source: 'command' });
+  });
+
+  it('maps subject-tools math categories to renderer-neutral capability descriptors', () => {
+    const types = ['function', 'equation', 'vector', 'coordinate-system', 'polygon', 'solid'] as const;
+    const capabilityIds = types.flatMap((type, index) => createGraphCapabilitiesForObject({
+      id: `object-${index}`,
+      kind: 'shape',
+      type,
+      payload: {}
+    }).map((capability) => capability.id));
+
+    expect(capabilityIds).toContain('math.function.set-expression');
+    expect(capabilityIds).toContain('math.equation.set-expression');
+    expect(capabilityIds).toContain('math.vector.compute-dot-product');
+    expect(capabilityIds).toContain('math.coordinate-system.toggle-assist');
+    expect(capabilityIds).toContain('math.geometry.start-cut');
+    expect(capabilityIds).toContain('math.solid.toggle-section');
+    expect(capabilityIds).toContain('math.object.move');
+  });
+
+  it('routes UI, overlay pass-through, backend pick, and drag sessions deterministically', () => {
+    const backend = createCoreOnlyTestBackend('core-router');
+    const host = document.createElement('div');
+    backend.mount(host);
+    backend.create(createPointNode('A', 10, 10));
+
+    const router = new GraphInteractionRouter();
+    router.registerBackend(backend, 'content');
+
+    expect(DEFAULT_GRAPH_LAYER_ORDER[0]).toBe('ui');
+    expect(router.pointerDown({ pointerId: 1, clientPoint: { x: 10, y: 10 }, uiHandled: true }).pick).toBeNull();
+
+    const routed = router.pointerDown({ pointerId: 2, clientPoint: { x: 10, y: 10 } });
+    expect(routed.pick?.target.objectId).toBe('A');
+    expect(router.beginDrag('move')?.target?.objectId).toBe('A');
+    expect(router.pointerMove(2, { x: 12, y: 14 })?.currentClientPoint).toEqual({ x: 12, y: 14 });
+    expect(router.pointerUp(2)?.target?.objectId).toBe('A');
+    expect(router.getActivePointerSession()).toBeNull();
+  });
+
+  it('creates core-first drag patches before backend redraw', () => {
+    const pointPatch = createGraphDragPatch(createPointNode('A', 0, 0), {
+      delta: { dimension: '2d', dx: 3, dy: -2 }
+    });
+    expect(pointPatch.ok).toBe(true);
+    expect(pointPatch.value?.payload).toEqual({ point: { x: 3, y: -2 } });
+
+    const polygonPatch = createGraphDragPatch({
+      id: 'poly',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 0, y: 2 }]
+        }
+      }
+    }, {
+      startWorldPoint: { dimension: '2d', x: 1, y: 1 },
+      currentWorldPoint: { dimension: '2d', x: 2, y: 3 }
+    });
+
+    expect(polygonPatch.ok).toBe(true);
+    expect((polygonPatch.value?.payload as any).geometry.vertices).toEqual([
+      { x: 1, y: 2 },
+      { x: 3, y: 2 },
+      { x: 1, y: 4 }
+    ]);
+
+    const unsupported = createGraphDragPatch({
+      id: 'label',
+      kind: 'overlay',
+      type: 'label',
+      payload: { text: 'not draggable by core' }
+    }, {
+      delta: { dimension: '2d', dx: 1, dy: 1 }
+    });
+    expect(unsupported.ok).toBe(false);
+    expect(unsupported.diagnostics[0].code).toBe('drag.unsupported-object');
+  });
+
+  it('executes common capabilities against core scene before backend redraw', () => {
+    const scene = new GraphSceneStore('capabilities');
+    scene.addObject(createPointNode('A', 0, 0));
+
+    const move = executeGraphCapability({
+      scene,
+      capabilityId: 'math.object.move',
+      target: { scope: 'object', objectId: 'A' },
+      payload: { delta: { dimension: '2d', dx: 4, dy: 5 } }
+    });
+    expect(move.ok).toBe(true);
+    expect(scene.getObject('A')?.payload).toEqual({ point: { x: 4, y: 5 } });
+
+    const color = executeGraphCapability({
+      scene,
+      capabilityId: 'math.object.set-color',
+      target: { scope: 'object', objectId: 'A' },
+      payload: '#f43f5e'
+    });
+    expect(color.ok).toBe(true);
+    expect(scene.getObject('A')?.renderHints?.strokeColor).toBe('#f43f5e');
+
+    const lock = executeGraphCapability({
+      scene,
+      capabilityId: 'math.object.lock',
+      target: { scope: 'object', objectId: 'A' },
+      payload: true
+    });
+    expect(lock.ok).toBe(true);
+    expect(createGraphDragPatch(scene.getObject('A')!, { delta: { dimension: '2d', dx: 1, dy: 1 } }).diagnostics[0].code).toBe('drag.locked-object');
+
+    const select = executeGraphCapability({
+      scene,
+      capabilityId: 'math.object.select',
+      target: { scope: 'object', objectId: 'A' },
+      payload: true
+    });
+    expect(select.ok).toBe(true);
+    expect(scene.getObject('A')?.meta?.selected).toBe(true);
+
+    const remove = executeGraphCapability({
+      scene,
+      capabilityId: 'math.object.delete',
+      target: { scope: 'object', objectId: 'A' }
+    });
+    expect(remove.ok).toBe(true);
+    expect(scene.getObject('A')).toBeNull();
+  });
+
+  it('executes subject-math capability model as core patches instead of UI-only no-ops', () => {
+    const scene = new GraphSceneStore('math-capabilities');
+    scene.addObject({
+      id: 'f',
+      kind: 'shape',
+      type: 'function',
+      payload: { expression: 'x^2', variable: 'x', parameters: { a: 1 } },
+      layerId: 'content'
+    });
+    scene.addObject({
+      id: 'solid',
+      kind: 'shape',
+      type: 'solid',
+      payload: { family: 'cube', parameters: { size: 1 } },
+      layerId: 'content'
+    });
+    scene.addObject({
+      id: 'v',
+      kind: 'shape',
+      type: 'vector',
+      payload: { start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, vector: { x: 1, y: 0 } },
+      layerId: 'content'
+    });
+
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.function.set-expression',
+      target: { scope: 'object', objectId: 'f' },
+      payload: { expression: 'sin(x)' }
+    }).ok).toBe(true);
+    expect((scene.getObject('f')?.payload as any).expression).toBe('sin(x)');
+
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.function.toggle-derivative',
+      target: { scope: 'object', objectId: 'f' },
+      payload: true
+    }).ok).toBe(true);
+    expect((scene.getObject('f')?.meta as any).toggles['function:toggle-derivative']).toBe(true);
+
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.solid.set-section-plane',
+      target: { scope: 'object', objectId: 'solid' },
+      payload: 'xy'
+    }).ok).toBe(true);
+    expect((scene.getObject('solid')?.payload as any).section.plane).toBe('xy');
+
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.vector.set-point',
+      target: { scope: 'object', objectId: 'v' },
+      payload: { endpoint: 'end', point: { x: 2, y: 3 } }
+    }).ok).toBe(true);
+    expect((scene.getObject('v')?.payload as any).vector).toEqual({ x: 2, y: 3 });
+
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.scene.clear-selection',
+      target: { scope: 'scene' }
+    }).ok).toBe(true);
+    expect(scene.listObjects()).toHaveLength(3);
+
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.scene.add-geometry',
+      target: { scope: 'scene' },
+      payload: {
+        node: {
+          id: 'added',
+          kind: 'shape',
+          type: 'point',
+          payload: { point: { x: 9, y: 9 } }
+        }
+      }
+    }).ok).toBe(true);
+    expect(scene.getObject('added')?.payload).toEqual({ point: { x: 9, y: 9 } });
+
+    scene.addObject({
+      id: 'viewport-main',
+      kind: 'viewport',
+      type: 'viewport',
+      payload: { pan: { x: 0, y: 0 }, zoom: 1 },
+      layerId: 'background'
+    });
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.viewport.pan',
+      target: { scope: 'viewport', viewportId: 'viewport-main' },
+      payload: { dx: 12, dy: -4 }
+    }).ok).toBe(true);
+    expect((scene.getObject('viewport-main')?.payload as any).pan).toEqual({ x: 12, y: -4 });
+
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.viewport.zoom',
+      target: { scope: 'viewport', viewportId: 'floating-viewport' },
+      payload: 2
+    }).value?.object).toMatchObject({
+      id: 'floating-viewport',
+      kind: 'viewport',
+      payload: { zoom: 2 }
+    });
+    expect(scene.getObject('floating-viewport')).toMatchObject({
+      id: 'floating-viewport',
+      kind: 'viewport',
+      payload: { zoom: 2 }
+    });
+
+    expect(executeGraphCapability({
+      scene,
+      capabilityId: 'math.scene.clear-all',
+      target: { scope: 'scene' }
+    }).ok).toBe(true);
+    expect(scene.listObjects()).toEqual([]);
+  });
+
+  it('keeps backend rendering behind GraphSceneRuntime while drag mutates core first', () => {
+    const backend = createCoreOnlyTestBackend('runtime-backend');
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+
+    const added = runtime.addObject(createPointNode('A', 10, 10));
+    expect(added.ok).toBe(true);
+    expect(backend.pick({ x: 10, y: 10 })?.target.objectId).toBe('A');
+
+    const moved = runtime.applyDragToObject('A', {
+      delta: { dimension: '2d', dx: 5, dy: -2 }
+    });
+    expect(moved.ok).toBe(true);
+    expect(runtime.scene.getObject('A')?.payload).toEqual({ point: { x: 15, y: 8 } });
+    expect(backend.pick({ x: 15, y: 8 })?.target.objectId).toBe('A');
+    expect(runtime.snapshot().handles).toHaveLength(1);
+  });
+
+  it('removes old backend resources before switching GraphSceneRuntime backends', () => {
+    const firstBackend = createCoreOnlyTestBackend('runtime-first');
+    const secondBackend = createCoreOnlyTestBackend('runtime-second');
+    const runtime = new GraphSceneRuntime({ backend: firstBackend });
+    runtime.mount(document.createElement('div'));
+    runtime.addObject(createPointNode('A', 3, 4));
+
+    expect(firstBackend.pick({ x: 3, y: 4 })?.target.objectId).toBe('A');
+    runtime.setBackend(secondBackend);
+
+    expect(firstBackend.pick({ x: 3, y: 4 })).toBeNull();
+    expect(secondBackend.pick({ x: 3, y: 4 })?.target.objectId).toBe('A');
+  });
+});

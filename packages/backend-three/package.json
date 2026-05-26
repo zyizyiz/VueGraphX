@@ -1,0 +1,32 @@
+{
+  "name": "@vuegraphx/backend-three",
+  "type": "module",
+  "description": "Three.js backend package boundary for alternative 3D rendering and raycasting.",
+  "peerDependencies": {
+    "three": "^0.184.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "version": "1.2.3",
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@vuegraphx/core": "1.2.3",
+    "@vuegraphx/math": "1.2.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js"
+}

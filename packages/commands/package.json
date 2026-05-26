@@ -1,0 +1,25 @@
+{
+  "name": "@vuegraphx/commands",
+  "type": "module",
+  "description": "Command DSL compiler that emits VueGraphX core IR without renderer side effects.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@vuegraphx/core": "1.2.3",
+    "@vuegraphx/math": "1.2.3"
+  },
+  "peerDependencies": {},
+  "version": "1.2.3",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js"
+}

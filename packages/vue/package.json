@@ -1,0 +1,26 @@
+{
+  "name": "@vuegraphx/vue",
+  "type": "module",
+  "description": "Vue integration and composables for VueGraphX core capabilities.",
+  "dependencies": {
+    "@vuegraphx/core": "1.2.3"
+  },
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "version": "1.2.3",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js"
+}

@@ -7,6 +7,25 @@ import { GraphHiddenLineManager } from '../rendering/hiddenLine';
 import { GraphSceneState } from './sceneState';
 import { GraphRelationState } from './relationState';
 import JXG from 'jsxgraph';
+import {
+  GraphSceneStore,
+  executeGraphCapability,
+  type GraphObjectNode,
+  type GraphObjectPatch,
+  type GraphOperationDiagnostic,
+  type GraphRenderHandle,
+  type GraphRuntimeSceneDocument,
+  type GraphRuntimeTargetRef,
+  type GraphSceneStoreSnapshot
+} from '@vuegraphx/core';
+import { compileGraphExpression, type GraphCommandSymbolTable } from '@vuegraphx/commands';
+import {
+  createJsxGraphBackend,
+  createJsxGraphRuntime,
+  type JsxGraphBackend,
+  type JsxGraphRuntime,
+  type JsxGraphRuntimeCreateElementsEvent
+} from '@vuegraphx/backend-jsxgraph';
 import { capabilityRegistry } from '../architecture/capabilities/registry';
 import type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
 import type {
@@ -45,6 +64,7 @@ import {
   type GraphRelationTargetRecord,
   type GraphRelationTargetRegistration
 } from '../relation/targets';
+import { createCommandRelationTarget } from '../relation/commandTargets';
 import type {
   GraphCapabilityDescriptor,
   GraphCapabilityListener,
@@ -201,6 +221,8 @@ const cloneSceneValue = <T>(value: T): T => {
   return value;
 };
 
+const formatCoreNumber = (value: number): string => Number.isInteger(value) ? String(value) : Number(value.toPrecision(12)).toString();
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 const isEngineMode = (value: unknown): value is EngineMode => value === '2d' || value === '3d' || value === 'geometry';
@@ -272,6 +294,14 @@ export class GraphXEngine {
   private activeRelationDragKey: string | null = null;
   private isApplyingRelationAssist = false;
   private sceneState = new GraphSceneState();
+  private runtimeSceneStore = new GraphSceneStore('graphx-runtime-scene');
+  private commandCoreObjectIds = new Map<string, string[]>();
+  private commandSymbols: GraphCommandSymbolTable = new Map();
+  private jsxGraphCommandBackend: JsxGraphBackend | null = null;
+  private jsxGraphCommandRuntime: JsxGraphRuntime | null = null;
+  private jsxGraphCommandBoard: JXG.Board | null = null;
+  private jsxGraphCommandHandles = new Map<string, GraphRenderHandle>();
+  private commandRenderPath = new Map<string, 'backend-jsxgraph' | 'legacy-renderer'>();
   private renderer: Renderer;
   private shapeDefinitions: Map<string, GraphShapeDefinition> = new Map();
   private shapeInstances: Map<string, GraphShapeInstance> = new Map();
@@ -864,6 +894,8 @@ export class GraphXEngine {
 
   /** 切换引擎模式，并在需要时重建画板。切换模式会清空当前 shape 实例、命令渲染结果以及数学变量；如果传入 options，则会替换当前全局画板配置。 */
   public setMode(mode: EngineMode, options?: GraphXOptions): void {
+    const willRestartBoard = this.boardMgr.mode !== mode || options !== undefined;
+    if (willRestartBoard) this.disposeJsxGraphCommandBackend?.();
     const isRestarted = this.boardMgr.setMode(mode, options);
     if (isRestarted) {
       if (options !== undefined) {
@@ -879,6 +911,11 @@ export class GraphXEngine {
       this.entityMgr.clearAll();
       this.sceneState.clearCommands();
       this.sceneState.clearRelations();
+      this.runtimeSceneStore.clear();
+      this.commandCoreObjectIds.clear();
+      this.commandSymbols.clear();
+      this.jsxGraphCommandHandles?.clear();
+      this.commandRenderPath?.clear();
       this.clearVariables();
       this.setupGlobalEvents();
     }
@@ -887,6 +924,7 @@ export class GraphXEngine {
   /** 重建画板并清空当前运行时状态。如果传入 options，则会替换当前全局画板配置。 */
   public resetBoard(options?: GraphXOptions): void {
     this.clearShapeInstances();
+    this.disposeJsxGraphCommandBackend?.();
     this.boardMgr.resetBoard(options);
     if (options !== undefined) {
       this.currentOptions = cloneGraphXOptions(options);
@@ -900,6 +938,11 @@ export class GraphXEngine {
     this.entityMgr.clearAll();
     this.sceneState.clearCommands();
     this.sceneState.clearRelations();
+    this.runtimeSceneStore.clear();
+    this.commandCoreObjectIds.clear();
+    this.commandSymbols.clear();
+    this.jsxGraphCommandHandles?.clear();
+    this.commandRenderPath?.clear();
     this.clearVariables();
     this.setupGlobalEvents();
   }
@@ -914,14 +957,19 @@ export class GraphXEngine {
     this.removeCommandRuntime(id, false);
 
     if (!expression || expression.trim() === '') {
-      this.sceneState.removeCommand(id);
+      this.removeCommandRuntime(id);
       return;
     }
     const pureExp = expression.trim();
 
     try {
-      const elements = this.renderer.render(this.boardMgr.mode, pureExp, color, extraOptions, id);
-      this.entityMgr.registerCommandElements(id, elements);
+      const coreNode = this.upsertCommandCoreObjects(id, pureExp, color, extraOptions);
+      const renderedByBackend = this.renderCommandCoreObjectWithJsxGraphBackend(id, coreNode);
+      if (!renderedByBackend) {
+        const elements = this.renderer.render(this.boardMgr.mode, pureExp, color, extraOptions, id);
+        this.entityMgr.registerCommandElements(id, elements);
+        this.commandRenderPath?.set(id, 'legacy-renderer');
+      }
       this.sceneState.upsertCommand({
         id,
         expression: pureExp,
@@ -929,7 +977,8 @@ export class GraphXEngine {
         options: cloneSceneValue(extraOptions)
       });
     } catch (e: any) {
-      this.sceneState.removeCommand(id);
+      this.removeCommandRuntime(id);
+      this.commandRenderPath?.delete(id);
       console.warn(`[GraphXEngine] 解析指令失败: ${pureExp}`, e);
       throw new Error(e.message || '引擎无法解析该语句格式');
     }
@@ -938,6 +987,83 @@ export class GraphXEngine {
   /** 移除某个指令 id 关联的全部渲染元素。 */
   public removeCommand(id: string): void {
     this.removeCommandRuntime(id);
+  }
+
+  /**
+   * 返回 VueGraphX core-authority 的 runtime scene 快照。它与 JSXGraph board
+   * 对象解耦，可用于 Canvas/Babylon 等后端无缝复用同一份语义对象。
+   */
+  public getRuntimeSceneSnapshot(): GraphSceneStoreSnapshot {
+    return this.runtimeSceneStore.snapshot();
+  }
+
+  /** 导出 backend-neutral runtime scene document；返回值不会包含 JXG/Babylon/DOM 等 renderer 资源。 */
+  public exportRuntimeScene(meta?: Record<string, unknown>): {
+    status: 'success' | 'failure';
+    scene: GraphRuntimeSceneDocument | null;
+    diagnostics: GraphOperationDiagnostic[];
+  } {
+    const result = this.runtimeSceneStore.toJSON({
+      mode: this.boardMgr.mode,
+      settings: this.getSceneSettings(),
+      ...(meta ?? {})
+    });
+    return result.ok && result.value
+      ? { status: 'success', scene: result.value, diagnostics: [] }
+      : { status: 'failure', scene: null, diagnostics: result.diagnostics };
+  }
+
+  /** 返回指定命令在 core runtime scene 中生成的对象，供外部后端或调试工具做精确同步。 */
+  public getCommandObjectNodes(commandId: string): GraphObjectNode[] {
+    return (this.commandCoreObjectIds.get(commandId) ?? [])
+      .map((objectId) => this.runtimeSceneStore.getObject(objectId))
+      .filter((node): node is GraphObjectNode => !!node);
+  }
+
+  /** 对 core runtime object 应用 patch。核心状态先变更，后端再据此更新。 */
+  public applyRuntimeObjectPatch(objectId: string, patch: GraphObjectPatch) {
+    return this.runtimeSceneStore.updateObject(objectId, patch);
+  }
+
+  /** 执行 renderer-neutral capability；如果目标来自当前 JSXGraph 命令，会同步回兼容渲染路径。 */
+  public executeRuntimeCapability(
+    capabilityId: string,
+    target: GraphRuntimeTargetRef,
+    payload?: unknown
+  ): boolean {
+    const isSceneClearAll = target.scope === 'scene' && capabilityId === 'math.scene.clear-all';
+    const isSceneClearSelection = target.scope === 'scene' && capabilityId === 'math.scene.clear-selection';
+    const commandId = target.objectId ? this.getCommandIdForCoreObject(target.objectId) : null;
+    const result = executeGraphCapability({
+      scene: this.runtimeSceneStore,
+      capabilityId,
+      target,
+      payload
+    });
+    if (!result.ok || !result.value) return false;
+
+    if (isSceneClearAll) {
+      this.clearBoard();
+      this.notifyCapabilityChange();
+      return true;
+    }
+
+    if (isSceneClearSelection) {
+      this.selectShape(null);
+      return true;
+    }
+
+    if (commandId && result.value.action === 'remove') {
+      this.removeCommand(commandId);
+      return true;
+    }
+
+    if (commandId && result.value.action === 'update') {
+      this.syncCoreCommandMutationToJsxGraph(commandId, result.value.object, capabilityId);
+    }
+
+    this.notifyCapabilityChange();
+    return true;
   }
 
   /** 导出当前引擎的公开 scene document。 */
@@ -1482,12 +1608,246 @@ export class GraphXEngine {
     return options;
   }
 
+  private upsertCommandCoreObjects(
+    commandId: string,
+    expression: string,
+    color: string,
+    extraOptions?: any
+  ): GraphObjectNode {
+    this.removeCommandCoreObjects(commandId);
+    const result = compileGraphExpression(expression, {
+      symbols: this.commandSymbols,
+      fallbackToLegacy: true,
+      defaultLayerId: 'content',
+      renderHints: this.createCommandRenderHints(color, extraOptions),
+      meta: {
+        ownerType: 'command',
+        ownerCommandId: commandId,
+        sourceExpression: expression,
+        rendererCompatibility: 'jsxgraph'
+      }
+    });
+
+    if (!result.ok || !result.value) {
+      throw new Error(result.diagnostics[0]?.message ?? '指令无法编译为 VueGraphX core IR');
+    }
+
+    this.commandSymbols = result.value.symbols;
+    const node = result.value.node;
+    const stored = this.runtimeSceneStore.addObject(node, { replace: true });
+    if (!stored.ok) {
+      throw new Error(stored.diagnostics[0]?.message ?? '指令无法写入 VueGraphX core scene');
+    }
+    this.commandCoreObjectIds.set(commandId, [node.id]);
+    return node;
+  }
+
+  private createCommandRenderHints(color: string, extraOptions?: any): Record<string, unknown> {
+    const options = isRecord(extraOptions) ? extraOptions : {};
+    return {
+      strokeColor: typeof options.strokeColor === 'string' ? options.strokeColor : color,
+      fillColor: typeof options.fillColor === 'string' ? options.fillColor : `${color}26`,
+      strokeWidth: typeof options.strokeWidth === 'number' ? options.strokeWidth : undefined,
+      visible: options.visible === false ? false : undefined
+    };
+  }
+
+  private removeCommandCoreObjects(commandId: string): void {
+    const objectIds = this.commandCoreObjectIds.get(commandId) ?? [];
+    objectIds.forEach((objectId) => {
+      this.removeJsxGraphBackendObject(objectId);
+      this.runtimeSceneStore.removeObject(objectId);
+      for (const [symbol, node] of this.commandSymbols.entries()) {
+        if (node.id === objectId || symbol === objectId) {
+          this.commandSymbols.delete(symbol);
+        }
+      }
+    });
+    this.commandCoreObjectIds.delete(commandId);
+    this.commandRenderPath?.delete(commandId);
+  }
+
+  private getCommandIdForCoreObject(objectId: string): string | null {
+    for (const [commandId, objectIds] of this.commandCoreObjectIds.entries()) {
+      if (objectIds.includes(objectId)) return commandId;
+    }
+    return null;
+  }
+
+  private syncCoreCommandMutationToJsxGraph(commandId: string, object: GraphObjectNode, capabilityId: string): void {
+    const command = this.sceneState.listCommands().find((entry) => entry.id === commandId);
+    if (!command) return;
+
+    if (this.commandRenderPath?.get(commandId) === 'backend-jsxgraph') {
+      const handle = this.jsxGraphCommandHandles.get(object.id);
+      if (handle && this.jsxGraphCommandBackend) {
+        this.jsxGraphCommandBackend.update(handle, {
+          payload: object.payload,
+          renderHints: object.renderHints ?? null,
+          meta: object.meta ?? null
+        });
+        this.jsxGraphCommandBackend.flush?.();
+        return;
+      }
+    }
+
+    if (capabilityId === 'math.object.move' && object.type === 'point') {
+      const point = (object.payload as { point?: { x?: unknown; y?: unknown } } | undefined)?.point;
+      if (typeof point?.x === 'number' && Number.isFinite(point.x) && typeof point.y === 'number' && Number.isFinite(point.y)) {
+        this.executeCommand(commandId, `${object.id} = (${formatCoreNumber(point.x)}, ${formatCoreNumber(point.y)})`, command.color ?? '#0ea5e9', command.options);
+      }
+      return;
+    }
+
+    if (![
+      'math.object.set-color',
+      'math.geometry.apply-color',
+      'math.solid.apply-color',
+      'math.object.set-visibility',
+      'math.object.lock'
+    ].includes(capabilityId)) {
+      return;
+    }
+
+    const nextColor = typeof object.renderHints?.strokeColor === 'string'
+      ? object.renderHints.strokeColor
+      : command.color ?? '#0ea5e9';
+    const nextOptions = {
+      ...(isRecord(command.options) ? command.options : {}),
+      ...(object.renderHints ?? {})
+    };
+    this.executeCommand(commandId, command.expression, nextColor, nextOptions);
+  }
+
+  private renderCommandCoreObjectWithJsxGraphBackend(commandId: string, node: GraphObjectNode): boolean {
+    if (!this.canRenderCoreNodeWithJsxGraphBackend(node)) return false;
+    const backend = this.ensureJsxGraphCommandBackend();
+    const handle = backend.create(node, { layerId: node.layerId ?? 'content' });
+    this.jsxGraphCommandHandles.set(node.id, handle);
+    this.commandRenderPath?.set(commandId, 'backend-jsxgraph');
+    backend.flush?.();
+    return true;
+  }
+
+  private canRenderCoreNodeWithJsxGraphBackend(node: GraphObjectNode): boolean {
+    if (!this.boardMgr.board || typeof (this.boardMgr.board as any).create !== 'function' || this.boardMgr.mode === '3d') return false;
+    if (node.type === 'legacy-expression' || node.type === 'variable' || node.type === 'equation') return false;
+    return [
+      'point',
+      'line',
+      'ray',
+      'segment',
+      'circle',
+      'polygon',
+      'polyline',
+      'arc',
+      'sector',
+      'semicircle',
+      'text',
+      'vector',
+      'midpoint',
+      'perpendicular-line',
+      'parallel-line',
+      'tangent',
+      'function',
+      'derivative',
+      'intersection',
+      'angle',
+      'translated',
+      'rotated'
+    ].includes(node.type);
+  }
+
+  private ensureJsxGraphCommandBackend(): JsxGraphBackend {
+    const board = this.boardMgr.board;
+    if (!board) throw new Error('JSXGraph 画板尚未初始化');
+
+    if (this.jsxGraphCommandBackend && this.jsxGraphCommandBoard === board) {
+      return this.jsxGraphCommandBackend;
+    }
+
+    this.disposeJsxGraphCommandBackend();
+    this.jsxGraphCommandRuntime = createJsxGraphRuntime(JXG as any, {
+      board: board as any,
+      onCreateElements: (event) => this.registerJsxGraphBackendElements(event)
+    });
+    this.jsxGraphCommandBackend = createJsxGraphBackend({
+      id: 'jsxgraph',
+      runtime: this.jsxGraphCommandRuntime
+    });
+    this.jsxGraphCommandBackend.mount(board.containerObj ?? document.createElement('div'));
+    this.jsxGraphCommandBoard = board;
+    return this.jsxGraphCommandBackend;
+  }
+
+  private registerJsxGraphBackendElements(event: JsxGraphRuntimeCreateElementsEvent): void {
+    const commandId = typeof event.node.meta?.ownerCommandId === 'string' ? event.node.meta.ownerCommandId : null;
+    if (!commandId || event.elements.length === 0) return;
+
+    const elements = event.elements as JXG.GeometryElement[];
+    this.entityMgr.registerCommandElements(commandId, elements);
+    if (event.node.id && elements[0]) this.entityMgr.registerNamedElement(event.node.id, elements[0]);
+
+    const resolvedType = this.getRelationTypeForCoreNode(event.node);
+    if (!resolvedType) return;
+    const target = createCommandRelationTarget({
+      resolvedType,
+      label: event.node.id,
+      sourceExpression: typeof event.node.meta?.sourceExpression === 'string' ? event.node.meta.sourceExpression : event.node.id,
+      element: elements[0]
+    });
+    if (target) this.registerRelationTarget(commandId, target);
+  }
+
+  private getRelationTypeForCoreNode(node: GraphObjectNode): string | null {
+    switch (node.type) {
+      case 'point':
+      case 'midpoint':
+      case 'intersection':
+        return 'point';
+      case 'line':
+      case 'ray':
+      case 'perpendicular-line':
+      case 'parallel-line':
+      case 'tangent':
+        return 'line';
+      case 'segment':
+      case 'vector':
+      case 'polyline':
+        return 'segment';
+      case 'circle':
+        return 'circle';
+      case 'arc':
+      case 'sector':
+      case 'semicircle':
+        return 'circle';
+      default:
+        return null;
+    }
+  }
+
+  private removeJsxGraphBackendObject(objectId: string): void {
+    const handle = this.jsxGraphCommandHandles?.get(objectId);
+    if (!handle || !this.jsxGraphCommandBackend) return;
+    this.jsxGraphCommandBackend.remove(handle);
+    this.jsxGraphCommandHandles?.delete(objectId);
+  }
+
+  private disposeJsxGraphCommandBackend(): void {
+    this.jsxGraphCommandBackend?.destroy();
+    this.jsxGraphCommandBackend = null;
+    this.jsxGraphCommandRuntime = null;
+    this.jsxGraphCommandBoard = null;
+    this.jsxGraphCommandHandles?.clear();
+  }
+
   private removeCommandRuntime(id: string, removeSceneRecord = true): void {
     this.hiddenLineMgr.clearOwnerSources(id);
     this.clearRelationTargets(id);
     if (this.boardMgr.board) {
       this.entityMgr.removeCommandElements(id, this.boardMgr.board);
     }
+    this.removeCommandCoreObjects(id);
     if (removeSceneRecord) {
       this.sceneState.removeCommand(id);
     }
@@ -1523,9 +1883,15 @@ export class GraphXEngine {
     this.clearRelationTargets();
     this.relationState.clear();
     this.refreshRelationState();
+    this.disposeJsxGraphCommandBackend();
     this.boardMgr.destroy();
     this.entityMgr.clearAll();
     this.sceneState.clearAll();
+    this.runtimeSceneStore.clear();
+    this.commandCoreObjectIds.clear();
+    this.commandSymbols.clear();
+    this.jsxGraphCommandHandles?.clear();
+    this.commandRenderPath?.clear();
   }
 
   /** 触发一次完整的 JSXGraph 画板刷新。 */

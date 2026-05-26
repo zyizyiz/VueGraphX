@@ -1,0 +1,25 @@
+{
+  "name": "@vuegraphx/math",
+  "type": "module",
+  "description": "Renderer-free math kernel for geometry, functions, equations, transforms, and solids.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@vuegraphx/core": "1.2.3",
+    "mathjs": "^15.1.1"
+  },
+  "peerDependencies": {},
+  "version": "1.2.3",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js"
+}

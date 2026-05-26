@@ -1,0 +1,32 @@
+{
+  "name": "@vuegraphx/backend-babylon",
+  "type": "module",
+  "description": "BabylonJS backend adapter for high-performance 3D/solid rendering and picking.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@vuegraphx/core": "1.2.3",
+    "@vuegraphx/math": "1.2.3"
+  },
+  "peerDependencies": {
+    "@babylonjs/core": "^9.9.0"
+  },
+  "version": "1.2.3",
+  "peerDependenciesMeta": {
+    "@babylonjs/core": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js"
+}

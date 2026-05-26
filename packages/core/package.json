@@ -1,0 +1,21 @@
+{
+  "name": "@vuegraphx/core",
+  "type": "module",
+  "description": "Renderer-neutral scene graph, runtime contracts, capabilities, event routing, and backend registry.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "peerDependencies": {},
+  "version": "1.2.3",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js"
+}

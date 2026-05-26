@@ -4,6 +4,7 @@ import type { EngineMode, GraphXOptions } from '../types/engine';
 import { GraphXEngine } from './GraphXEngine';
 import { GraphRelationState } from './relationState';
 import { GraphSceneState } from './sceneState';
+import { GraphSceneStore } from '@vuegraphx/core';
 
 const createShapeInstance = (id: string, entityType: string, payload?: unknown): GraphShapeInstance => ({
   id,
@@ -70,6 +71,7 @@ const createFakeEngine = () => {
     currentOptions: undefined,
     entityMgr: {
       registerCommandElements: vi.fn(),
+      registerNamedElement: vi.fn(),
       removeCommandElements: vi.fn(),
       clearAll: vi.fn()
     },
@@ -88,6 +90,14 @@ const createFakeEngine = () => {
     activeRelationDragKey: null,
     isApplyingRelationAssist: false,
     sceneState: new GraphSceneState(),
+    runtimeSceneStore: new GraphSceneStore('test-runtime-scene'),
+    commandCoreObjectIds: new Map<string, string[]>(),
+    commandSymbols: new Map(),
+    jsxGraphCommandBackend: null,
+    jsxGraphCommandRuntime: null,
+    jsxGraphCommandBoard: null,
+    jsxGraphCommandHandles: new Map(),
+    commandRenderPath: new Map(),
     renderer: {
       render: vi.fn((_mode: EngineMode, expression: string, _color: string, _options: unknown, id: string) => {
         if (expression === 'bad()') {
@@ -273,5 +283,190 @@ describe('GraphXEngine scene document support', () => {
         params: { expectedValue: 5, tolerance: undefined }
       }
     ]);
+  });
+
+  it('keeps command truth in renderer-neutral core runtime scene while JSXGraph remains a compatibility renderer', () => {
+    const engine = createFakeEngine();
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#f43f5e', { strokeWidth: 3 });
+    engine.executeCommand('cmd_b', 'B = Point(3, 4)', '#0ea5e9');
+    engine.executeCommand('cmd_s', 'Segment(A, B)', '#111827');
+
+    const runtimeScene = engine.exportRuntimeScene();
+    expect(runtimeScene.status).toBe('success');
+    expect(runtimeScene.scene?.objects.map((node) => node.id)).toEqual(['A', 'B', 'segment-3']);
+    expect(runtimeScene.scene?.objects.find((node) => node.id === 'A')).toMatchObject({
+      type: 'point',
+      payload: { point: { x: 1, y: 2 } },
+      renderHints: { strokeColor: '#f43f5e', strokeWidth: 3 }
+    });
+    expect(JSON.stringify(runtimeScene.scene)).not.toMatch(/JXG|GeometryElement|Board/);
+    expect(engine.getCommandObjectNodes('cmd_a')[0]?.id).toBe('A');
+
+    engine.removeCommand('cmd_a');
+    expect(engine.getCommandObjectNodes('cmd_a')).toEqual([]);
+    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.id)).toEqual(['B', 'segment-3']);
+  });
+
+  it('renders supported command IR through the JSXGraph backend adapter instead of the legacy renderer', () => {
+    const engine = createFakeEngine();
+    const created: Array<{ type: string; args: unknown[] }> = [];
+    const board = (engine as any).boardMgr.board;
+    board.containerObj = document.createElement('div');
+    board.create = vi.fn((type: string, args: unknown[]) => {
+      created.push({ type, args });
+      return { id: `${type}-${created.length}`, elType: type };
+    });
+    board.removeObject = vi.fn();
+
+    engine.executeCommand('cmd_f', 'f = Function("x^2", -2, 2)', '#0ea5e9');
+    engine.executeCommand('cmd_df', 'df = Derivative(f)', '#f43f5e');
+
+    expect(created.map((entry) => entry.type)).toEqual(['functiongraph', 'functiongraph']);
+    expect((created[0].args[0] as (x: number) => number)(3)).toBe(9);
+    expect((created[1].args[0] as (x: number) => number)(3)).toBe(6);
+    expect((engine as any).renderer.render).not.toHaveBeenCalled();
+    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual(['function', 'derivative']);
+  });
+
+  it('routes angle command DSL through the JSXGraph backend adapter', () => {
+    const engine = createFakeEngine();
+    const created: Array<{ type: string; args: unknown[] }> = [];
+    const board = (engine as any).boardMgr.board;
+    board.containerObj = document.createElement('div');
+    board.create = vi.fn((type: string, args: unknown[]) => {
+      created.push({ type, args });
+      return { id: `${type}-${created.length}`, elType: type };
+    });
+    board.removeObject = vi.fn();
+
+    engine.executeCommand('cmd_a', 'A = (0, 0)', '#0ea5e9');
+    engine.executeCommand('cmd_b', 'B = (2, 0)', '#0ea5e9');
+    engine.executeCommand('cmd_c', 'C = (0, 2)', '#0ea5e9');
+    engine.executeCommand('cmd_angle', 'ang = Angle(B, A, C)', '#10b981');
+
+    expect(created.map((entry) => entry.type)).toEqual(['point', 'point', 'point', 'angle']);
+    expect(created[3].args).toEqual([[2, 0], [0, 0], [0, 2]]);
+    expect((engine as any).renderer.render).not.toHaveBeenCalled();
+    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual(['point', 'point', 'point', 'angle']);
+  });
+
+  it('routes arc, sector, semicircle, polyline, and text DSL through the JSXGraph backend adapter', () => {
+    const engine = createFakeEngine();
+    const created: Array<{ type: string; args: unknown[] }> = [];
+    const board = (engine as any).boardMgr.board;
+    board.containerObj = document.createElement('div');
+    board.create = vi.fn((type: string, args: unknown[]) => {
+      created.push({ type, args });
+      return { id: `${type}-${created.length}`, elType: type };
+    });
+    board.removeObject = vi.fn();
+
+    engine.executeCommand('cmd_a', 'A = (0, 0)', '#0ea5e9');
+    engine.executeCommand('cmd_b', 'B = (2, 0)', '#0ea5e9');
+    engine.executeCommand('cmd_c', 'C = (0, 2)', '#0ea5e9');
+    engine.executeCommand('cmd_arc', 'arc = Arc(A, B, C)', '#10b981');
+    engine.executeCommand('cmd_sector', 'sector = Sector(A, B, C)', '#f59e0b');
+    engine.executeCommand('cmd_semi', 'semi = Semicircle(B, C)', '#8b5cf6');
+    engine.executeCommand('cmd_chain', 'chain = PolygonalChain(A, B, C)', '#111827');
+    engine.executeCommand('cmd_regular', 'regular = RegularPolygon(A, B, 4)', '#22c55e');
+    engine.executeCommand('cmd_para', 'para = Parallelogram(A, B, C)', '#0f766e');
+    engine.executeCommand('cmd_circ', 'circ = Circumcircle(A, B, C)', '#2563eb');
+    engine.executeCommand('cmd_inc', 'inc = Incircle(A, B, C)', '#dc2626');
+    engine.executeCommand('cmd_cc', 'cc = Circumcenter(A, B, C)', '#64748b');
+    engine.executeCommand('cmd_ic', 'ic = Incenter(A, B, C)', '#334155');
+    engine.executeCommand('cmd_text', 'label = Text(A, "origin")', '#64748b');
+
+    expect(created.map((entry) => entry.type)).toEqual([
+      'point',
+      'point',
+      'point',
+      'arc',
+      'sector',
+      'semicircle',
+      'curve',
+      'polygon',
+      'polygon',
+      'circle',
+      'circle',
+      'point',
+      'point',
+      'text'
+    ]);
+    expect(created[3].args).toEqual([[0, 0], [2, 0], [0, 2]]);
+    expect(created[5].args).toEqual([[2, 0], [0, 2]]);
+    expect(created[7].args).toHaveLength(4);
+    expect(created[9].args).toEqual([[1, 1], Math.SQRT2]);
+    expect(created[13].args).toEqual([0, 0, 'origin']);
+    expect((engine as any).renderer.render).not.toHaveBeenCalled();
+    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual([
+      'point',
+      'point',
+      'point',
+      'arc',
+      'sector',
+      'semicircle',
+      'polyline',
+      'polygon',
+      'polygon',
+      'circle',
+      'circle',
+      'point',
+      'point',
+      'text'
+    ]);
+  });
+
+  it('executes core capabilities for command-owned objects and synchronizes compatible JSXGraph render state', () => {
+    const engine = createFakeEngine();
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    const applied = engine.executeRuntimeCapability('math.object.set-color', {
+      scope: 'object',
+      objectId: 'A'
+    }, '#22c55e');
+
+    expect(applied).toBe(true);
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.renderHints?.strokeColor).toBe('#22c55e');
+    expect((engine as any).renderer.render).toHaveBeenLastCalledWith('2d', 'A = (1, 2)', '#22c55e', expect.objectContaining({ strokeColor: '#22c55e' }), 'cmd_a');
+
+    expect(engine.executeRuntimeCapability('math.object.delete', {
+      scope: 'object',
+      objectId: 'A'
+    })).toBe(true);
+    expect(engine.exportRuntimeScene().scene?.objects).toEqual([]);
+    expect(engine.exportScene().scene?.commands).toEqual([]);
+  });
+
+  it('keeps point move capability as core-authority and rewrites compatible point commands', () => {
+    const engine = createFakeEngine();
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    expect(engine.executeRuntimeCapability('math.object.move', {
+      scope: 'object',
+      objectId: 'A'
+    }, { delta: { dimension: '2d', dx: 3, dy: -1 } })).toBe(true);
+
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.payload).toEqual({
+      point: { x: 4, y: 1 }
+    });
+    expect(engine.exportScene().scene?.commands).toEqual([
+      { id: 'cmd_a', expression: 'A = (4, 1)', color: '#0ea5e9', options: undefined }
+    ]);
+  });
+
+  it('executes scene-level runtime capabilities against both core state and compatibility renderer state', () => {
+    const engine = createFakeEngine();
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    engine.executeCommand('cmd_b', 'B = (3, 4)', '#f43f5e');
+    expect(engine.exportRuntimeScene().scene?.objects).toHaveLength(2);
+
+    expect(engine.executeRuntimeCapability('math.scene.clear-all', { scope: 'scene' })).toBe(true);
+
+    expect(engine.exportRuntimeScene().scene?.objects).toEqual([]);
+    expect(engine.exportScene().scene?.commands).toEqual([]);
+    expect((engine as any).boardMgr.resetBoard).toHaveBeenCalledOnce();
+    expect((engine as any).entityMgr.clearAll).toHaveBeenCalled();
   });
 });

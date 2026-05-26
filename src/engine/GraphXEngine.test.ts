@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GraphXOptions } from '../types/engine';
 import { GraphXEngine } from './GraphXEngine';
+import { GraphSceneStore } from '@vuegraphx/core';
 import {
   DEFAULT_DISTANCE_ASSERTION_SNAP_ENTER_DELTA,
   DEFAULT_DISTANCE_ASSERTION_SNAP_EXIT_DELTA,
@@ -109,6 +110,27 @@ describe('GraphXEngine relation assist options', () => {
 });
 
 describe('GraphXEngine board option cloning', () => {
+  it('does not dispose backend-rendered command handles when setMode is a no-op', () => {
+    const destroy = vi.fn();
+    const fakeEngine = {
+      boardMgr: {
+        mode: '2d',
+        setMode: vi.fn(() => false)
+      },
+      jsxGraphCommandBackend: { destroy },
+      jsxGraphCommandRuntime: {},
+      jsxGraphCommandBoard: {},
+      jsxGraphCommandHandles: new Map([['A', {}]]),
+      commandRenderPath: new Map([['cmd_a', 'backend-jsxgraph']])
+    };
+
+    GraphXEngine.prototype.setMode.call(fakeEngine as any, '2d');
+
+    expect(destroy).not.toHaveBeenCalled();
+    expect(fakeEngine.jsxGraphCommandBackend).toEqual({ destroy });
+    expect(fakeEngine.jsxGraphCommandHandles.size).toBe(1);
+  });
+
   it('stores cloned pan and zoom options when restarting with new board settings', () => {
     const input: GraphXOptions = {
       pan: {
@@ -148,6 +170,9 @@ describe('GraphXEngine board option cloning', () => {
         clearCommands: vi.fn(),
         clearRelations: vi.fn()
       },
+      runtimeSceneStore: new GraphSceneStore('test-runtime-scene'),
+      commandCoreObjectIds: new Map(),
+      commandSymbols: new Map(),
       clearVariables: vi.fn(),
       setupGlobalEvents: vi.fn(),
       currentOptions: undefined,

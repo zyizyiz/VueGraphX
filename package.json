@@ -27,14 +27,20 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:packages": "node scripts/build-packages.mjs",
     "build:playground": "BUILD_MODE=playground vite build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
-    "release:verify": "npm run typecheck && npm test && npm run build && npm run build:playground",
+    "release:verify": "npm run verify:packages && npm run typecheck && npm test && npm run build:packages && npm run verify:package-dist && npm run build && npm run build:playground",
     "preview": "vite preview",
     "docs:api": "typedoc --options typedoc.json",
     "check:jsxgraph-3d": "node scripts/check-jsxgraph-3d-catalog.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify:packages": "node scripts/verify-package-boundaries.mjs",
+    "verify:package-dist": "node scripts/verify-package-dist.mjs",
+    "test:backend-contract": "vitest run packages/backend-canvas2d/src/backendContract.test.ts",
+    "test:cross-backend": "vitest run packages/backend-canvas2d/src/backendContract.test.ts packages/commands/src/compiler.test.ts",
+    "test:capabilities": "vitest run packages/core/src/runtimeContracts.test.ts"
   },
   "dependencies": {
     "jsxgraph": "^1.8.0",
@@ -61,5 +67,8 @@
   },
   "peerDependencies": {
     "vue": "^3.4.0"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

@@ -22,12 +22,24 @@
     
     "baseUrl": ".",
     "paths": {
-      "vuegraphx": ["src/index.ts"]
+      "vuegraphx": ["src/index.ts"],
+      "@vuegraphx/core": ["packages/core/src/index.ts"],
+      "@vuegraphx/math": ["packages/math/src/index.ts"],
+      "@vuegraphx/commands": ["packages/commands/src/index.ts"],
+      "@vuegraphx/vue": ["packages/vue/src/index.ts"],
+      "@vuegraphx/backend-jsxgraph": ["packages/backend-jsxgraph/src/index.ts"],
+      "@vuegraphx/backend-babylon": ["packages/backend-babylon/src/index.ts"],
+      "@vuegraphx/backend-canvas2d": ["packages/backend-canvas2d/src/index.ts"],
+      "@vuegraphx/backend-pixi": ["packages/backend-pixi/src/index.ts"],
+      "@vuegraphx/backend-fabric": ["packages/backend-fabric/src/index.ts"],
+      "@vuegraphx/backend-konva": ["packages/backend-konva/src/index.ts"],
+      "@vuegraphx/backend-three": ["packages/backend-three/src/index.ts"]
     }
   },
   "include": [
     "src/**/*.ts",
     "src/**/*.d.ts",
+    "packages/**/*.ts",
     "playground/**/*.ts",
     "playground/**/*.d.ts",
     "playground/**/*.vue"

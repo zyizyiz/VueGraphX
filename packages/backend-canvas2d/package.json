@@ -1,0 +1,25 @@
+{
+  "name": "@vuegraphx/backend-canvas2d",
+  "type": "module",
+  "description": "Pure Canvas2D backend using VueGraphX-owned math and hit testing.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@vuegraphx/core": "1.2.3",
+    "@vuegraphx/math": "1.2.3"
+  },
+  "peerDependencies": {},
+  "version": "1.2.3",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js"
+}

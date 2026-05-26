@@ -1,0 +1,128 @@
+import {
+  createGraphObjectNode,
+  mergeGraphObjectPatch,
+  type GraphBackendCapabilities,
+  type GraphBackendContext,
+  type GraphBackendMountOptions,
+  type GraphBackendMountResult,
+  type GraphClientPoint,
+  type GraphObjectNode,
+  type GraphObjectPatch,
+  type GraphPickOptions,
+  type GraphPickResult,
+  type GraphRenderBackend,
+  type GraphRenderHandle,
+  type GraphViewportRef,
+  type GraphViewportSize,
+  type GraphWorldPoint
+} from '@vuegraphx/core';
+import { pickGraphObjectNode } from '../pickMath';
+
+export interface MemoryGraphBackendOptions {
+  id?: string;
+  capabilities?: Partial<GraphBackendCapabilities>;
+}
+
+const DEFAULT_CAPABILITIES: GraphBackendCapabilities = {
+  pick: true,
+  project: true,
+  unproject: true,
+  drag: true,
+  layers: true,
+  dimensions: ['2d']
+};
+
+export class MemoryGraphBackend implements GraphRenderBackend {
+  public readonly id: string;
+  public readonly capabilities: GraphBackendCapabilities;
+  protected readonly nodes = new Map<string, GraphObjectNode>();
+  protected readonly handles = new Map<string, GraphRenderHandle>();
+  protected mounted = false;
+  protected size: GraphViewportSize | undefined;
+
+  public constructor(options: MemoryGraphBackendOptions = {}) {
+    this.id = options.id ?? 'memory';
+    this.capabilities = { ...DEFAULT_CAPABILITIES, ...(options.capabilities ?? {}) };
+  }
+
+  public mount(_host: HTMLElement, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
+    this.mounted = true;
+    this.size = options.size ? { ...options.size } : this.size;
+    return { backendId: options.backendId ?? this.id, size: this.size };
+  }
+
+  public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphRenderHandle {
+    const stored = createGraphObjectNode(node);
+    const layerId = context.layerId ?? stored.layerId ?? 'content';
+    const handle: GraphRenderHandle = {
+      id: `${this.id}:${stored.id}`,
+      objectId: stored.id,
+      backendId: this.id,
+      layerId,
+      target: { scope: 'object', objectId: stored.id, backendId: this.id, layerId }
+    };
+    this.nodes.set(stored.id, { ...stored, layerId });
+    this.handles.set(handle.id, handle);
+    return { ...handle, target: { ...handle.target } };
+  }
+
+  public update(handle: GraphRenderHandle, patch: GraphObjectPatch, context: GraphBackendContext = {}): void {
+    const current = this.nodes.get(handle.objectId);
+    if (!current) return;
+    const next = mergeGraphObjectPatch(current, patch);
+    this.nodes.set(handle.objectId, { ...next, layerId: context.layerId ?? next.layerId ?? handle.layerId });
+  }
+
+  public remove(handle: GraphRenderHandle): void {
+    this.nodes.delete(handle.objectId);
+    this.handles.delete(handle.id);
+  }
+
+  public pick(point: GraphClientPoint, options: GraphPickOptions = {}): GraphPickResult | null {
+    if (!this.capabilities.pick) return null;
+    if (options.targetScopes && !options.targetScopes.includes('object')) return null;
+    const allowedLayers = options.layerOrder ? new Set(options.layerOrder) : null;
+    const candidates = [...this.nodes.values()].reverse();
+    for (const node of candidates) {
+      if (node.renderHints?.visible === false) continue;
+      if (allowedLayers && !allowedLayers.has(node.layerId ?? 'content')) continue;
+      const result = pickGraphObjectNode(node, point, this.id, options.tolerancePx ?? 8);
+      if (result) return result;
+    }
+    return null;
+  }
+
+  public project(point: GraphWorldPoint, _viewport?: GraphViewportRef): GraphClientPoint | null {
+    if (!this.capabilities.project) return null;
+    return { x: point.x, y: point.y };
+  }
+
+  public unproject(point: GraphClientPoint, _viewport?: GraphViewportRef): GraphWorldPoint | null {
+    if (!this.capabilities.unproject) return null;
+    return { dimension: '2d', x: point.x, y: point.y };
+  }
+
+  public resize(size: GraphViewportSize): void {
+    this.size = { ...size };
+  }
+
+  public flush(): void {
+    // Retained-memory backend has no renderer-owned frame buffer to flush.
+  }
+
+  public clear(): void {
+    this.nodes.clear();
+    this.handles.clear();
+  }
+
+  public destroy(): void {
+    this.clear();
+    this.mounted = false;
+  }
+
+  public listNodes(): GraphObjectNode[] {
+    return [...this.nodes.values()].map((node) => createGraphObjectNode(node));
+  }
+}
+
+export const createMemoryGraphBackend = (options?: MemoryGraphBackendOptions): MemoryGraphBackend => new MemoryGraphBackend(options);
