@@ -20,5 +20,25 @@ export interface GraphSceneRelationSnapshot {
     objects: GraphObjectRelationSnapshot[];
     relations: GraphRelationSnapshotEntry[];
 }
+export interface GraphRelationInvalidationInput {
+    changedObjectIds?: readonly string[];
+    removedObjectIds?: readonly string[];
+}
+export type GraphRelationInvalidationReason = 'changed' | 'removed' | 'dependency';
+export interface GraphRelationInvalidationEntry {
+    objectId: string;
+    reason: GraphRelationInvalidationReason;
+    sourceObjectId?: string;
+    dependencyChain: string[];
+}
+export interface GraphRelationInvalidationPlan {
+    changedObjectIds: string[];
+    removedObjectIds: string[];
+    dirtyObjectIds: string[];
+    recomputeObjectIds: string[];
+    relationIds: string[];
+    entries: GraphRelationInvalidationEntry[];
+}
 export declare const createGraphRelationSnapshot: (objects: readonly GraphObjectNode[]) => GraphOperationResult<GraphSceneRelationSnapshot>;
+export declare const createGraphRelationInvalidationPlan: (objects: readonly GraphObjectNode[], input: GraphRelationInvalidationInput) => GraphOperationResult<GraphRelationInvalidationPlan>;
 export declare const validateGraphRelationSnapshot: (snapshot: unknown, objects?: readonly GraphObjectNode[]) => GraphOperationResult<GraphSceneRelationSnapshot>;

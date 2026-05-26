@@ -6,6 +6,7 @@ import {
   GraphSceneStore,
   GRAPH_RELATION_SNAPSHOT_VERSION,
   SUPPORTED_GRAPH_SCENE_OBJECT_IR_TYPES,
+  createGraphRelationInvalidationPlan,
   createGraphRelationSnapshot,
   createGraphCapabilitiesForObject,
   createGraphDragPatch,
@@ -15,6 +16,7 @@ import {
   executeGraphCapability,
   hasRendererFrameworkLeak,
   mergeGraphObjectPatch,
+  resolveGraphDragOperation,
   unsupportedGraphSceneObjectIrDiagnostic,
   validateGraphRelationSnapshot,
   type GraphBackendHost,
@@ -78,6 +80,8 @@ const createCoreOnlyTestBackend = (id = 'core-test'): GraphRenderBackend => {
       for (const node of [...nodes.values()].reverse()) {
         const layerId = node.layerId ?? 'content';
         if (options.layerOrder && !options.layerOrder.includes(layerId)) continue;
+        const hitGroups = readTestHitGroups(node);
+        if (options.hitGroups && !hitGroups.some((group) => options.hitGroups?.includes(group))) continue;
         const payload = node.payload as { point?: { x: number; y: number }; position?: { dimension?: string; x: number; y: number } };
         const objectPoint = payload.point ?? (payload.position?.dimension === '2d' ? payload.position : undefined);
         if (!objectPoint) continue;
@@ -89,7 +93,9 @@ const createCoreOnlyTestBackend = (id = 'core-test'): GraphRenderBackend => {
             layerId,
             clientPoint: { ...point },
             worldPoint: { dimension: '2d', x: objectPoint.x, y: objectPoint.y },
-            distancePx
+            distancePx,
+            hitGroup: hitGroups[0],
+            meta: { hitGroups }
           };
         }
       }
@@ -102,6 +108,13 @@ const createCoreOnlyTestBackend = (id = 'core-test'): GraphRenderBackend => {
       nodes.clear();
     }
   };
+};
+
+const readTestHitGroups = (node: GraphObjectNode): string[] => {
+  const meta = node.meta as Record<string, unknown> | undefined;
+  const fromMeta = Array.isArray(meta?.hitGroups) ? meta.hitGroups : [meta?.hitGroup];
+  const groups = fromMeta.filter((group): group is string => typeof group === 'string' && group.length > 0);
+  return groups.length > 0 ? groups : [node.type, node.kind];
 };
 
 describe('renderer-neutral core runtime contracts', () => {
@@ -338,6 +351,50 @@ describe('renderer-neutral core runtime contracts', () => {
     const loaded = GraphSceneStore.fromJSON(json.value!);
     expect(loaded.ok).toBe(true);
     expect(loaded.value?.toJSON().value?.relationSnapshot).toEqual(relationSnapshot.value);
+  });
+
+  it('plans relation invalidation and recompute order without renderer state', () => {
+    const pointA = createPointNode('A', 0, 0);
+    const pointB = createPointNode('B', 3, 4);
+    const segment = createGraphSceneObjectIrNode({
+      id: 'segment-ab',
+      objectType: 'segment',
+      payload: {
+        objectType: 'segment',
+        endpoints: [{ objectId: 'A' }, { objectId: 'B' }]
+      },
+      dependencies: ['A', 'B'],
+      relations: ['distance-ab']
+    });
+    const distanceRelation = createGraphSceneObjectIrNode({
+      id: 'distance-ab',
+      kind: 'relation',
+      objectType: 'measurement',
+      payload: {
+        objectType: 'measurement',
+        measurementKind: 'distance',
+        targets: [{ objectId: 'A' }, { objectId: 'B' }],
+        unit: 'unit'
+      },
+      dependencies: ['A', 'B', 'segment-ab']
+    });
+
+    expect(segment.ok).toBe(true);
+    expect(distanceRelation.ok).toBe(true);
+
+    const plan = createGraphRelationInvalidationPlan(
+      [pointA, pointB, segment.value!, distanceRelation.value!],
+      { changedObjectIds: ['A'] }
+    );
+
+    expect(plan.ok).toBe(true);
+    expect(plan.value).toMatchObject({
+      changedObjectIds: ['A'],
+      removedObjectIds: [],
+      dirtyObjectIds: ['A', 'segment-ab', 'distance-ab'],
+      recomputeObjectIds: ['segment-ab', 'distance-ab'],
+      relationIds: ['distance-ab']
+    });
   });
 
   it('returns typed diagnostics for missing and invalid relation snapshots', () => {
@@ -693,6 +750,63 @@ describe('renderer-neutral core runtime contracts', () => {
     expect(router.getActivePointerSession()).toBeNull();
   });
 
+  it('routes picking hit groups, layer ordering, and pass-through diagnostics deterministically', () => {
+    const overlayBackend = createCoreOnlyTestBackend('overlay-pick');
+    const contentBackend = createCoreOnlyTestBackend('content-pick');
+    overlayBackend.mount(document.createElement('div'));
+    contentBackend.mount(document.createElement('div'));
+    overlayBackend.create({
+      ...createPointNode('overlay-label', 10, 10),
+      layerId: 'overlay',
+      meta: { hitGroups: ['label'] }
+    });
+    contentBackend.create({
+      ...createPointNode('content-point', 10, 10),
+      layerId: 'content',
+      meta: { hitGroups: ['vertex'] }
+    });
+
+    const router = new GraphInteractionRouter([
+      { layerId: 'overlay', interactive: true, passThrough: false, backendIds: ['overlay-pick'] }
+    ]);
+    router.registerBackend(overlayBackend, 'overlay');
+    router.registerBackend(contentBackend, 'content');
+
+    expect(router.pick({ x: 10, y: 10 }, { layerOrder: ['overlay', 'content'] })?.target.objectId).toBe('overlay-label');
+    const groupedPick = router.pickWithDiagnostics({ x: 10, y: 10 }, {
+      layerOrder: ['overlay', 'content'],
+      pickOptions: { hitGroups: ['vertex'] }
+    });
+    expect(groupedPick.pick?.target.objectId).toBe('content-point');
+    expect(groupedPick.pick?.hitGroup).toBe('vertex');
+
+    const passThroughRouter = new GraphInteractionRouter([
+      { layerId: 'overlay', interactive: false, passThrough: true, backendIds: ['overlay-pick'] }
+    ]);
+    passThroughRouter.registerBackend(overlayBackend, 'overlay');
+    passThroughRouter.registerBackend(contentBackend, 'content');
+    const passThrough = passThroughRouter.pickWithDiagnostics({ x: 10, y: 10 }, {
+      layerOrder: ['overlay', 'content']
+    });
+    expect(passThrough.pick?.target.objectId).toBe('content-point');
+    expect(passThrough.diagnostics.map((diagnostic) => diagnostic.code)).toContain('pick.layer-pass-through');
+
+    const blockingRouter = new GraphInteractionRouter([
+      { layerId: 'overlay', interactive: false, passThrough: false, backendIds: ['overlay-pick'] }
+    ]);
+    blockingRouter.registerBackend(overlayBackend, 'overlay');
+    blockingRouter.registerBackend(contentBackend, 'content');
+    const blocked = blockingRouter.pickWithDiagnostics({ x: 10, y: 10 }, {
+      layerOrder: ['overlay', 'content']
+    });
+    expect(blocked.pick).toBeNull();
+    expect(blocked.diagnostics[0]).toMatchObject({
+      code: 'pick.layer-blocked',
+      severity: 'warning',
+      target: { scope: 'backend-layer', layerId: 'overlay' }
+    });
+  });
+
   it('creates core-first drag patches before backend redraw', () => {
     const pointPatch = createGraphDragPatch(createPointNode('A', 0, 0), {
       delta: { dimension: '2d', dx: 3, dy: -2 }
@@ -732,6 +846,45 @@ describe('renderer-neutral core runtime contracts', () => {
     });
     expect(unsupported.ok).toBe(false);
     expect(unsupported.diagnostics[0].code).toBe('drag.unsupported-object');
+  });
+
+  it('explains drag success, constrained clamps, and relation-driven failures', () => {
+    const success = resolveGraphDragOperation(createPointNode('free-point', 0, 0), {
+      delta: { dimension: '2d', dx: 2, dy: -1 }
+    });
+    expect(success.ok).toBe(true);
+    expect(success.value).toMatchObject({
+      status: 'success',
+      explanation: { code: 'drag.success', severity: 'info' },
+      patch: { payload: { objectType: 'point', position: { dimension: '2d', x: 2, y: -1 } } }
+    });
+
+    const constrained = resolveGraphDragOperation({
+      ...createPointNode('bounded-point', 4, 4),
+      meta: { dragBounds: { dimension: '2d', minX: 0, maxX: 5, minY: 0, maxY: 5 } }
+    }, {
+      delta: { dimension: '2d', dx: 4, dy: 4 }
+    });
+    expect(constrained.ok).toBe(true);
+    expect(constrained.value).toMatchObject({
+      status: 'clamped',
+      explanation: { code: 'drag.clamped-to-bounds', severity: 'warning' },
+      patch: { payload: { objectType: 'point', position: { dimension: '2d', x: 5, y: 5 } } }
+    });
+
+    const relationDriven = resolveGraphDragOperation({
+      ...createPointNode('midpoint-ab', 1, 1),
+      dependencies: ['A', 'B'],
+      meta: { relationDriven: true }
+    }, {
+      delta: { dimension: '2d', dx: 1, dy: 1 }
+    });
+    expect(relationDriven.ok).toBe(false);
+    expect(relationDriven.diagnostics[0]).toMatchObject({
+      code: 'drag.relation-driven-object',
+      severity: 'error',
+      target: { scope: 'object', objectId: 'midpoint-ab' }
+    });
   });
 
   it('executes common capabilities against core scene before backend redraw', () => {

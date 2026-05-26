@@ -67,6 +67,14 @@ This is the important architectural shift requested by the project owner: the ol
 - `applyDragToObject()` creates a core drag patch, updates the scene, then calls backend `update()`.
 - `GraphInteractionRouter` can be used with the runtime backend for UI pass-through and pick/drag routing.
 
+Interaction routing is a core contract, not a backend convention:
+
+- `GraphPickOptions.hitGroups` lets callers ask for stable hit categories such as `vertex`, `edge`, `label`, or a backend-neutral object family. Backends may compute the hit internally, but returned `GraphPickResult` data must stay serializable and include normalized `hitGroup`/`meta.hitGroups` when known.
+- `GraphInteractionRouter.pickWithDiagnostics()` reports typed routing decisions: UI ownership, layer pass-through/blocking, backend misses, hit-group filtering, and target resolution. The older `pick()` API remains as a convenience wrapper that returns only the resolved pick.
+- Layer pass-through is tested through policy, not DOM behavior. Non-interactive pass-through layers allow lower layers to pick; non-interactive blocking layers stop routing and return a `pick.layer-blocked` diagnostic.
+- `resolveGraphDragOperation()` explains core drag outcomes before backend redraw. Free objects return `success`, bounded objects may return `clamped` with a warning diagnostic, and relation-driven objects fail with `drag.relation-driven-object` so they can be recomputed from dependency state instead of moved directly.
+- `createGraphRelationInvalidationPlan()` gives renderer-free invalidation output: changed/removed seeds, dirty object ids, relation ids, and deterministic recompute order.
+
 The playground Canvas2D switch now uses this runtime instead of directly writing nodes into the backend. JSXGraph and Canvas2D therefore render from the same command list, including core geometry constructions such as `Angle(...)`, but Canvas2D proves the path through core IR/runtime rather than JSXGraph math objects.
 
 ## Official docs checked

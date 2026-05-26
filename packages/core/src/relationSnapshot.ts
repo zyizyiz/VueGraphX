@@ -38,6 +38,29 @@ export interface GraphSceneRelationSnapshot {
   relations: GraphRelationSnapshotEntry[];
 }
 
+export interface GraphRelationInvalidationInput {
+  changedObjectIds?: readonly string[];
+  removedObjectIds?: readonly string[];
+}
+
+export type GraphRelationInvalidationReason = 'changed' | 'removed' | 'dependency';
+
+export interface GraphRelationInvalidationEntry {
+  objectId: string;
+  reason: GraphRelationInvalidationReason;
+  sourceObjectId?: string;
+  dependencyChain: string[];
+}
+
+export interface GraphRelationInvalidationPlan {
+  changedObjectIds: string[];
+  removedObjectIds: string[];
+  dirtyObjectIds: string[];
+  recomputeObjectIds: string[];
+  relationIds: string[];
+  entries: GraphRelationInvalidationEntry[];
+}
+
 export const createGraphRelationSnapshot = (
   objects: readonly GraphObjectNode[]
 ): GraphOperationResult<GraphSceneRelationSnapshot> => {
@@ -87,6 +110,82 @@ export const createGraphRelationSnapshot = (
   };
   const validation = validateGraphRelationSnapshot(snapshot, objects);
   return validation.ok && validation.value ? okResult(validation.value) : validation;
+};
+
+export const createGraphRelationInvalidationPlan = (
+  objects: readonly GraphObjectNode[],
+  input: GraphRelationInvalidationInput
+): GraphOperationResult<GraphRelationInvalidationPlan> => {
+  const changedObjectIds = uniqueStrings(input.changedObjectIds ?? []);
+  const removedObjectIds = uniqueStrings(input.removedObjectIds ?? []);
+  const objectMap = new Map(objects.map((object) => [object.id, object]));
+  const diagnostics: GraphRelationSnapshotDiagnostic[] = [];
+
+  for (const objectId of changedObjectIds) {
+    if (!objectMap.has(objectId)) diagnostics.push(missingObjectDiagnostic(objectId));
+  }
+  if (diagnostics.length > 0) return { ok: false, diagnostics };
+
+  const changedSet = new Set(changedObjectIds);
+  const removedSet = new Set(removedObjectIds);
+  const dirtySet = new Set<string>([...changedObjectIds, ...removedObjectIds]);
+  const entries: GraphRelationInvalidationEntry[] = [
+    ...changedObjectIds.map((objectId) => ({
+      objectId,
+      reason: 'changed' as const,
+      dependencyChain: [objectId]
+    })),
+    ...removedObjectIds.map((objectId) => ({
+      objectId,
+      reason: 'removed' as const,
+      dependencyChain: [objectId]
+    }))
+  ];
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const object of objects) {
+      if (dirtySet.has(object.id)) continue;
+      const sourceObjectId = (object.dependencies ?? []).find((dependencyId) => dirtySet.has(dependencyId));
+      if (!sourceObjectId) continue;
+      dirtySet.add(object.id);
+      entries.push({
+        objectId: object.id,
+        reason: 'dependency',
+        sourceObjectId,
+        dependencyChain: [sourceObjectId, object.id]
+      });
+      changed = true;
+    }
+  }
+
+  const relationIds = new Set<string>();
+  for (const object of objects) {
+    if (!dirtySet.has(object.id)) continue;
+    if (object.kind === 'relation') relationIds.add(object.id);
+    for (const relationId of object.relations ?? []) {
+      relationIds.add(relationId);
+    }
+  }
+
+  const dependentDirtyObjectIds = objects
+    .map((object) => object.id)
+    .filter((objectId) => dirtySet.has(objectId) && !changedSet.has(objectId) && !removedSet.has(objectId));
+  const dirtyObjectIds = [
+    ...changedObjectIds,
+    ...removedObjectIds,
+    ...dependentDirtyObjectIds
+  ];
+
+  return okResult({
+    changedObjectIds,
+    removedObjectIds,
+    dirtyObjectIds,
+    recomputeObjectIds: dependentDirtyObjectIds,
+    relationIds: [...relationIds],
+    entries
+  });
 };
 
 export const validateGraphRelationSnapshot = (
@@ -233,6 +332,8 @@ const readStringArray = (
   }
   return [...value];
 };
+
+const uniqueStrings = (values: readonly string[]): string[] => [...new Set(values.filter(isNonEmptyString))];
 
 const asRecord = (value: unknown): Record<string, unknown> | null => (
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null

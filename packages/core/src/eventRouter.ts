@@ -3,6 +3,7 @@ import {
   type GraphClientPoint,
   type GraphDragSession,
   type GraphLayerId,
+  type GraphOperationDiagnostic,
   type GraphPickOptions,
   type GraphPickResult,
   type GraphPointerSession,
@@ -29,6 +30,23 @@ export interface GraphPointerRouteInput {
 export interface GraphPointerRouteResult {
   pick: GraphPickResult | null;
   session: GraphPointerSession;
+}
+
+export type GraphPickDiagnosticCode =
+  | 'pick.ui-handled'
+  | 'pick.layer-pass-through'
+  | 'pick.layer-blocked'
+  | 'pick.backend-miss'
+  | 'pick.hit-group-filtered'
+  | 'pick.target-found';
+
+export interface GraphPickDiagnostic extends GraphOperationDiagnostic {
+  code: GraphPickDiagnosticCode;
+}
+
+export interface GraphPickRouteResult {
+  pick: GraphPickResult | null;
+  diagnostics: GraphPickDiagnostic[];
 }
 
 const DEFAULT_LAYER_POLICIES: readonly GraphLayerPolicy[] = [
@@ -71,26 +89,58 @@ export class GraphInteractionRouter {
   }
 
   public pick(clientPoint: GraphClientPoint, input: Omit<GraphPointerRouteInput, 'pointerId' | 'clientPoint'> = {}): GraphPickResult | null {
-    if (input.uiHandled) return null;
+    return this.pickWithDiagnostics(clientPoint, input).pick;
+  }
+
+  public pickWithDiagnostics(
+    clientPoint: GraphClientPoint,
+    input: Omit<GraphPointerRouteInput, 'pointerId' | 'clientPoint'> = {}
+  ): GraphPickRouteResult {
+    const diagnostics: GraphPickDiagnostic[] = [];
+    if (input.uiHandled) {
+      diagnostics.push(createPickDiagnostic('pick.ui-handled', 'Pointer was already handled by the UI layer.', 'info', 'ui'));
+      return { pick: null, diagnostics };
+    }
 
     const layerOrder = input.layerOrder ?? DEFAULT_GRAPH_LAYER_ORDER;
     for (const layerId of layerOrder) {
       const policy = this.policies.get(layerId) ?? { layerId, interactive: true, passThrough: false };
-      if (!policy.interactive && policy.passThrough) continue;
-      if (!policy.interactive) return null;
+      if (!policy.interactive) {
+        diagnostics.push(createPickDiagnostic(
+          policy.passThrough ? 'pick.layer-pass-through' : 'pick.layer-blocked',
+          policy.passThrough
+            ? `Graph layer ${layerId} is non-interactive and passes picking to lower layers.`
+            : `Graph layer ${layerId} blocks picking for lower layers.`,
+          policy.passThrough ? 'info' : 'warning',
+          layerId
+        ));
+        if (policy.passThrough) continue;
+        return { pick: null, diagnostics };
+      }
 
       const backends = this.getBackendsForLayer(layerId, policy.backendIds);
       for (const backend of backends) {
         const pick = backend.pick(clientPoint, { ...input.pickOptions, layerOrder: [layerId] });
-        if (pick) return pick;
+        if (!pick) {
+          diagnostics.push(createPickDiagnostic('pick.backend-miss', `Backend ${backend.id} did not report a hit on layer ${layerId}.`, 'info', layerId, backend.id));
+          continue;
+        }
+        const normalizedPick = normalizePickHitGroup(pick);
+        if (!matchesRequestedHitGroup(normalizedPick, input.pickOptions?.hitGroups)) {
+          diagnostics.push(createPickDiagnostic('pick.hit-group-filtered', `Backend ${backend.id} hit ${normalizedPick.hitGroup ?? 'an ungrouped target'}, which does not match the requested hit groups.`, 'info', layerId, backend.id));
+          continue;
+        }
+        diagnostics.push(createPickDiagnostic('pick.target-found', `Backend ${backend.id} resolved a target on layer ${layerId}.`, 'info', layerId, backend.id));
+        return { pick: normalizedPick, diagnostics };
       }
 
       if (!policy.passThrough) {
         continue;
       }
+      diagnostics.push(createPickDiagnostic('pick.layer-pass-through', `Graph layer ${layerId} had no matching target and passes picking to lower layers.`, 'info', layerId));
     }
 
-    return null;
+    return { pick: null, diagnostics };
   }
 
   public pointerDown(input: GraphPointerRouteInput): GraphPointerRouteResult {
@@ -183,3 +233,45 @@ export class GraphInteractionRouter {
 }
 
 const cloneTarget = (target: GraphRuntimeTargetRef | null): GraphRuntimeTargetRef | null => target ? { ...target } : null;
+
+const createPickDiagnostic = (
+  code: GraphPickDiagnosticCode,
+  message: string,
+  severity: GraphPickDiagnostic['severity'],
+  layerId: GraphLayerId,
+  backendId?: string
+): GraphPickDiagnostic => ({
+  code,
+  message,
+  severity,
+  target: { scope: 'backend-layer', layerId, backendId }
+});
+
+const normalizePickHitGroup = (pick: GraphPickResult): GraphPickResult => {
+  const hitGroups = readPickHitGroups(pick);
+  return {
+    ...pick,
+    target: { ...pick.target },
+    clientPoint: { ...pick.clientPoint },
+    worldPoint: pick.worldPoint ? { ...pick.worldPoint } : undefined,
+    hitGroup: pick.hitGroup ?? hitGroups[0],
+    meta: {
+      ...(pick.meta ?? {}),
+      ...(hitGroups.length > 0 ? { hitGroups } : {})
+    }
+  };
+};
+
+const matchesRequestedHitGroup = (pick: GraphPickResult, requestedGroups?: readonly string[]): boolean => {
+  if (!requestedGroups || requestedGroups.length === 0) return true;
+  return readPickHitGroups(pick).some((group) => requestedGroups.includes(group));
+};
+
+const readPickHitGroups = (pick: GraphPickResult): string[] => {
+  const fromMeta = Array.isArray(pick.meta?.hitGroups) ? pick.meta.hitGroups : [pick.meta?.hitGroup];
+  const groups = [
+    pick.hitGroup,
+    ...fromMeta
+  ].filter((group): group is string => typeof group === 'string' && group.length > 0);
+  return groups.length > 0 ? [...new Set(groups)] : [pick.target.scope];
+};

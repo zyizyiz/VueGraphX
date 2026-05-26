@@ -89,8 +89,19 @@ export class MemoryGraphBackend implements GraphRenderBackend {
     for (const node of candidates) {
       if (node.renderHints?.visible === false) continue;
       if (allowedLayers && !allowedLayers.has(node.layerId ?? 'content')) continue;
+      const hitGroups = readNodeHitGroups(node);
+      if (options.hitGroups && !hitGroups.some((group) => options.hitGroups?.includes(group))) continue;
       const result = pickGraphObjectNode(node, point, this.id, options.tolerancePx ?? 8);
-      if (result) return result;
+      if (result) {
+        return {
+          ...result,
+          hitGroup: hitGroups[0],
+          meta: {
+            ...(result.meta ?? {}),
+            hitGroups
+          }
+        };
+      }
     }
     return null;
   }
@@ -127,5 +138,22 @@ export class MemoryGraphBackend implements GraphRenderBackend {
     return [...this.nodes.values()].map((node) => createGraphObjectNode(node));
   }
 }
+
+const readNodeHitGroups = (node: GraphObjectNode): string[] => {
+  const meta = node.meta as Record<string, unknown> | undefined;
+  const renderHints = node.renderHints as Record<string, unknown> | undefined;
+  const groups = [
+    ...readStringList(meta?.hitGroups),
+    ...readStringList(meta?.hitGroup),
+    ...readStringList(renderHints?.hitGroups),
+    ...readStringList(renderHints?.hitGroup)
+  ];
+  return groups.length > 0 ? [...new Set(groups)] : [node.type, node.kind];
+};
+
+const readStringList = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+  return typeof value === 'string' && value.length > 0 ? [value] : [];
+};
 
 export const createMemoryGraphBackend = (options?: MemoryGraphBackendOptions): MemoryGraphBackend => new MemoryGraphBackend(options);
