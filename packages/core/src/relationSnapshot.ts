@@ -172,17 +172,18 @@ export const createGraphRelationInvalidationPlan = (
   const dependentDirtyObjectIds = objects
     .map((object) => object.id)
     .filter((objectId) => dirtySet.has(objectId) && !changedSet.has(objectId) && !removedSet.has(objectId));
+  const recomputeObjectIds = orderByDependencyTopology(dependentDirtyObjectIds, objectMap);
   const dirtyObjectIds = [
     ...changedObjectIds,
     ...removedObjectIds,
-    ...dependentDirtyObjectIds
+    ...recomputeObjectIds
   ];
 
   return okResult({
     changedObjectIds,
     removedObjectIds,
     dirtyObjectIds,
-    recomputeObjectIds: dependentDirtyObjectIds,
+    recomputeObjectIds,
     relationIds: [...relationIds],
     entries
   });
@@ -334,6 +335,43 @@ const readStringArray = (
 };
 
 const uniqueStrings = (values: readonly string[]): string[] => [...new Set(values.filter(isNonEmptyString))];
+
+const orderByDependencyTopology = (
+  objectIds: readonly string[],
+  objectMap: ReadonlyMap<string, GraphObjectNode>
+): string[] => {
+  const candidateSet = new Set(objectIds);
+  const ordered: string[] = [];
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (objectId: string): void => {
+    if (visited.has(objectId)) return;
+    if (visiting.has(objectId)) return;
+
+    visiting.add(objectId);
+    const object = objectMap.get(objectId);
+    const dependencyIds = [...(object?.dependencies ?? [])]
+      .filter((dependencyId) => candidateSet.has(dependencyId))
+      .sort(compareStringIds);
+    for (const dependencyId of dependencyIds) {
+      visit(dependencyId);
+    }
+    visiting.delete(objectId);
+    visited.add(objectId);
+    ordered.push(objectId);
+  };
+
+  for (const objectId of [...objectIds].sort(compareStringIds)) {
+    visit(objectId);
+  }
+
+  return ordered;
+};
+
+const compareStringIds = (left: string, right: string): number => (
+  left < right ? -1 : left > right ? 1 : 0
+);
 
 const asRecord = (value: unknown): Record<string, unknown> | null => (
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null

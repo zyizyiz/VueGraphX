@@ -397,6 +397,34 @@ describe('renderer-neutral core runtime contracts', () => {
     });
   });
 
+  it('keeps relation recompute order dependency-first for unordered multi-level inputs', () => {
+    const pointA = createPointNode('A', 0, 0);
+    const pointB = createGraphSceneObjectIrNode({
+      id: 'B',
+      objectType: 'point',
+      payload: { objectType: 'point', position: { dimension: '2d', x: 1, y: 1 } },
+      dependencies: ['A']
+    });
+    const pointC = createGraphSceneObjectIrNode({
+      id: 'C',
+      objectType: 'point',
+      payload: { objectType: 'point', position: { dimension: '2d', x: 2, y: 2 } },
+      dependencies: ['B']
+    });
+
+    expect(pointB.ok).toBe(true);
+    expect(pointC.ok).toBe(true);
+
+    const plan = createGraphRelationInvalidationPlan(
+      [pointC.value!, pointA, pointB.value!],
+      { changedObjectIds: ['A'] }
+    );
+
+    expect(plan.ok).toBe(true);
+    expect(plan.value?.recomputeObjectIds).toEqual(['B', 'C']);
+    expect(plan.value?.dirtyObjectIds).toEqual(['A', 'B', 'C']);
+  });
+
   it('returns typed diagnostics for missing and invalid relation snapshots', () => {
     const missingDependency = new GraphSceneStore('missing-dependency');
     expect(missingDependency.addObject({
