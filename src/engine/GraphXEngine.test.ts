@@ -109,6 +109,27 @@ describe('GraphXEngine relation assist options', () => {
   });
 });
 
+describe('GraphXEngine command backend routing', () => {
+  it('keeps function expressions on the legacy JSXGraph renderer so shared math scope is preserved', () => {
+    const fakeEngine = {
+      boardMgr: {
+        mode: '2d',
+        board: { create: vi.fn() }
+      }
+    };
+
+    const canRender = GraphXEngine.prototype['canRenderCoreNodeWithJsxGraphBackend'].call(fakeEngine as any, {
+      id: 'h',
+      kind: 'command',
+      type: 'function',
+      payload: { expression: 'abs(x) - 1', variable: 'x' },
+      layerId: 'content'
+    });
+
+    expect(canRender).toBe(false);
+  });
+});
+
 describe('GraphXEngine board option cloning', () => {
   it('does not dispose backend-rendered command handles when setMode is a no-op', () => {
     const destroy = vi.fn();

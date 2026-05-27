@@ -126,11 +126,40 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
   if (!payload) return null;
 
   if (node.type === 'point') {
-    const point = readPoint2D(payload.point);
+    const point = readPoint2D(payload.point) ?? readPoint2D(payload.position);
     return point ? {
       objectType: 'point',
       payload: { objectType: 'point', position: toWorldPoint2D(point) }
     } : null;
+  }
+
+  if (node.type === 'derivative') {
+    return typeof payload.expression === 'string' ? {
+      objectType: 'function',
+      payload: {
+        objectType: 'function',
+        expression: payload.expression,
+        variable: typeof payload.variable === 'string' ? payload.variable : 'x',
+        domain: readLegacyDomain(payload.domain),
+        parameters: readNumberRecord(payload.parameters)
+      }
+    } : null;
+  }
+
+  if (node.type === 'angle') {
+    return Array.isArray(node.dependencies) && node.dependencies.length >= 3 ? {
+      objectType: 'measurement',
+      payload: {
+        objectType: 'measurement',
+        measurementKind: 'angle',
+        targets: node.dependencies.slice(0, 3).map((objectId) => ({ objectId })),
+        expression: typeof payload.degrees === 'number' ? `${payload.degrees}deg` : undefined
+      }
+    } : null;
+  }
+
+  if (node.type === 'arc' || node.type === 'sector' || node.type === 'semicircle') {
+    return readLegacyCircularGeometryIrInput(payload);
   }
 
   if (node.type === 'line' || node.type === 'segment' || node.type === 'ray') {
@@ -238,6 +267,25 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
   }
 
   return null;
+};
+
+const readLegacyCircularGeometryIrInput = (payload: Record<string, unknown>): { objectType: string; payload: unknown } | null => {
+  const geometry = asRecord(payload.geometry);
+  const center = readPoint2D(geometry?.center);
+  const radius = readFiniteNumber(geometry?.radius);
+  return center && radius !== null ? {
+    objectType: 'conic',
+    payload: {
+      objectType: 'conic',
+      conicKind: 'circle',
+      definition: {
+        mode: 'center-radii',
+        center: toCoordinateSource(center),
+        radiusX: radius,
+        radiusY: radius
+      }
+    }
+  } : null;
 };
 
 const readLegacyLinearObjectIrInput = (

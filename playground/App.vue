@@ -560,14 +560,14 @@ const isSidebarBottomResizing = ref(false);
 
 // 当前模式的 Demo 列表
 const currentDemos = computed(() => allDemos[store.activeMode]);
-const supportsCanvasRenderer = computed(() => store.activeMode === '2d' || store.activeMode === 'geometry');
-const supportsBabylonRenderer = computed(() => store.activeMode === '3d');
+const supportsCanvasRenderer = computed(() => store.activeMode !== 'dual-layer');
+const supportsBabylonRenderer = computed(() => store.activeMode !== 'dual-layer');
 const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'canvas2d' && supportsCanvasRenderer.value);
 const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
 const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
 const rendererBackendHint = computed(() => {
   if (isBabylonRendererActive.value) return babylonRuntimeError.value || '同一份指令已切到 Babylon core 立体后端';
-  if (store.activeMode === '3d') return '3D 默认由 JSXGraph view3d 承载，可切 Babylon Core 渲染 Solid(...)';
+  if (store.activeMode === '3d') return '3D 默认由 JSXGraph view3d 承载，也可切 Canvas2D Core / Babylon Core 做后端兼容验证';
   if (store.activeMode === 'dual-layer') return '双层模式固定使用 JSXGraph 双实例';
   return isCanvasRendererActive.value ? '同一份指令已切到 core Canvas2D 后端' : '兼容 JSXGraph 渲染';
 });
@@ -879,7 +879,7 @@ const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolea
   if (store.activeMode === mode) return;
   store.activeMode = mode;
   activeDemo.value = -1;
-  if (mode === '3d' || mode === 'dual-layer') {
+  if (mode === 'dual-layer') {
     activeRendererBackend.value = 'jsxgraph';
   } else if (!isRendererBackendSupported(activeRendererBackend.value)) {
     activeRendererBackend.value = 'jsxgraph';
@@ -967,13 +967,12 @@ const syncAllToEngine = () => {
     if (!backend || !runtime) return;
     runtime.clear();
     const result = buildPlaygroundCanvasScene(store.commands);
-    const failedCommandIds = new Set(result.diagnostics.map((diagnostic) => diagnostic.commandId));
     store.commands.forEach((command) => {
       const diagnostic = result.diagnostics.find((item) => item.commandId === command.id);
       store.setCommandError(command.id, diagnostic?.message ?? '');
     });
     for (const node of result.nodes) runtime.addObject(node);
-    if (failedCommandIds.size === 0) backend.flush();
+    backend.flush();
     return;
   }
 

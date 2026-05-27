@@ -49,6 +49,7 @@
     "nerdamer": "^1.1.13"
   },
   "devDependencies": {
+    "@babylonjs/core": "^9.9.1",
     "@types/node": "^20.12.7",
     "@vitejs/plugin-vue": "^5.0.4",
     "autoprefixer": "^10.4.19",

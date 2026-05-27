@@ -1692,7 +1692,11 @@ export class GraphXEngine {
     }
 
     if (capabilityId === 'math.object.move' && object.type === 'point') {
-      const point = (object.payload as { point?: { x?: unknown; y?: unknown } } | undefined)?.point;
+      const payload = object.payload as {
+        point?: { x?: unknown; y?: unknown };
+        position?: { dimension?: unknown; x?: unknown; y?: unknown };
+      } | undefined;
+      const point = payload?.point ?? (payload?.position?.dimension === '2d' ? payload.position : undefined);
       if (typeof point?.x === 'number' && Number.isFinite(point.x) && typeof point.y === 'number' && Number.isFinite(point.y)) {
         this.executeCommand(commandId, `${object.id} = (${formatCoreNumber(point.x)}, ${formatCoreNumber(point.y)})`, command.color ?? '#0ea5e9', command.options);
       }
@@ -1750,8 +1754,6 @@ export class GraphXEngine {
       'perpendicular-line',
       'parallel-line',
       'tangent',
-      'function',
-      'derivative',
       'intersection',
       'angle',
       'translated',

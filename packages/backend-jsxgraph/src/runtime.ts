@@ -259,8 +259,9 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
       return normalizeElements(board.create('text', [payload.point.x, payload.point.y, payload.text], attrs));
     }
 
-    if (payload?.point && isPoint2D(payload.point)) {
-      return normalizeElements(board.create('point', [[payload.point.x, payload.point.y]], attrs));
+    const payloadPoint = readPayloadPoint2D(payload);
+    if (payloadPoint) {
+      return normalizeElements(board.create('point', [payloadPoint.x, payloadPoint.y], attrs));
     }
 
     if ((node.type === 'function' || node.type === 'derivative') && typeof payload?.expression === 'string') {
@@ -359,6 +360,12 @@ const isPoint2D = (value: unknown): value is Point2D => {
   const record = asRecord(value);
   return typeof record?.x === 'number' && Number.isFinite(record.x) && typeof record.y === 'number' && Number.isFinite(record.y);
 };
+const readPayloadPoint2D = (payload: Record<string, unknown> | null): Point2D | null => {
+  if (isPoint2D(payload?.point)) return payload.point;
+  const position = asRecord(payload?.position);
+  if (position?.dimension === '2d' && isPoint2D(position)) return { x: position.x, y: position.y };
+  return null;
+};
 
 const add = (left: Point2D, right: Point2D): Point2D => ({ x: left.x + right.x, y: left.y + right.y });
 
@@ -374,7 +381,8 @@ const directionForNode = (node: GraphObjectNode | null): Point2D | null => {
 const distanceToNode = (node: GraphObjectNode, point: Point2D): number | null => {
   const payload = asRecord(node.payload);
   const geometry = asRecord(payload?.geometry);
-  if (isPoint2D(payload?.point)) return Math.hypot(payload.point.x - point.x, payload.point.y - point.y);
+  const payloadPoint = readPayloadPoint2D(payload);
+  if (payloadPoint) return Math.hypot(payloadPoint.x - point.x, payloadPoint.y - point.y);
   if (geometry?.kind === 'circle' && isPoint2D(geometry.center) && typeof geometry.radius === 'number') {
     return Math.abs(Math.hypot(point.x - geometry.center.x, point.y - geometry.center.y) - geometry.radius);
   }

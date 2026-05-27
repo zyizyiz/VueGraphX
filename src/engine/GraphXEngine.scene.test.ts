@@ -297,7 +297,7 @@ describe('GraphXEngine scene document support', () => {
     expect(runtimeScene.scene?.objects.map((node) => node.id)).toEqual(['A', 'B', 'segment-3']);
     expect(runtimeScene.scene?.objects.find((node) => node.id === 'A')).toMatchObject({
       type: 'point',
-      payload: { point: { x: 1, y: 2 } },
+      payload: { objectType: 'point', position: { dimension: '2d', x: 1, y: 2 }, schemaVersion: 1 },
       renderHints: { strokeColor: '#f43f5e', strokeWidth: 3 }
     });
     expect(JSON.stringify(runtimeScene.scene)).not.toMatch(/JXG|GeometryElement|Board/);
@@ -305,10 +305,10 @@ describe('GraphXEngine scene document support', () => {
 
     engine.removeCommand('cmd_a');
     expect(engine.getCommandObjectNodes('cmd_a')).toEqual([]);
-    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.id)).toEqual(['B', 'segment-3']);
+    expect(engine.getRuntimeSceneSnapshot().objects.map((node) => node.id)).toEqual(['B', 'segment-3']);
   });
 
-  it('renders supported command IR through the JSXGraph backend adapter instead of the legacy renderer', () => {
+  it('keeps function command DSL on the legacy JSXGraph renderer while exporting M1 function IR', () => {
     const engine = createFakeEngine();
     const created: Array<{ type: string; args: unknown[] }> = [];
     const board = (engine as any).boardMgr.board;
@@ -322,11 +322,9 @@ describe('GraphXEngine scene document support', () => {
     engine.executeCommand('cmd_f', 'f = Function("x^2", -2, 2)', '#0ea5e9');
     engine.executeCommand('cmd_df', 'df = Derivative(f)', '#f43f5e');
 
-    expect(created.map((entry) => entry.type)).toEqual(['functiongraph', 'functiongraph']);
-    expect((created[0].args[0] as (x: number) => number)(3)).toBe(9);
-    expect((created[1].args[0] as (x: number) => number)(3)).toBe(6);
-    expect((engine as any).renderer.render).not.toHaveBeenCalled();
-    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual(['function', 'derivative']);
+    expect(created).toEqual([]);
+    expect((engine as any).renderer.render).toHaveBeenCalledTimes(2);
+    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual(['function', 'function']);
   });
 
   it('routes angle command DSL through the JSXGraph backend adapter', () => {
@@ -348,7 +346,7 @@ describe('GraphXEngine scene document support', () => {
     expect(created.map((entry) => entry.type)).toEqual(['point', 'point', 'point', 'angle']);
     expect(created[3].args).toEqual([[2, 0], [0, 0], [0, 2]]);
     expect((engine as any).renderer.render).not.toHaveBeenCalled();
-    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual(['point', 'point', 'point', 'angle']);
+    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual(['point', 'point', 'point', 'measurement']);
   });
 
   it('routes arc, sector, semicircle, polyline, and text DSL through the JSXGraph backend adapter', () => {
@@ -403,14 +401,14 @@ describe('GraphXEngine scene document support', () => {
       'point',
       'point',
       'point',
-      'arc',
-      'sector',
-      'semicircle',
-      'polyline',
+      'conic',
+      'conic',
+      'conic',
       'polygon',
       'polygon',
-      'circle',
-      'circle',
+      'polygon',
+      'conic',
+      'conic',
       'point',
       'point',
       'text'
@@ -448,7 +446,9 @@ describe('GraphXEngine scene document support', () => {
     }, { delta: { dimension: '2d', dx: 3, dy: -1 } })).toBe(true);
 
     expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.payload).toEqual({
-      point: { x: 4, y: 1 }
+      objectType: 'point',
+      position: { dimension: '2d', x: 4, y: 1 },
+      schemaVersion: 1
     });
     expect(engine.exportScene().scene?.commands).toEqual([
       { id: 'cmd_a', expression: 'A = (4, 1)', color: '#0ea5e9', options: undefined }
