@@ -7,6 +7,7 @@ export interface DemoItem {
   title: string;
   desc: string;
   commands: (string | { expr: string; options?: Record<string, unknown> })[];
+  compatibleBackends?: PlaygroundRenderBackend[];
 }
 
 export interface PlaygroundBackendCapability {

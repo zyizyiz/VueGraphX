@@ -428,10 +428,14 @@ const sidebarBottomHeight = ref(420);
 const sidebarBottomMaxHeight = ref(920);
 const isSidebarBottomResizing = ref(false);
 
-// 当前模式的 Demo 列表
-const currentDemos = computed(() => allDemos[store.activeMode]);
-const supportsCanvasRenderer = computed(() => store.activeMode !== 'dual-layer');
-const supportsBabylonRenderer = computed(() => store.activeMode !== 'dual-layer');
+// 当前模式且当前后端可用的 Demo 列表
+const currentDemos = computed(() => (
+  allDemos[store.activeMode].filter((demo) => (
+    !demo.compatibleBackends || demo.compatibleBackends.includes(activeRendererBackend.value)
+  ))
+));
+const supportsCanvasRenderer = computed(() => store.activeMode === '2d' || store.activeMode === 'geometry');
+const supportsBabylonRenderer = computed(() => store.activeMode === '3d');
 const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'canvas2d' && supportsCanvasRenderer.value);
 const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
 const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
@@ -673,11 +677,23 @@ const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
 };
 
 const loadBabylonNamespace = async (): Promise<BabylonNamespaceLike> => {
-  // Keep the specifier as a literal so Vite can rewrite/pre-bundle the bare
-  // package import. Hiding it behind `new Function` leaves the browser with a
-  // native `import('@babylonjs/core')`, which cannot resolve bare npm package
-  // specifiers at runtime.
-  return import('@babylonjs/core') as unknown as Promise<BabylonNamespaceLike>;
+  const [engineModule, sceneModule, vectorModule, cameraModule, lightModule, meshBuilderModule] = await Promise.all([
+    import('@babylonjs/core/Engines/engine'),
+    import('@babylonjs/core/scene'),
+    import('@babylonjs/core/Maths/math.vector'),
+    import('@babylonjs/core/Cameras/arcRotateCamera'),
+    import('@babylonjs/core/Lights/hemisphericLight'),
+    import('@babylonjs/core/Meshes/meshBuilder')
+  ]);
+
+  return {
+    Engine: engineModule.Engine,
+    Scene: sceneModule.Scene,
+    Vector3: vectorModule.Vector3,
+    ArcRotateCamera: cameraModule.ArcRotateCamera,
+    HemisphericLight: lightModule.HemisphericLight,
+    MeshBuilder: meshBuilderModule.MeshBuilder
+  } as unknown as BabylonNamespaceLike;
 };
 
 const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => {
@@ -774,7 +790,7 @@ const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolea
   destroyPrimaryRenderer();
 
   await waitForUiPaint();
-  initEngines(options);
+  await initEngines(options);
 };
 
 const switchRendererBackend = async (backend: PlaygroundRenderBackend) => {
@@ -785,7 +801,7 @@ const switchRendererBackend = async (backend: PlaygroundRenderBackend) => {
   stopResizeObserver();
   destroyPrimaryRenderer();
   await waitForUiPaint();
-  initEngines({ syncCommands: true });
+  await initEngines({ syncCommands: true });
 };
 
 const handleRendererBackendChange = (event: Event) => {
