@@ -369,6 +369,7 @@ interface DemoItem {
   title: string;
   desc: string;
   commands: (string | { expr: string, options?: any })[];
+  compatibleBackends?: PlaygroundRenderBackend[];
 }
 
 const allDemos: Record<PlaygroundMode, DemoItem[]> = {
@@ -388,7 +389,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       emoji: '📐',
       title: '切线演示',
       desc: '曲线在某点处的切线作图',
-      commands: ['f(x) = x^2', 'A = (1, 1)', 'Tangent(A, f)']
+      commands: ['f(x) = x^2', 'A = (1, 1)', 't(x) = 2*x - 1']
     },
     {
       emoji: '❤️',
@@ -423,6 +424,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       emoji: '🧊',
       title: 'Babylon 立体后端',
       desc: '切换到 Babylon Core 后端后渲染同一份 Solid 指令',
+      compatibleBackends: ['babylon'],
       commands: [
         'cube = Solid("cube", size=2, x=-2)',
         'sphere = Solid("sphere", radius=1.2, x=1.6)',
@@ -433,6 +435,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       emoji: '🌊',
       title: '波浪曲面',
       desc: '二元函数 sin(x)cos(y) 的曲面',
+      compatibleBackends: ['jsxgraph'],
       commands: [
         'z = sin(x)*cos(y)'
       ]
@@ -441,6 +444,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       emoji: '🏔️',
       title: '高斯曲面',
       desc: '二维高斯正态分布钟形曲面',
+      compatibleBackends: ['jsxgraph'],
       commands: [
         'z = exp(-(x^2 + y^2)/4)'
       ]
@@ -449,6 +453,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       emoji: '🌀',
       title: '马鞍面',
       desc: '经典双曲抛物面 z = x²-y²',
+      compatibleBackends: ['jsxgraph'],
       commands: [
         'z = x^2 - y^2'
       ]
@@ -457,6 +462,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       emoji: '🏖️',
       title: '涟漪曲面',
       desc: '以原点为中心的衰减波',
+      compatibleBackends: ['jsxgraph'],
       commands: [
         'z = sin(sqrt(x^2 + y^2)) / (sqrt(x^2 + y^2) + 0.01)'
       ]
@@ -465,6 +471,7 @@ const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       emoji: '🍩',
       title: '环面 (甜甜圈)',
       desc: '使用最新的 Surface 参数曲面方程生成',
+      compatibleBackends: ['jsxgraph'],
       commands: [
         'R = 3',
         'r = 1',
@@ -558,10 +565,14 @@ const sidebarBottomHeight = ref(420);
 const sidebarBottomMaxHeight = ref(920);
 const isSidebarBottomResizing = ref(false);
 
-// 当前模式的 Demo 列表
-const currentDemos = computed(() => allDemos[store.activeMode]);
-const supportsCanvasRenderer = computed(() => store.activeMode !== 'dual-layer');
-const supportsBabylonRenderer = computed(() => store.activeMode !== 'dual-layer');
+// 当前模式且当前后端可用的 Demo 列表
+const currentDemos = computed(() => (
+  allDemos[store.activeMode].filter((demo) => (
+    !demo.compatibleBackends || demo.compatibleBackends.includes(activeRendererBackend.value)
+  ))
+));
+const supportsCanvasRenderer = computed(() => store.activeMode === '2d' || store.activeMode === 'geometry');
+const supportsBabylonRenderer = computed(() => store.activeMode === '3d');
 const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'canvas2d' && supportsCanvasRenderer.value);
 const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
 const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
@@ -791,8 +802,23 @@ const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
 };
 
 const loadBabylonNamespace = async (): Promise<BabylonNamespaceLike> => {
-  const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<BabylonNamespaceLike>;
-  return dynamicImport('@babylonjs/core');
+  const [engineModule, sceneModule, vectorModule, cameraModule, lightModule, meshBuilderModule] = await Promise.all([
+    import('@babylonjs/core/Engines/engine'),
+    import('@babylonjs/core/scene'),
+    import('@babylonjs/core/Maths/math.vector'),
+    import('@babylonjs/core/Cameras/arcRotateCamera'),
+    import('@babylonjs/core/Lights/hemisphericLight'),
+    import('@babylonjs/core/Meshes/meshBuilder')
+  ]);
+
+  return {
+    Engine: engineModule.Engine,
+    Scene: sceneModule.Scene,
+    Vector3: vectorModule.Vector3,
+    ArcRotateCamera: cameraModule.ArcRotateCamera,
+    HemisphericLight: lightModule.HemisphericLight,
+    MeshBuilder: meshBuilderModule.MeshBuilder
+  } as unknown as BabylonNamespaceLike;
 };
 
 const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => {
@@ -889,7 +915,7 @@ const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolea
   destroyPrimaryRenderer();
 
   await waitForUiPaint();
-  initEngines(options);
+  await initEngines(options);
 };
 
 const switchRendererBackend = async (backend: PlaygroundRenderBackend) => {
@@ -900,7 +926,7 @@ const switchRendererBackend = async (backend: PlaygroundRenderBackend) => {
   stopResizeObserver();
   destroyPrimaryRenderer();
   await waitForUiPaint();
-  initEngines({ syncCommands: true });
+  await initEngines({ syncCommands: true });
 };
 
 const handleRendererBackendChange = (event: Event) => {
