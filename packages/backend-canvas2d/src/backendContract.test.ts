@@ -358,6 +358,47 @@ describe('shared backend contract adapters', () => {
     expect(backend.pick({ x: 100, y: 100 })?.target.objectId).toBe('A');
   });
 
+  it('reports Canvas2D partial support for nodes without drawable geometry instead of accepting silent no-ops', () => {
+    const backend = createCanvas2DGraphBackend({ id: 'canvas-drawable' });
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+
+    const rawFunction: GraphObjectNode = {
+      id: 'raw-function',
+      kind: 'shape',
+      type: 'function',
+      payload: { expression: 'x^2', variable: 'x' },
+      layerId: 'content'
+    };
+    const rawConic: GraphObjectNode = {
+      id: 'raw-conic',
+      kind: 'shape',
+      type: 'conic',
+      payload: { conicKind: 'ellipse', definition: { mode: 'center-radii' } },
+      layerId: 'content'
+    };
+
+    expect(backend.create(rawFunction)).toEqual({
+      ok: false,
+      diagnostics: [createBackendContractDiagnostic(backend, { id: 'raw-function', node: rawFunction, expectations: backendContractFixtures[0].expectations }, 'partial-support')]
+    });
+    expect(backend.create(rawConic)).toEqual({
+      ok: false,
+      diagnostics: [createBackendContractDiagnostic(backend, { id: 'raw-conic', node: rawConic, expectations: backendContractFixtures[0].expectations }, 'partial-support')]
+    });
+    expect(backend.create({
+      ...rawFunction,
+      id: 'sampled-function',
+      payload: { geometry: { kind: 'polyline', points: [{ x: -1, y: 1 }, { x: 1, y: 1 }] } }
+    }).ok).toBe(true);
+    expect(backend.create({
+      ...rawConic,
+      id: 'drawable-ellipse',
+      payload: { geometry: { kind: 'ellipse', center: { x: 0, y: 0 }, radiusX: 2, radiusY: 1 } }
+    }).ok).toBe(true);
+
+    backend.destroy();
+  });
+
   it('picks every Canvas2D geometry type that the backend visibly draws', () => {
     const host = document.createElement('div');
     const backend = createCanvas2DGraphBackend({ id: 'canvas-hit-test' });

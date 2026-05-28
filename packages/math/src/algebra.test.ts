@@ -3,6 +3,7 @@ import {
   createFunctionDescriptor,
   evaluateExpression,
   evaluateFunction,
+  evaluateFunctionDescriptor,
   findFunctionRoots,
   intersectFunctions,
   solvePolynomialRoots
@@ -35,6 +36,16 @@ describe('renderer-free algebra typed results', () => {
     expect(result.error.code).toBe('MATH_DOMAIN_OUT_OF_RANGE');
     expect(result.error.domain).toEqual({ min: 0, max: 1 });
     expect(result.meta.domain).toEqual({ min: 0, max: 1 });
+  });
+
+  it('keeps descriptor-local scope when evaluating reusable functions', () => {
+    const descriptor = createFunctionDescriptor('x + a', undefined, 'x', { a: 2 });
+
+    const typed = evaluateFunction(descriptor, 3);
+    expect(typed.ok).toBe(true);
+    if (!typed.ok) throw new Error(typed.error.message);
+    expect(typed.value).toBe(5);
+    expect(evaluateFunctionDescriptor(descriptor, 3)).toBe(5);
   });
 
   it('solves linear and quadratic polynomial roots with diagnostics for no real roots', () => {

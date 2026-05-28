@@ -4,6 +4,7 @@ export interface GraphFunctionDescriptor {
   expression: string;
   variable: string;
   domain?: [number, number];
+  scope?: Record<string, unknown>;
 }
 
 export interface GraphEquationDescriptor {
@@ -14,11 +15,13 @@ export interface GraphEquationDescriptor {
 export const createFunctionDescriptor = (
   expression: string,
   domain?: [number, number],
-  variable = 'x'
+  variable = 'x',
+  scope?: Record<string, unknown>
 ): GraphFunctionDescriptor => ({
   expression,
   variable,
-  domain: domain ? [...domain] as [number, number] : undefined
+  domain: domain ? [...domain] as [number, number] : undefined,
+  scope: scope ? { ...scope } : undefined
 });
 
 export const createEquationDescriptor = (expression: string, variables: string[] = ['x', 'y']): GraphEquationDescriptor => ({
@@ -33,10 +36,11 @@ export const evaluateFunctionDescriptor = (
 ): number => {
   const code = math.parse(descriptor.expression).compile();
   const result = code.evaluate({
-    ...scope,
-    [descriptor.variable]: value,
     e: Math.E,
-    pi: Math.PI
+    pi: Math.PI,
+    ...(descriptor.scope ?? {}),
+    ...scope,
+    [descriptor.variable]: value
   });
   return typeof result === 'number' && Number.isFinite(result) ? result : NaN;
 };
@@ -50,7 +54,8 @@ export const createDerivativeDescriptor = (
 ): GraphFunctionDescriptor => createFunctionDescriptor(
   derivativeExpression(descriptor),
   descriptor.domain,
-  descriptor.variable
+  descriptor.variable,
+  descriptor.scope
 );
 
 export const sampleFunction = (

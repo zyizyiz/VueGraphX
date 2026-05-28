@@ -1274,6 +1274,7 @@ const createMeasurementNode = (
 const functionDescriptorFromNode = (node: GraphObjectNode): GraphFunctionDescriptor | null => {
   const payload = asRecord(node.payload);
   if (typeof payload?.expression !== 'string') return null;
+  const scope = asRecord(payload.scope);
   return {
     expression: payload.expression,
     variable: typeof payload.variable === 'string' ? payload.variable : 'x',
@@ -1281,7 +1282,8 @@ const functionDescriptorFromNode = (node: GraphObjectNode): GraphFunctionDescrip
       && typeof payload.domain[0] === 'number'
       && typeof payload.domain[1] === 'number'
       ? [payload.domain[0], payload.domain[1]]
-      : undefined
+      : undefined,
+    scope: scope ? { ...scope } : undefined
   };
 };
 

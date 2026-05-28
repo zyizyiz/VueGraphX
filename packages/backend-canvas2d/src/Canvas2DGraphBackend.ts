@@ -35,6 +35,9 @@ interface CanvasDrawablePayload {
     kind?: string;
     center?: { x: number; y: number };
     radius?: number;
+    radiusX?: number;
+    radiusY?: number;
+    rotationRadians?: number;
     startAngle?: number;
     endAngle?: number;
     vertices?: Array<{ x: number; y: number }>;
@@ -47,17 +50,77 @@ interface CanvasDrawablePayload {
   };
   start?: { x: number; y: number };
   end?: { x: number; y: number };
+  measurementKind?: string;
+  value?: number;
 }
 
 type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
 
-const CANVAS2D_SUPPORTED_TYPES = new Set(['point', 'text', 'angle', 'circle', 'arc', 'sector', 'semicircle', 'polygon', 'segment', 'line', 'ray', 'polyline', 'function', 'vector', 'measurement']);
+const CANVAS2D_SUPPORTED_TYPES = new Set([
+  'point',
+  'text',
+  'angle',
+  'circle',
+  'arc',
+  'sector',
+  'semicircle',
+  'polygon',
+  'segment',
+  'line',
+  'ray',
+  'polyline',
+  'function',
+  'vector',
+  'measurement',
+  'midpoint',
+  'intersection',
+  'perpendicular-line',
+  'parallel-line',
+  'tangent',
+  'translated',
+  'rotated',
+  'conic'
+]);
 const CANVAS2D_PARTIAL_TYPES = new Set(['solid']);
 
 const getCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
-  if (CANVAS2D_SUPPORTED_TYPES.has(node.type)) return 'success';
+  if (CANVAS2D_SUPPORTED_TYPES.has(node.type)) {
+    return isDrawableCanvas2DNode(node) ? 'success' : 'partial-support';
+  }
   if (CANVAS2D_PARTIAL_TYPES.has(node.type)) return 'partial-support';
   return 'unsupported';
+};
+
+const isDrawableCanvas2DNode = (node: GraphObjectNode): boolean => {
+  const payload = node.payload as CanvasDrawablePayload | undefined;
+  if (!payload) return false;
+  if (isCanvasPoint(payload.point)) return true;
+  if (node.type === 'measurement') return isCanvasPoint(payload.point);
+  if (node.type === 'angle') return Array.isArray(payload.points) && payload.points.filter(isCanvasPoint).length >= 3;
+  if (isCanvasPoint(payload.start) && isCanvasPoint(payload.end)) return true;
+
+  const geometry = payload.geometry;
+  if (!geometry?.kind) return false;
+  if (geometry.kind === 'circle') return isCanvasPoint(geometry.center) && isFiniteNumber(geometry.radius);
+  if (geometry.kind === 'arc' || geometry.kind === 'sector' || geometry.kind === 'semicircle') {
+    return isCanvasPoint(geometry.center) && isCanvasPoint(geometry.start) && isCanvasPoint(geometry.end);
+  }
+  if (geometry.kind === 'ellipse' || geometry.kind === 'hyperbola') {
+    return isCanvasPoint(geometry.center) && isFiniteNumber(geometry.radiusX) && isFiniteNumber(geometry.radiusY);
+  }
+  if (geometry.kind === 'polygon') return Array.isArray(geometry.vertices) && geometry.vertices.filter(isCanvasPoint).length > 0;
+  if (geometry.kind === 'segment') return isCanvasPoint(geometry.start) && isCanvasPoint(geometry.end);
+  if (geometry.kind === 'polyline') return Array.isArray(geometry.points) && geometry.points.filter(isCanvasPoint).length > 1;
+  if (geometry.kind === 'line') return isCanvasPoint(geometry.point) && isCanvasPoint(geometry.direction);
+  if (geometry.kind === 'ray') return isCanvasPoint(geometry.origin ?? geometry.point) && isCanvasPoint(geometry.direction);
+  return false;
+};
+
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const isCanvasPoint = (value: unknown): value is { x: number; y: number } => {
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return isFiniteNumber(record.x) && isFiniteNumber(record.y);
 };
 
 const createBackendSupportDiagnosticResult = (
@@ -203,6 +266,14 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.context.strokeStyle = readString(node.renderHints?.strokeColor, '#1f6feb');
     this.context.fillStyle = readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
     this.context.lineWidth = readNumber(node.renderHints?.strokeWidth, 2);
+    const dash = readNumber(node.renderHints?.dash, 0);
+    if (dash > 0) this.context.setLineDash([dash * 4, dash * 3]);
+
+    if (node.type === 'measurement') {
+      this.drawMeasurement(payload);
+      this.context.restore();
+      return;
+    }
 
     if (payload.point) {
       const point = this.projectPoint(payload.point);
@@ -240,6 +311,10 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
         startAngle: geometry.startAngle,
         endAngle: geometry.endAngle
       }, geometry.kind === 'sector');
+    } else if (geometry?.kind === 'ellipse' && geometry.center && typeof geometry.radiusX === 'number' && typeof geometry.radiusY === 'number') {
+      this.drawEllipse(geometry.center, geometry.radiusX, geometry.radiusY, geometry.rotationRadians ?? 0);
+    } else if (geometry?.kind === 'hyperbola' && geometry.center && typeof geometry.radiusX === 'number' && typeof geometry.radiusY === 'number') {
+      this.drawHyperbola(geometry.center, geometry.radiusX, geometry.radiusY, geometry.rotationRadians ?? 0);
     } else if (geometry?.kind === 'polygon' && geometry.vertices && geometry.vertices.length > 0) {
       this.drawPointPath(geometry.vertices, true, true);
     } else if (geometry?.kind === 'segment' && geometry.start && geometry.end) {
@@ -253,7 +328,9 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
       const endpoints = this.extendLineToBounds(geometry.origin ?? geometry.point!, geometry.direction, true);
       if (endpoints) this.drawPointPath(endpoints);
     } else if (payload.start && payload.end) {
-      this.drawPointPath([payload.start, payload.end]);
+      node.type === 'vector'
+        ? this.drawVector(payload.start, payload.end)
+        : this.drawPointPath([payload.start, payload.end]);
     }
 
     this.context.restore();
@@ -348,6 +425,66 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.context.stroke();
   }
 
+  private drawMeasurement(payload: CanvasDrawablePayload): void {
+    if (!this.context || !payload.point) return;
+    const point = this.projectPoint(payload.point);
+    const label = payload.text ?? `${payload.measurementKind ?? 'measure'}: ${formatNumber(payload.value)}`;
+    this.context.save();
+    this.context.font = '12px sans-serif';
+    this.context.lineWidth = 3;
+    this.context.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+    this.context.strokeText(label, point.x + 8, point.y - 8);
+    this.context.fillStyle = '#334155';
+    this.context.fillText(label, point.x + 8, point.y - 8);
+    this.context.restore();
+  }
+
+  private drawEllipse(centerPoint: { x: number; y: number }, radiusX: number, radiusY: number, rotationRadians: number): void {
+    if (!this.context) return;
+    const center = this.projectPoint(centerPoint);
+    const scale = this.getWorldScale();
+    this.context.beginPath();
+    this.context.ellipse(
+      center.x,
+      center.y,
+      Math.abs(radiusX * scale.x),
+      Math.abs(radiusY * scale.y),
+      -rotationRadians,
+      0,
+      Math.PI * 2
+    );
+    this.context.stroke();
+  }
+
+  private drawHyperbola(centerPoint: { x: number; y: number }, radiusX: number, radiusY: number, rotationRadians: number): void {
+    if (!this.context) return;
+    const branches = [-1, 1].map((side) => {
+      const points: Array<{ x: number; y: number }> = [];
+      for (let index = 0; index < 96; index += 1) {
+        const t = -2.2 + (4.4 * index) / 95;
+        const local = { x: side * radiusX * Math.cosh(t), y: radiusY * Math.sinh(t) };
+        points.push(rotateAroundOrigin(local, rotationRadians, centerPoint));
+      }
+      return points;
+    });
+    for (const branch of branches) this.drawPointPath(branch);
+  }
+
+  private drawVector(startPoint: { x: number; y: number }, endPoint: { x: number; y: number }): void {
+    if (!this.context) return;
+    this.drawPointPath([startPoint, endPoint]);
+    const start = this.projectPoint(startPoint);
+    const end = this.projectPoint(endPoint);
+    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+    const size = 10;
+    this.context.beginPath();
+    this.context.moveTo(end.x, end.y);
+    this.context.lineTo(end.x - size * Math.cos(angle - Math.PI / 6), end.y - size * Math.sin(angle - Math.PI / 6));
+    this.context.moveTo(end.x, end.y);
+    this.context.lineTo(end.x - size * Math.cos(angle + Math.PI / 6), end.y - size * Math.sin(angle + Math.PI / 6));
+    this.context.stroke();
+  }
+
   private drawArcLike(
     geometry: {
       center: { x: number; y: number };
@@ -428,6 +565,15 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
 
 const readString = (value: unknown, fallback: string): string => typeof value === 'string' ? value : fallback;
 const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '';
+const rotateAroundOrigin = (point: { x: number; y: number }, radians: number, center: { x: number; y: number }): { x: number; y: number } => {
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: center.x + point.x * cos - point.y * sin,
+    y: center.y + point.x * sin + point.y * cos
+  };
+};
 const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
   if (typeof HTMLElement === 'undefined') return null;
   if (host instanceof HTMLElement) return host;

@@ -81,7 +81,7 @@ const descriptorDomain = (descriptor: GraphFunctionDescriptor, options: MathSolv
 
 export const evaluateExpression = (
   input: MathExpressionInput,
-  scope: Record<string, number> = {},
+  scope: Record<string, unknown> = {},
   options: MathSolveOptions = {}
 ): MathResult<number> => {
   const expression = expressionText(input).trim();
@@ -115,7 +115,7 @@ export const evaluateExpression = (
 export const evaluateFunction = (
   descriptor: GraphFunctionDescriptor,
   x: number,
-  scope: Record<string, number> = {},
+  scope: Record<string, unknown> = {},
   options: MathSolveOptions = {}
 ): MathResult<number> => {
   const domain = descriptorDomain(descriptor, options);
@@ -135,7 +135,11 @@ export const evaluateFunction = (
     }
   }
 
-  const result = evaluateExpression(descriptor.expression, { ...scope, [descriptor.variable]: x }, domain ? { ...options, domain } : options);
+  const result = evaluateExpression(
+    descriptor.expression,
+    { ...(descriptor.scope ?? {}), ...scope, [descriptor.variable]: x },
+    domain ? { ...options, domain } : options
+  );
   return result.ok ? okMathResult(result.value, meta, result.diagnostics) : result;
 };
 

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GraphRenderHandle } from '@vuegraphx/core';
 import { createBabylonRuntime, type BabylonMeshLike, type BabylonNamespaceLike } from './index';
 
 class FakeVector3 {
@@ -56,15 +57,15 @@ class FakeLight {}
 
 const FakeMeshBuilder = {
   lastMesh: null as FakeMesh | null,
-  CreateBox: vi.fn(() => {
+  CreateBox: vi.fn((_name: string, _options: Record<string, unknown>, _scene: unknown) => {
     FakeMeshBuilder.lastMesh = new FakeMesh();
     return FakeMeshBuilder.lastMesh;
   }),
-  CreateSphere: vi.fn(() => {
+  CreateSphere: vi.fn((_name: string, _options: Record<string, unknown>, _scene: unknown) => {
     FakeMeshBuilder.lastMesh = new FakeMesh();
     return FakeMeshBuilder.lastMesh;
   }),
-  CreateCylinder: vi.fn(() => {
+  CreateCylinder: vi.fn((_name: string, _options: Record<string, unknown>, _scene: unknown) => {
     FakeMeshBuilder.lastMesh = new FakeMesh();
     return FakeMeshBuilder.lastMesh;
   })
@@ -77,6 +78,13 @@ const createFakeBabylon = (): BabylonNamespaceLike => ({
   ArcRotateCamera: FakeCamera as unknown as BabylonNamespaceLike['ArcRotateCamera'],
   HemisphericLight: FakeLight as unknown as BabylonNamespaceLike['HemisphericLight'],
   MeshBuilder: FakeMeshBuilder
+});
+
+beforeEach(() => {
+  FakeMeshBuilder.lastMesh = null;
+  FakeMeshBuilder.CreateBox.mockClear();
+  FakeMeshBuilder.CreateSphere.mockClear();
+  FakeMeshBuilder.CreateCylinder.mockClear();
 });
 
 describe('BabylonRuntime', () => {
@@ -122,4 +130,61 @@ describe('BabylonRuntime', () => {
     expect(FakeScene.last?.dispose).toHaveBeenCalledOnce();
     expect(FakeEngine.last?.dispose).toHaveBeenCalledOnce();
   });
+
+  it('maps polygonal prism, pyramid, and frustum solid families to Babylon cylinder meshes with fixed tessellation', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon());
+    const host = document.createElement('div');
+    runtime.mount(host, { size: { width: 320, height: 240 } });
+
+    const handleFor = (objectId: string): GraphRenderHandle => ({
+      id: `babylon:${objectId}`,
+      objectId,
+      backendId: 'babylon',
+      layerId: 'content' as const,
+      target: { scope: 'object' as const, objectId, backendId: 'babylon', layerId: 'content' as const }
+    });
+
+    runtime.createSolid({
+      id: 'triPrism',
+      kind: 'shape',
+      type: 'solid',
+      payload: { family: 'triangular-prism', parameters: { baseArea: 1, basePerimeter: 4.5, height: 2 } }
+    }, handleFor('triPrism'));
+    runtime.createSolid({
+      id: 'quadPyramid',
+      kind: 'shape',
+      type: 'solid',
+      payload: { family: 'quadrangular-pyramid', parameters: { baseArea: 1, basePerimeter: 6, height: 2, slantHeight: 2 } }
+    }, handleFor('quadPyramid'));
+    runtime.createSolid({
+      id: 'quadFrustum',
+      kind: 'shape',
+      type: 'solid',
+      payload: { family: 'quadrangular-frustum', parameters: { topArea: 0.25, bottomArea: 1, topPerimeter: 2.8, bottomPerimeter: 5.2, height: 2, slantHeight: 2 } }
+    }, handleFor('quadFrustum'));
+
+    expect(FakeMeshBuilder.CreateCylinder).toHaveBeenCalledTimes(3);
+    expect(FakeMeshBuilder.CreateCylinder.mock.calls[0][1]).toMatchObject({
+      height: 2,
+      diameterTop: expect.closeTo(4.5 / 3 / Math.sin(Math.PI / 3)),
+      diameterBottom: expect.closeTo(4.5 / 3 / Math.sin(Math.PI / 3)),
+      tessellation: 3
+    });
+    expect(FakeMeshBuilder.CreateCylinder.mock.calls[1][1]).toMatchObject({
+      height: 2,
+      diameterTop: 0,
+      diameterBottom: expect.closeTo(6 / 4 / Math.sin(Math.PI / 4)),
+      tessellation: 4
+    });
+    expect(FakeMeshBuilder.CreateCylinder.mock.calls[2][1]).toMatchObject({
+      height: 2,
+      diameterTop: expect.closeTo(2.8 / 4 / Math.sin(Math.PI / 4)),
+      diameterBottom: expect.closeTo(5.2 / 4 / Math.sin(Math.PI / 4)),
+      tessellation: 4
+    });
+    expect(FakeMeshBuilder.CreateBox).not.toHaveBeenCalled();
+
+    runtime.destroy();
+  });
+
 });

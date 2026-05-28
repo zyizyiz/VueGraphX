@@ -216,15 +216,11 @@ export class BabylonRuntime implements BabylonRuntimePort {
     const parameters = descriptor.parameters;
     let mesh: BabylonMeshLike;
 
+    const cylinderOptions = createCylinderLikeMeshOptions(family, parameters);
     if (family === 'sphere' && this.BABYLON.MeshBuilder.CreateSphere) {
       mesh = this.BABYLON.MeshBuilder.CreateSphere(handle.id, { diameter: (parameters.radius ?? 1) * 2 }, scene);
-    } else if ((family === 'cylinder' || family === 'cone' || family === 'conical-frustum') && this.BABYLON.MeshBuilder.CreateCylinder) {
-      mesh = this.BABYLON.MeshBuilder.CreateCylinder(handle.id, {
-        height: parameters.height ?? 2,
-        diameterTop: family === 'cone' ? 0 : (parameters.topRadius ?? parameters.radius ?? 1) * 2,
-        diameterBottom: (parameters.bottomRadius ?? parameters.radius ?? 1) * 2,
-        tessellation: 48
-      }, scene);
+    } else if (cylinderOptions && this.BABYLON.MeshBuilder.CreateCylinder) {
+      mesh = this.BABYLON.MeshBuilder.CreateCylinder(handle.id, cylinderOptions, scene);
     } else {
       mesh = this.BABYLON.MeshBuilder.CreateBox(handle.id, {
         size: parameters.size ?? undefined,
@@ -282,6 +278,102 @@ const readSolidDescriptor = (node: GraphObjectNode): {
     origin: readVector3(payload?.origin),
     rotation: readVector3(payload?.rotation)
   };
+};
+
+const POLYGONAL_PRISM_SIDES: Record<string, number> = {
+  'triangular-prism': 3,
+  'pentagonal-prism': 5,
+  'hexagonal-prism': 6
+};
+
+const POLYGONAL_PYRAMID_SIDES: Record<string, number> = {
+  'triangular-pyramid': 3,
+  'quadrangular-pyramid': 4
+};
+
+const POLYGONAL_FRUSTUM_SIDES: Record<string, number> = {
+  'triangular-frustum': 3,
+  'quadrangular-frustum': 4
+};
+
+const createCylinderLikeMeshOptions = (family: string, parameters: Record<string, number>): Record<string, unknown> | null => {
+  if (family === 'cylinder' || family === 'cone' || family === 'conical-frustum') {
+    return {
+      height: parameters.height ?? 2,
+      diameterTop: family === 'cone' ? 0 : (parameters.topRadius ?? parameters.radius ?? 1) * 2,
+      diameterBottom: (parameters.bottomRadius ?? parameters.radius ?? 1) * 2,
+      tessellation: 48
+    };
+  }
+
+  const prismSides = POLYGONAL_PRISM_SIDES[family];
+  if (prismSides) {
+    const diameter = regularPolygonCircumDiameter({
+      perimeter: parameters.basePerimeter,
+      area: parameters.baseArea,
+      sides: prismSides,
+      fallbackArea: 1
+    });
+    return {
+      height: parameters.height ?? 2,
+      diameterTop: diameter,
+      diameterBottom: diameter,
+      tessellation: prismSides
+    };
+  }
+
+  const pyramidSides = POLYGONAL_PYRAMID_SIDES[family];
+  if (pyramidSides) {
+    return {
+      height: parameters.height ?? 2,
+      diameterTop: 0,
+      diameterBottom: regularPolygonCircumDiameter({
+        perimeter: parameters.basePerimeter,
+        area: parameters.baseArea,
+        sides: pyramidSides,
+        fallbackArea: 1
+      }),
+      tessellation: pyramidSides
+    };
+  }
+
+  const frustumSides = POLYGONAL_FRUSTUM_SIDES[family];
+  if (frustumSides) {
+    return {
+      height: parameters.height ?? 2,
+      diameterTop: regularPolygonCircumDiameter({
+        perimeter: parameters.topPerimeter,
+        area: parameters.topArea,
+        sides: frustumSides,
+        fallbackArea: 0.5
+      }),
+      diameterBottom: regularPolygonCircumDiameter({
+        perimeter: parameters.bottomPerimeter,
+        area: parameters.bottomArea,
+        sides: frustumSides,
+        fallbackArea: 1
+      }),
+      tessellation: frustumSides
+    };
+  }
+
+  return null;
+};
+
+const regularPolygonCircumDiameter = (options: {
+  perimeter?: number;
+  area?: number;
+  sides: number;
+  fallbackArea: number;
+}): number => {
+  const safeSides = Math.max(3, Math.floor(options.sides));
+  if (typeof options.perimeter === 'number' && Number.isFinite(options.perimeter) && options.perimeter > 0) {
+    const sideLength = options.perimeter / safeSides;
+    return sideLength / Math.sin(Math.PI / safeSides);
+  }
+  const safeArea = Number.isFinite(options.area) && (options.area ?? 0) > 0 ? options.area! : options.fallbackArea;
+  const radius = Math.sqrt((2 * safeArea) / (safeSides * Math.sin((2 * Math.PI) / safeSides)));
+  return radius * 2;
 };
 
 const readVector3 = (value: unknown): BabylonVector3Like | undefined => {

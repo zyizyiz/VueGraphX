@@ -201,12 +201,62 @@
               </div>
             </div>
 
-            <div v-if="isCoreRendererActive" class="border-t border-slate-100 bg-white px-4 py-4">
-              <div class="rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-[11px] leading-5 text-sky-800">
-                {{ coreRendererPanelMessage }}
+            <div class="border-t border-slate-100 bg-white px-4 py-4">
+              <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Backend Capability</p>
+                    <h3 class="mt-1 text-sm font-bold text-slate-800">{{ activeBackendCapability.label }}</h3>
+                  </div>
+                  <span
+                    class="rounded-full px-2 py-1 text-[10px] font-semibold"
+                    :class="isCoreRendererActive ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600'"
+                  >
+                    {{ isCoreRendererActive ? 'Core runtime' : 'Compatibility' }}
+                  </span>
+                </div>
+                <p class="mt-2 text-[11px] leading-5 text-slate-600">{{ activeBackendCapability.summary }}</p>
+                <div class="mt-3 flex flex-wrap gap-1.5">
+                  <span
+                    v-for="item in activeBackendCapability.supported"
+                    :key="`supported-${activeRendererBackend}-${item}`"
+                    class="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700"
+                  >
+                    {{ item }}
+                  </span>
+                </div>
+                <div v-if="activeBackendCapability.unsupported.length > 0" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-amber-700">Unsupported / honest gaps</p>
+                  <ul class="mt-1 space-y-1">
+                    <li
+                      v-for="item in activeBackendCapability.unsupported"
+                      :key="`unsupported-${activeRendererBackend}-${item}`"
+                      class="text-[11px] leading-5 text-amber-800"
+                    >
+                      {{ item }}
+                    </li>
+                  </ul>
+                </div>
+                <div v-if="coreSceneSummary" class="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div class="rounded-lg bg-slate-50 px-2 py-2">
+                    <p class="text-[10px] text-slate-400">输入</p>
+                    <p class="text-sm font-bold text-slate-700">{{ coreSceneSummary.commandCount }}</p>
+                  </div>
+                  <div class="rounded-lg bg-sky-50 px-2 py-2">
+                    <p class="text-[10px] text-sky-500">渲染节点</p>
+                    <p class="text-sm font-bold text-sky-700">{{ coreSceneSummary.nodeCount }}</p>
+                  </div>
+                  <div class="rounded-lg bg-amber-50 px-2 py-2">
+                    <p class="text-[10px] text-amber-600">诊断</p>
+                    <p class="text-sm font-bold text-amber-700">{{ coreSceneSummary.diagnosticCount }}</p>
+                  </div>
+                </div>
+                <div v-if="isCoreRendererActive" class="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-[11px] leading-5 text-sky-800">
+                  {{ coreRendererPanelMessage }}
+                </div>
               </div>
             </div>
-            <RelationPanel v-else :engine="engineRef" :active-mode="store.activeMode" />
+            <RelationPanel v-if="!isCoreRendererActive" :engine="engineRef" :active-mode="store.activeMode" />
             <HiddenLinePanel v-if="!isCoreRendererActive" :engine="engineRef" :active-mode="store.activeMode" />
 
             <!-- Demo 示例区（多卡片可切换） -->
@@ -323,6 +373,7 @@ import {
 import { useFormulaStore, type CommandItem } from './stores/formula';
 import { useSceneDocument } from './composables/useSceneDocument';
 import { buildPlaygroundBabylonScene, buildPlaygroundCanvasScene, PLAYGROUND_CANVAS_WORLD_BOUNDS } from './renderers/canvasScene';
+import { allDemos, playgroundBackendCapabilities, rendererBackends, type PlaygroundRenderBackend } from './showcase';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 import DualLayerPanel from './components/DualLayerPanel.vue';
@@ -354,187 +405,6 @@ const availableModes: {id: PlaygroundMode, label: string, icon: string}[] = [
   { id: 'geometry', label: '几何区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>' },
   { id: 'dual-layer', label: '双层区', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>' }
 ];
-
-type PlaygroundRenderBackend = 'jsxgraph' | 'canvas2d' | 'babylon';
-
-const rendererBackends: { id: PlaygroundRenderBackend; label: string }[] = [
-  { id: 'jsxgraph', label: 'JSXGraph' },
-  { id: 'canvas2d', label: 'Canvas2D Core' },
-  { id: 'babylon', label: 'Babylon Core' }
-];
-
-// ===== 各模式的多 Demo 示例库 =====
-interface DemoItem {
-  emoji: string;
-  title: string;
-  desc: string;
-  commands: (string | { expr: string, options?: any })[];
-}
-
-const allDemos: Record<PlaygroundMode, DemoItem[]> = {
-  '2d': [
-    {
-      emoji: '🌊',
-      title: '三角函数叠加',
-      desc: '正弦余弦的相位叠加，经典周期波形',
-      commands: [
-        'a = 0.5',
-        'w = 2',
-        'f(x) = sin(x) + a*cos(w*x)',
-        'g(x) = sin(x) - a*cos(w*x)'
-      ]
-    },
-    {
-      emoji: '📐',
-      title: '切线演示',
-      desc: '曲线在某点处的切线作图',
-      commands: ['f(x) = x^2', 'A = (1, 1)', 'Tangent(A, f)']
-    },
-    {
-      emoji: '❤️',
-      title: '心形曲线',
-      desc: '经典心形曲线，上下两段拼合',
-      commands: [
-        { expr: 'h(x) = abs(x) - 1', options: { plot: false } },
-        'y = sqrt(1 - h(x)^2)',
-        { expr: 'k(x) = (abs(x)/2)^(2/3)', options: { plot: false } },
-        'y = -3*sqrt(1-k(x))'
-      ]
-    },
-    {
-      emoji: '🔄',
-      title: '导数对比',
-      desc: '函数与其导数的图像对比',
-      commands: ['f(x) = sin(x)', 'df(x) = cos(x)']
-    },
-    {
-      emoji: '🌀',
-      title: '有理函数',
-      desc: '分子三次、分母二次的有理函数',
-      commands: [
-        { expr: 'num(x) = x^3 - 3*x', options: { plot: false } },
-        { expr: 'den(x) = x^2 + 1', options: { plot: false } },
-        'y = num(x)/den(x)'
-      ]
-    },
-  ],
-  '3d': [
-    {
-      emoji: '🧊',
-      title: 'Babylon 立体后端',
-      desc: '切换到 Babylon Core 后端后渲染同一份 Solid 指令',
-      commands: [
-        'cube = Solid("cube", size=2, x=-2)',
-        'sphere = Solid("sphere", radius=1.2, x=1.6)',
-        'cylinder = Solid("cylinder", radius=0.8, height=2.5, x=4)'
-      ]
-    },
-    {
-      emoji: '🌊',
-      title: '波浪曲面',
-      desc: '二元函数 sin(x)cos(y) 的曲面',
-      commands: [
-        'z = sin(x)*cos(y)'
-      ]
-    },
-    {
-      emoji: '🏔️',
-      title: '高斯曲面',
-      desc: '二维高斯正态分布钟形曲面',
-      commands: [
-        'z = exp(-(x^2 + y^2)/4)'
-      ]
-    },
-    {
-      emoji: '🌀',
-      title: '马鞍面',
-      desc: '经典双曲抛物面 z = x²-y²',
-      commands: [
-        'z = x^2 - y^2'
-      ]
-    },
-    {
-      emoji: '🏖️',
-      title: '涟漪曲面',
-      desc: '以原点为中心的衰减波',
-      commands: [
-        'z = sin(sqrt(x^2 + y^2)) / (sqrt(x^2 + y^2) + 0.01)'
-      ]
-    },
-    {
-      emoji: '🍩',
-      title: '环面 (甜甜圈)',
-      desc: '使用最新的 Surface 参数曲面方程生成',
-      commands: [
-        'R = 3',
-        'r = 1',
-        'X(u, v) = (R + r*cos(v))*cos(u)',
-        'Y(u, v) = (R + r*cos(v))*sin(u)',
-        'Z(u, v) = r*sin(v)',
-        'Surface(X(u, v), Y(u, v), Z(u, v))'
-      ]
-    },
-  ],
-  'geometry': [
-    {
-      emoji: '🧭',
-      title: '关系面板练习',
-      desc: '四个点与两条线段，适合体验平行 / 垂直 / 等长 / 距离断言',
-      commands: ['A = (-4, 2)', 'B = (-1, 2)', 'C = (1, -1)', 'D = (4, -1)', 'Segment(A, B)', 'Segment(C, D)']
-    },
-    {
-      emoji: '⭕',
-      title: '欧氏尺规交点',
-      desc: '双圆相交构造等边三角形',
-      commands: ['A = (-2, 0)', 'B = (2, 0)', 'c1 = Circle(A, B)', 'c2 = Circle(B, A)', 'Segment(A, B)']
-    },
-    {
-      emoji: '△',
-      title: '三点成三角',
-      desc: '通过三点连线构造封闭多边形',
-      commands: ['A = (0, 3)', 'B = (-3, -2)', 'C = (3, -2)', 'Segment(A, B)', 'Segment(B, C)', 'Segment(C, A)']
-    },
-    {
-      emoji: '🧩',
-      title: 'Core 几何指令',
-      desc: '同一组点驱动多边形、内外接圆与中心点，可在 JSXGraph / Canvas2D 间切换',
-      commands: [
-        'A = (-2, -1)',
-        'B = (2, -1)',
-        'C = (0, 2)',
-        'regular = RegularPolygon(A, B, 5)',
-        'para = Parallelogram(A, B, C)',
-        'circ = Circumcircle(A, B, C)',
-        'inc = Incircle(A, B, C)',
-        'cc = Circumcenter(A, B, C)',
-        'ic = Incenter(A, B, C)',
-        'label = Text(ic, "incenter")'
-      ]
-    },
-    {
-      emoji: '🔵',
-      title: '同心圆',
-      desc: '以原点为圆心的多重圆形',
-      commands: ['O = (0, 0)', 'P1 = (2, 0)', 'P2 = (4, 0)', 'P3 = (6, 0)', 'Circle(O, P1)', 'Circle(O, P2)', 'Circle(O, P3)']
-    },
-    {
-      emoji: '📏',
-      title: '菱形作图',
-      desc: '四点对称作菱形',
-      commands: [
-        'A = (0, 2)', 'B = (2, 0)', 'C = (0, -2)', 'D = (-2, 0)',
-        { expr: 'Polygon(A, B, C, D)', options: { fillColor: '#f43f5e', fillOpacity: 0.3, strokeWidth: 3, dash: 2 } }
-      ]
-    },
-    {
-      emoji: '↗️',
-      title: '直线与圆',
-      desc: '一条直线穿过两点，配合圆形演示',
-      commands: ['A = (-3, -1)', 'B = (3, 1)', 'O = (0, 3)', 'R = (2, 3)', 'Line(A, B)', 'Circle(O, R)']
-    },
-  ],
-  'dual-layer': []
-};
 
 const store = useFormulaStore();
 const sidebarRef = ref<HTMLElement | null>(null);
@@ -583,6 +453,18 @@ const isRendererBackendSupported = (backend: PlaygroundRenderBackend): boolean =
   || (backend === 'canvas2d' && supportsCanvasRenderer.value)
   || (backend === 'babylon' && supportsBabylonRenderer.value)
 );
+const activeBackendCapability = computed(() => playgroundBackendCapabilities[activeRendererBackend.value]);
+const coreSceneSummary = computed(() => {
+  if (!isCoreRendererActive.value) return null;
+  const result = isBabylonRendererActive.value
+    ? buildPlaygroundBabylonScene(store.commands)
+    : buildPlaygroundCanvasScene(store.commands);
+  return {
+    commandCount: store.commands.filter((command) => command.expression.trim()).length,
+    nodeCount: result.nodes.length,
+    diagnosticCount: result.diagnostics.length
+  };
+});
 const SIDEBAR_BOTTOM_MIN_HEIGHT = 220;
 const SIDEBAR_BOTTOM_DEFAULT_HEIGHT = 400;
 const SIDEBAR_BOTTOM_ABSOLUTE_MAX = 720;
@@ -791,8 +673,11 @@ const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
 };
 
 const loadBabylonNamespace = async (): Promise<BabylonNamespaceLike> => {
-  const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<BabylonNamespaceLike>;
-  return dynamicImport('@babylonjs/core');
+  // Keep the specifier as a literal so Vite can rewrite/pre-bundle the bare
+  // package import. Hiding it behind `new Function` leaves the browser with a
+  // native `import('@babylonjs/core')`, which cannot resolve bare npm package
+  // specifiers at runtime.
+  return import('@babylonjs/core') as unknown as Promise<BabylonNamespaceLike>;
 };
 
 const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => {
@@ -955,7 +840,8 @@ const removeLine = (id: string) => {
 const clearAll = () => {
   store.clearCommands();
   if (engineRef.value) engineRef.value.clearBoard();
-  if (canvasBackendRef.value) canvasBackendRef.value.clear();
+  if (canvasRuntimeRef.value) canvasRuntimeRef.value.clear();
+  else if (canvasBackendRef.value) canvasBackendRef.value.clear();
   if (babylonRuntimeRef.value) babylonRuntimeRef.value.clear();
   activeDemo.value = -1;
 };
