@@ -1,4 +1,5 @@
 import * as math from 'mathjs';
+import { sampleImplicitEquationSegments } from '@vuegraphx/math';
 import {
   mergeGraphObjectPatch,
   type GraphBackendContext,
@@ -197,7 +198,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     if (node.renderHints?.visible === false) return [];
     const attrs = createAttributes(node, context);
     const payload = asRecord(node.payload);
-    const geometry = asRecord(payload?.geometry);
+    const geometry = asRecord(payload?.geometry) ?? createSemanticGeometryForNode(node, payload, (objectId) => this.findStoredNode(objectId));
 
     if (geometry?.kind === 'line' && isPoint2D(geometry.point) && isPoint2D(geometry.direction)) {
       const start = geometry.point;
@@ -223,6 +224,25 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
       return normalizeElements(board.create('circle', [[geometry.center.x, geometry.center.y], geometry.radius], attrs));
     }
 
+    if (geometry?.kind === 'ellipse' && isPoint2D(geometry.center) && typeof geometry.radiusX === 'number' && typeof geometry.radiusY === 'number') {
+      const points = sampleEllipsePoints(
+        geometry.center,
+        geometry.radiusX,
+        geometry.radiusY,
+        readNumber(geometry.rotationRadians, 0)
+      );
+      return normalizeElements(board.create('curve', [points.map((point) => point.x), points.map((point) => point.y)], attrs));
+    }
+
+    if (geometry?.kind === 'hyperbola' && isPoint2D(geometry.center) && typeof geometry.radiusX === 'number' && typeof geometry.radiusY === 'number') {
+      return sampleHyperbolaSegments(
+        geometry.center,
+        geometry.radiusX,
+        geometry.radiusY,
+        readNumber(geometry.rotationRadians, 0)
+      ).flatMap((points) => normalizeElements(board.create('curve', [points.map((point) => point.x), points.map((point) => point.y)], attrs)));
+    }
+
     if (geometry?.kind === 'polygon' && Array.isArray(geometry.vertices)) {
       const points = geometry.vertices.filter(isPoint2D).map((point) => [point.x, point.y]);
       if (points.length >= 3) return normalizeElements(board.create('polygon', points, attrs));
@@ -231,6 +251,15 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     if (geometry?.kind === 'polyline' && Array.isArray(geometry.points)) {
       const points = geometry.points.filter(isPoint2D).map((point) => [point.x, point.y]);
       if (points.length >= 2) return normalizeElements(board.create('curve', [points.map((point) => point[0]), points.map((point) => point[1])], attrs));
+    }
+
+    if ((geometry?.kind === 'multiline' || geometry?.kind === 'wireframe') && Array.isArray(geometry.segments)) {
+      return geometry.segments.flatMap((segment) => {
+        const points = Array.isArray(segment) ? segment.filter(isPoint2D).map((point) => [point.x, point.y]) : [];
+        return points.length >= 2
+          ? normalizeElements(board.create('curve', [points.map((point) => point[0]), points.map((point) => point[1])], attrs))
+          : [];
+      });
     }
 
     if ((geometry?.kind === 'arc' || geometry?.kind === 'sector') && isPoint2D(geometry.center) && isPoint2D(geometry.start) && isPoint2D(geometry.end)) {
@@ -265,12 +294,16 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     }
 
     if ((node.type === 'function' || node.type === 'derivative') && typeof payload?.expression === 'string') {
-      const descriptor = payload as { expression: string; variable?: string; domain?: [number, number] };
+      const descriptor = payload as { expression: string; variable?: string; domain?: [number, number] | { min?: number; max?: number }; parameters?: Record<string, unknown>; scope?: Record<string, unknown> };
       const compiled = math.parse(descriptor.expression).compile();
-      const domain = Array.isArray(descriptor.domain) ? descriptor.domain : undefined;
+      const domain = readFunctionDomain(descriptor.domain);
       const variable = descriptor.variable ?? 'x';
+      const parameters = {
+        ...readNumberRecord(descriptor.scope),
+        ...readNumberRecord(descriptor.parameters)
+      };
       return normalizeElements(board.create('functiongraph', [
-        (value: number) => compiled.evaluate({ [variable]: value, x: value, e: Math.E, pi: Math.PI }),
+        (value: number) => compiled.evaluate({ ...parameters, [variable]: value, x: value, e: Math.E, pi: Math.PI }),
         ...(domain ? domain : [])
       ], attrs));
     }
@@ -368,6 +401,241 @@ const readPayloadPoint2D = (payload: Record<string, unknown> | null): Point2D | 
 };
 
 const add = (left: Point2D, right: Point2D): Point2D => ({ x: left.x + right.x, y: left.y + right.y });
+const subtract = (left: Point2D, right: Point2D): Point2D => ({ x: left.x - right.x, y: left.y - right.y });
+const dot = (left: Point2D, right: Point2D): number => left.x * right.x + left.y * right.y;
+
+const createSemanticGeometryForNode = (
+  node: GraphObjectNode,
+  payload: Record<string, unknown> | null,
+  resolveNode: (objectId: string) => GraphObjectNode | null
+): Record<string, unknown> | null => {
+  if (node.type === 'equation' && typeof payload?.expression === 'string') {
+    return geometryFromImplicitExpression(payload.expression);
+  }
+
+  if (node.type === 'solid') {
+    return { kind: 'polyline', points: createSolidProjectionPolyline(payload) };
+  }
+
+  if (node.type !== 'conic') return null;
+  const definition = asRecord(payload?.definition);
+  const conicKind = typeof payload?.conicKind === 'string' ? payload.conicKind : '';
+
+  if (definition?.mode === 'equation' && typeof definition.expression === 'string') {
+    return geometryFromImplicitExpression(definition.expression);
+  }
+
+  if (definition?.mode === 'center-radii') {
+    const center = resolvePointSource(definition.center, resolveNode);
+    const radiusX = readNumber(definition.radiusX, NaN);
+    const radiusY = readNumber(definition.radiusY, NaN);
+    const rotationRadians = readNumber(definition.rotationRadians, 0);
+    if (!center || !Number.isFinite(radiusX) || !Number.isFinite(radiusY)) return null;
+    if (conicKind === 'ellipse') {
+      return {
+        kind: 'polyline',
+        points: sampleEllipsePoints(center, radiusX, radiusY, rotationRadians)
+      };
+    }
+    if (conicKind === 'hyperbola') {
+      return {
+        kind: 'multiline',
+        segments: sampleHyperbolaSegments(center, radiusX, radiusY, rotationRadians)
+      };
+    }
+  }
+
+  if (definition?.mode === 'focus-directrix') {
+    const focus = resolvePointSource(definition.focus, resolveNode);
+    const directrixRef = asRecord(definition.directrix);
+    const directrixNode = typeof directrixRef?.objectId === 'string' ? resolveNode(directrixRef.objectId) : null;
+    const directrix = directrixNode ? readLineGeometry(directrixNode) : null;
+    if (!focus || !directrix) return null;
+    return { kind: 'polyline', points: sampleFocusDirectrixParabola(focus, directrix) };
+  }
+
+  return null;
+};
+
+const geometryFromImplicitExpression = (expression: string): Record<string, unknown> | null => {
+  const segments = sampleImplicitEquationSegments(expression, {
+    bounds: { left: DEFAULT_BOUNDS[0], top: DEFAULT_BOUNDS[1], right: DEFAULT_BOUNDS[2], bottom: DEFAULT_BOUNDS[3] },
+    grid: 72
+  });
+  if (segments.length === 0) return null;
+  return segments.length === 1
+    ? { kind: 'polyline', points: segments[0] }
+    : { kind: 'multiline', segments };
+};
+
+const sampleParametricClosedCurve = (pointAt: (theta: number) => Point2D, steps = 145): Point2D[] => {
+  const points: Point2D[] = [];
+  for (let index = 0; index < steps; index += 1) {
+    points.push(pointAt((Math.PI * 2 * index) / (steps - 1)));
+  }
+  return points;
+};
+
+const sampleEllipsePoints = (
+  center: Point2D,
+  radiusX: number,
+  radiusY: number,
+  rotationRadians: number
+): Point2D[] => sampleParametricClosedCurve((theta) => rotateAroundCenter({
+  x: center.x + radiusX * Math.cos(theta),
+  y: center.y + radiusY * Math.sin(theta)
+}, center, rotationRadians));
+
+const sampleHyperbolaSegments = (
+  center: Point2D,
+  radiusX: number,
+  radiusY: number,
+  rotationRadians: number
+): Point2D[][] => [-1, 1].map((side) => {
+  const points: Point2D[] = [];
+  for (let index = 0; index < 96; index += 1) {
+    const t = -2.2 + (4.4 * index) / 95;
+    points.push(rotateAroundCenter({
+      x: center.x + side * radiusX * Math.cosh(t),
+      y: center.y + radiusY * Math.sinh(t)
+    }, center, rotationRadians));
+  }
+  return points;
+});
+
+const sampleFocusDirectrixParabola = (
+  focus: Point2D,
+  directrix: { point: Point2D; direction: Point2D }
+): Point2D[] => {
+  const magnitude = Math.hypot(directrix.direction.x, directrix.direction.y);
+  if (magnitude <= 1e-9) return [];
+  const axisU = { x: directrix.direction.x / magnitude, y: directrix.direction.y / magnitude };
+  let axisV = { x: -axisU.y, y: axisU.x };
+  let focusV = dot(subtract(focus, directrix.point), axisV);
+  if (Math.abs(focusV) <= 1e-9) return [];
+  if (focusV < 0) {
+    axisV = { x: -axisV.x, y: -axisV.y };
+    focusV = -focusV;
+  }
+  const focusU = dot(subtract(focus, directrix.point), axisU);
+  const span = Math.max(6, Math.abs(focusV) * 5);
+  const points: Point2D[] = [];
+  for (let index = 0; index < 240; index += 1) {
+    const u = focusU - span + (2 * span * index) / 239;
+    const v = (((u - focusU) ** 2) + focusV ** 2) / (2 * focusV);
+    points.push({
+      x: directrix.point.x + axisU.x * u + axisV.x * v,
+      y: directrix.point.y + axisU.y * u + axisV.y * v
+    });
+  }
+  return points;
+};
+
+const createSolidProjectionPolyline = (payload: Record<string, unknown> | null): Point2D[] => {
+  const family = typeof payload?.family === 'string' ? payload.family : 'cube';
+  const parameters = asRecord(payload?.parameters) ?? {};
+  const origin = isPoint2D(payload?.origin) ? payload.origin : { x: 0, y: 0 };
+  const size = readPositiveNumber(parameters.size, 2);
+  const width = readPositiveNumber(parameters.width, size);
+  const height = readPositiveNumber(parameters.height, size);
+  const radius = readPositiveNumber(parameters.radius, Math.max(width, height) / 2);
+  if (family === 'sphere' || family === 'cylinder' || family === 'cone' || family.includes('frustum')) {
+    return sampleParametricClosedCurve((theta) => ({
+      x: origin.x + radius * Math.cos(theta),
+      y: origin.y + (height / 2) * Math.sin(theta)
+    }), 97);
+  }
+  const depthOffset = Math.max(0.45, width * 0.22);
+  const front = [
+    { x: origin.x - width / 2, y: origin.y - height / 2 },
+    { x: origin.x + width / 2, y: origin.y - height / 2 },
+    { x: origin.x + width / 2, y: origin.y + height / 2 },
+    { x: origin.x - width / 2, y: origin.y + height / 2 },
+    { x: origin.x - width / 2, y: origin.y - height / 2 }
+  ];
+  const back = front.map((point) => ({ x: point.x + depthOffset, y: point.y + depthOffset }));
+  return [
+    ...front,
+    back[0], back[1], front[1], back[1], back[2], front[2], back[2], back[3], front[3], back[3], back[0]
+  ];
+};
+
+const resolvePointSource = (value: unknown, resolveNode: (objectId: string) => GraphObjectNode | null): Point2D | null => {
+  const record = asRecord(value);
+  const coordinates = asRecord(record?.coordinates);
+  if (coordinates?.dimension === '2d' && isPoint2D(coordinates)) return coordinates;
+  if (typeof record?.objectId === 'string') return getNodeAnchor(resolveNode(record.objectId));
+  return isPoint2D(value) ? value : null;
+};
+
+const getNodeAnchor = (node: GraphObjectNode | null): Point2D | null => {
+  const payload = asRecord(node?.payload);
+  const geometry = asRecord(payload?.geometry);
+  if (isPoint2D(payload?.point)) return payload.point;
+  if (isPoint2D(payload?.position)) return payload.position;
+  if (isPoint2D(geometry?.center)) return geometry.center;
+  if (isPoint2D(geometry?.point)) return geometry.point;
+  if (isPoint2D(geometry?.start) && isPoint2D(geometry.end)) return averagePoints([geometry.start, geometry.end]);
+  if (Array.isArray(geometry?.points)) {
+    const points = geometry.points.filter(isPoint2D);
+    if (points.length > 0) return averagePoints(points);
+  }
+  if (Array.isArray(geometry?.vertices)) {
+    const points = geometry.vertices.filter(isPoint2D);
+    if (points.length > 0) return averagePoints(points);
+  }
+  return null;
+};
+
+const readLineGeometry = (node: GraphObjectNode): { point: Point2D; direction: Point2D } | null => {
+  const payload = asRecord(node.payload);
+  const geometry = asRecord(payload?.geometry);
+  const point = isPoint2D(geometry?.point) ? geometry.point : isPoint2D(geometry?.origin) ? geometry.origin : isPoint2D(geometry?.start) ? geometry.start : null;
+  const direction = isPoint2D(geometry?.direction) ? geometry.direction : null;
+  if (point && direction) return { point, direction };
+  const start = isPoint2D(geometry?.start) ? geometry.start : isPoint2D(payload?.start) ? payload.start : null;
+  const end = isPoint2D(geometry?.end) ? geometry.end : isPoint2D(payload?.end) ? payload.end : null;
+  if (start && end) return { point: start, direction: subtract(end, start) };
+  return null;
+};
+
+const averagePoints = (points: Point2D[]): Point2D => ({
+  x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+  y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+});
+
+const rotateAroundCenter = (point: Point2D, center: Point2D, radians: number): Point2D => {
+  if (radians === 0) return point;
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos
+  };
+};
+
+const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const readPositiveNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+const readFunctionDomain = (domain: unknown): [number, number] | undefined => {
+  if (Array.isArray(domain) && domain.length >= 2 && typeof domain[0] === 'number' && typeof domain[1] === 'number') {
+    return [domain[0], domain[1]];
+  }
+  const record = asRecord(domain);
+  return typeof record?.min === 'number' && Number.isFinite(record.min) && typeof record.max === 'number' && Number.isFinite(record.max)
+    ? [record.min, record.max]
+    : undefined;
+};
+const readNumberRecord = (value: unknown): Record<string, number> => {
+  const record = asRecord(value);
+  if (!record) return {};
+  return Object.fromEntries(
+    Object.entries(record).filter((entry): entry is [string, number] => (
+      typeof entry[1] === 'number' && Number.isFinite(entry[1])
+    ))
+  );
+};
 
 const directionForNode = (node: GraphObjectNode | null): Point2D | null => {
   const payload = asRecord(node?.payload);

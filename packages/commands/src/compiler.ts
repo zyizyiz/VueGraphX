@@ -42,6 +42,7 @@ import {
   createEquationDescriptor,
   createFunctionDescriptor,
   createSolidDescriptor,
+  evaluateExpression,
   evaluateFunctionDescriptor,
   getSolidDefaultParameters,
   type GraphFunctionDescriptor,
@@ -148,6 +149,13 @@ const stripQuotes = (value: string): string => {
 const parseNumber = (value: string): number | null => {
   const numeric = Number(stripQuotes(value));
   return Number.isFinite(numeric) ? numeric : null;
+};
+
+const parseNumericExpression = (value: string): number | null => {
+  const direct = parseNumber(value);
+  if (direct !== null) return direct;
+  const result = evaluateExpression(stripQuotes(value));
+  return result.ok && Number.isFinite(result.value) ? result.value : null;
 };
 
 const hasBalancedBrackets = (input: string): boolean => {
@@ -539,6 +547,8 @@ const buildCommandNode = (
       return okResult(createBaseNode(id, type, { dimension: stripQuotes(args[0] ?? 'plane') }, [], layerId));
     case 'solid':
       return buildSolidNode(id, args, layerId);
+    case 'surface':
+      return buildSurfaceNode(id, args, layerId);
     case 'perpendicular-line':
       return buildPerpendicularLineNode(id, args, symbols, layerId);
     case 'parallel-line':
@@ -973,6 +983,35 @@ const buildSolidNode = (id: string, args: readonly string[], layerId: GraphObjec
     [],
     layerId
   ));
+};
+
+
+const buildSurfaceNode = (id: string, args: readonly string[], layerId: GraphObjectNode['layerId']): GraphOperationResult<GraphObjectNode> => {
+  if (args.length !== 3 && args.length !== 7) {
+    return arityError('Surface requires either x(u,v), y(u,v), z(u,v) or those expressions plus u/v domain bounds.');
+  }
+
+  const domainArgs = args.slice(3).map(parseNumericExpression);
+  if (domainArgs.some((value) => value === null)) {
+    return invalidArgument('Surface domain bounds must be finite numeric expressions.');
+  }
+  const [uMin, uMax, vMin, vMax] = domainArgs.length === 4
+    ? domainArgs as [number, number, number, number]
+    : [0, Math.PI * 2, 0, Math.PI * 2];
+  if (uMin >= uMax || vMin >= vMax) return domainError('Surface domain min must be less than max.', { uMin, uMax, vMin, vMax });
+
+  return okResult(createBaseNode(id, 'solid', {
+    objectType: 'solid',
+    solidKind: 'surface',
+    family: 'surface',
+    surfaceKind: 'parametric',
+    expression: `Surface(${args.join(', ')})`,
+    xExpression: stripQuotes(args[0]),
+    yExpression: stripQuotes(args[1]),
+    zExpression: stripQuotes(args[2]),
+    uDomain: [uMin, uMax],
+    vDomain: [vMin, vMax]
+  }, [], layerId));
 };
 
 const buildPerpendicularLineNode = (

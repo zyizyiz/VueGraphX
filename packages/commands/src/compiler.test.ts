@@ -83,6 +83,28 @@ describe('renderer-free command compiler', () => {
     });
   });
 
+  it('compiles parametric Surface commands with math constants in domain bounds', () => {
+    const result = compileGraphCommand('torus = Surface((3+cos(v))*cos(u), (3+cos(v))*sin(u), sin(v), 0, 2*pi, 0, 2*pi)');
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value?.node).toMatchObject({
+      id: 'torus',
+      kind: 'shape',
+      type: 'solid',
+      payload: {
+        objectType: 'solid',
+        solidKind: 'surface',
+        family: 'surface',
+        surfaceKind: 'parametric',
+        xExpression: '(3+cos(v))*cos(u)',
+        yExpression: '(3+cos(v))*sin(u)',
+        zExpression: 'sin(v)'
+      }
+    });
+    expect((result.value?.node.payload as any).uDomain[1]).toBeCloseTo(Math.PI * 2);
+    expect((result.value?.node.payload as any).vDomain[1]).toBeCloseTo(Math.PI * 2);
+  });
+
   it('covers higher-level command DSL for tangent, derivative, intersection, angle, translate, and rotate', () => {
     const program = compileGraphCommands([
       'A = Point(0, 0)',

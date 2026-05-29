@@ -297,6 +297,7 @@ export class GraphXEngine {
   private runtimeSceneStore = new GraphSceneStore('graphx-runtime-scene');
   private commandCoreObjectIds = new Map<string, string[]>();
   private commandSymbols: GraphCommandSymbolTable = new Map();
+  private commandNumericScope = new Map<string, number>();
   private jsxGraphCommandBackend: JsxGraphBackend | null = null;
   private jsxGraphCommandRuntime: JsxGraphRuntime | null = null;
   private jsxGraphCommandBoard: JXG.Board | null = null;
@@ -914,6 +915,7 @@ export class GraphXEngine {
       this.runtimeSceneStore.clear();
       this.commandCoreObjectIds.clear();
       this.commandSymbols.clear();
+      this.commandNumericScope.clear();
       this.jsxGraphCommandHandles?.clear();
       this.commandRenderPath?.clear();
       this.clearVariables();
@@ -941,6 +943,7 @@ export class GraphXEngine {
     this.runtimeSceneStore.clear();
     this.commandCoreObjectIds.clear();
     this.commandSymbols.clear();
+    this.commandNumericScope.clear();
     this.jsxGraphCommandHandles?.clear();
     this.commandRenderPath?.clear();
     this.clearVariables();
@@ -950,6 +953,7 @@ export class GraphXEngine {
   /** 清空共享数学作用域中的变量。 */
   public clearVariables(): void {
     this.renderer.mathScope.clear();
+    this.commandNumericScope.clear();
   }
 
   /** 执行一条表达式或指令，并将生成的元素记录到指定 id 下。相同 id 的命令会先移除旧结果再重新渲染，color 和 extraOptions 会继续透传给底层渲染器。 */
@@ -1633,12 +1637,14 @@ export class GraphXEngine {
     }
 
     this.commandSymbols = result.value.symbols;
-    const node = result.value.node;
+    const node = this.prepareCommandCoreNodeForRuntime(result.value.node);
+    this.commandSymbols.set(node.id, node);
     const stored = this.runtimeSceneStore.addObject(node, { replace: true });
     if (!stored.ok) {
       throw new Error(stored.diagnostics[0]?.message ?? '指令无法写入 VueGraphX core scene');
     }
     this.commandCoreObjectIds.set(commandId, [node.id]);
+    this.captureCommandNumericAssignment(node);
     return node;
   }
 
@@ -1648,15 +1654,71 @@ export class GraphXEngine {
       strokeColor: typeof options.strokeColor === 'string' ? options.strokeColor : color,
       fillColor: typeof options.fillColor === 'string' ? options.fillColor : `${color}26`,
       strokeWidth: typeof options.strokeWidth === 'number' ? options.strokeWidth : undefined,
-      visible: options.visible === false ? false : undefined
+      visible: options.visible === false || options.plot === false ? false : undefined
     };
+  }
+
+  private prepareCommandCoreNodeForRuntime(node: GraphObjectNode): GraphObjectNode {
+    if (node.type !== 'function' && node.type !== 'derivative') return node;
+    const payload = isRecord(node.payload) ? node.payload : null;
+    if (!payload || typeof payload.expression !== 'string') return node;
+
+    const parameters = this.getSerializableMathScope();
+    if (Object.keys(parameters).length === 0) return node;
+
+    return {
+      ...node,
+      payload: {
+        ...payload,
+        // `scope` keeps compatibility with the math kernel/function descriptor,
+        // while `parameters` is the serializable Scene Object IR field.
+        scope: {
+          ...(isRecord(payload.scope) ? this.readNumericRecord(payload.scope) : {}),
+          ...parameters
+        },
+        parameters: {
+          ...(isRecord(payload.parameters) ? this.readNumericRecord(payload.parameters) : {}),
+          ...parameters
+        }
+      }
+    };
+  }
+
+  private getSerializableMathScope(): Record<string, number> {
+    return {
+      ...this.readNumericRecord(this.renderer?.mathScope?.data),
+      ...Object.fromEntries(this.commandNumericScope)
+    };
+  }
+
+  private readNumericRecord(value: unknown): Record<string, number> {
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(
+      Object.entries(value).filter((entry): entry is [string, number] => (
+        typeof entry[1] === 'number' && Number.isFinite(entry[1])
+      ))
+    );
+  }
+
+  private captureCommandNumericAssignment(node: GraphObjectNode): void {
+    if (node.type !== 'variable') return;
+    const payload = isRecord(node.payload) ? node.payload : null;
+    const name = typeof payload?.name === 'string' ? payload.name : node.id;
+    const value = typeof payload?.value === 'number' && Number.isFinite(payload.value) ? payload.value : null;
+    if (value === null) return;
+    this.commandNumericScope.set(name, value);
   }
 
   private removeCommandCoreObjects(commandId: string): void {
     const objectIds = this.commandCoreObjectIds.get(commandId) ?? [];
     objectIds.forEach((objectId) => {
       this.removeJsxGraphBackendObject(objectId);
-      this.runtimeSceneStore.removeObject(objectId);
+      const removed = this.runtimeSceneStore.removeObject(objectId);
+      if (removed.value?.type === 'variable') {
+        const payload = isRecord(removed.value.payload) ? removed.value.payload : null;
+        const name = typeof payload?.name === 'string' ? payload.name : removed.value.id;
+        this.commandNumericScope.delete(name);
+      }
       for (const [symbol, node] of this.commandSymbols.entries()) {
         if (node.id === objectId || symbol === objectId) {
           this.commandSymbols.delete(symbol);
@@ -1735,8 +1797,8 @@ export class GraphXEngine {
   }
 
   private canRenderCoreNodeWithJsxGraphBackend(node: GraphObjectNode): boolean {
-    if (!this.boardMgr.board || typeof (this.boardMgr.board as any).create !== 'function' || this.boardMgr.mode === '3d') return false;
-    if (node.type === 'legacy-expression' || node.type === 'variable' || node.type === 'equation') return false;
+    if (!this.boardMgr.board || typeof (this.boardMgr.board as any).create !== 'function') return false;
+    if (node.type === 'legacy-expression' || node.type === 'variable') return false;
     return [
       'point',
       'line',
@@ -1749,6 +1811,8 @@ export class GraphXEngine {
       'sector',
       'semicircle',
       'text',
+      'function',
+      'derivative',
       'vector',
       'midpoint',
       'perpendicular-line',
@@ -1757,7 +1821,11 @@ export class GraphXEngine {
       'intersection',
       'angle',
       'translated',
-      'rotated'
+      'rotated',
+      'conic',
+      'equation',
+      'solid',
+      'measurement'
     ].includes(node.type);
   }
 

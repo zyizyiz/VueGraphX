@@ -235,6 +235,8 @@ const RENDERER_LEAK_KEYS = new Set([
   'canvas'
 ]);
 
+const RENDERER_LEAK_STRING_PATTERN = /\b(?:JXG|JSXGraph|BABYLON|PIXI|Fabric|Konva|THREE)\.[A-Za-z_$][\w$]*\b|\b(?:HTMLElement|HTMLCanvasElement|SVGElement)\b|\[object (?:HTML|SVG|Canvas)[^\]]*\]/;
+
 export const createGraphObjectNode = <Payload>(input: GraphObjectNode<Payload>): GraphObjectNode<Payload> => ({
   ...input,
   dependencies: input.dependencies ? [...input.dependencies] : undefined,
@@ -266,7 +268,7 @@ export const mergeGraphObjectPatch = <Payload>(
 export const hasRendererFrameworkLeak = (value: unknown, seen = new WeakSet<object>()): boolean => {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string') {
-    return /\b(JXG|JSXGraph|BABYLON|Babylon|PIXI|Fabric|Konva|THREE|HTMLElement|HTMLCanvasElement)\b/.test(value);
+    return RENDERER_LEAK_STRING_PATTERN.test(value);
   }
   if (typeof value !== 'object') return false;
   if (seen.has(value)) return false;

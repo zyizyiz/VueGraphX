@@ -1,6 +1,13 @@
 import type { PlaygroundMode } from './types/mode';
+import {
+  getParityCapabilitySummaries,
+  getParityDemoCommands,
+  parityRendererBackends as rendererBackends,
+  type PlaygroundBackendCapability,
+  type PlaygroundRenderBackend
+} from './parityStatus';
 
-export type PlaygroundRenderBackend = 'jsxgraph' | 'canvas2d' | 'babylon';
+export type { PlaygroundBackendCapability, PlaygroundRenderBackend };
 
 export interface DemoItem {
   emoji: string;
@@ -10,73 +17,28 @@ export interface DemoItem {
   compatibleBackends?: PlaygroundRenderBackend[];
 }
 
-export interface PlaygroundBackendCapability {
-  id: PlaygroundRenderBackend;
-  label: string;
-  summary: string;
-  supported: readonly string[];
-  unsupported: readonly string[];
-  notes: readonly string[];
-}
+export { rendererBackends };
 
-export const rendererBackends: { id: PlaygroundRenderBackend; label: string }[] = [
-  { id: 'jsxgraph', label: 'JSXGraph' },
-  { id: 'canvas2d', label: 'Canvas2D Core' },
-  { id: 'babylon', label: 'Babylon Core' }
-];
+export const playgroundBackendCapabilities: Record<PlaygroundRenderBackend, PlaygroundBackendCapability> = getParityCapabilitySummaries();
 
-export const playgroundBackendCapabilities: Record<PlaygroundRenderBackend, PlaygroundBackendCapability> = {
-  jsxgraph: {
-    id: 'jsxgraph',
-    label: 'JSXGraph',
-    summary: '兼容路径：继续承载现有 JSXGraph 2D/3D、关系面板、隐藏线与拖拽设计器。',
-    supported: ['2D 函数与几何', 'JSXGraph 3D 曲面', '关系/隐藏线面板', '外部拖拽设计器', '场景文档导入导出'],
-    unsupported: ['不是 renderer-agnostic 后端验证路径', '性能与拖拽仍受 JSXGraph 运行时约束'],
-    notes: ['默认保留，用于兼容现有能力与对照 Canvas/Babylon 输出。']
-  },
-  canvas2d: {
-    id: 'canvas2d',
-    label: 'Canvas2D Core',
-    summary: '2D core 后端：同一份 command 编译为 renderer-neutral IR 后由 Canvas 绘制。',
-    supported: [
-      'Point / Text',
-      'Line / Ray / Segment / Vector',
-      'Polyline / Polygon / RegularPolygon / Parallelogram',
-      'Circle / Arc / Sector / Semicircle',
-      'Ellipse / Hyperbola(center-radii)',
-      'Function / Derivative 采样折线',
-      'Midpoint / Intersection / Parallel / Perpendicular / Tangent',
-      'Translate / Rotate 变换结果',
-      'Distance / Length / Area / Slope / Angle 测量标签'
-    ],
-    unsupported: ['3D 曲面与真实 solid mesh', 'Equation/隐式通用二次曲线的完整等值线追踪', 'JSXGraph 专属关系面板与场景文档 UI'],
-    notes: ['不支持项会显示在输入行错误中，避免误认为已迁移。']
-  },
-  babylon: {
-    id: 'babylon',
-    label: 'Babylon Core',
-    summary: '3D solid 后端：core Solid(...) 指令进入 Babylon runtime，非 solid 指令明确诊断。',
-    supported: [
-      'Cube / RectangularPrism',
-      'Sphere',
-      'Cylinder / Cone / ConicalFrustum',
-      'Triangular/Pentagonal/Hexagonal Prism',
-      'Triangular/Quadrangular Pyramid',
-      'Triangular/Quadrangular Frustum',
-      'ArcRotateCamera 视角控制',
-      'Picking metadata / resize / render loop'
-    ],
-    unsupported: ['2D 几何与函数绘制', 'JSXGraph 曲面表达式 z=f(x,y)', '隐藏线 overlay 与关系面板'],
-    notes: ['Babylon 展示只声明已接入的 Solid family，不把函数/曲面伪装成 Babylon 已迁移。']
-  }
-};
+const curriculumParityDemos: DemoItem[] = getParityDemoCommands().map((demo) => ({
+  emoji: demo.emoji,
+  title: `课标 · ${demo.title}`,
+  desc: demo.desc,
+  commands: demo.commands.map((command) => (
+    command.options
+      ? { expr: command.expression, options: command.options }
+      : command.expression
+  ))
+}));
 
 export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
   '2d': [
+    ...curriculumParityDemos,
     {
       emoji: '🧪',
       title: 'Canvas2D 全功能巡检',
-      desc: '点线圆弧、多边形、圆锥曲线、文本、测量和变换，可直接切 Canvas2D Core',
+      desc: '点线圆弧、多边形、圆锥曲线、文本、测量和变换，可直接切任一首发后端',
       commands: [
         'A = Point(-8, 4)',
         'B = Point(-5, 4)',
@@ -161,7 +123,7 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
     {
       emoji: '🧊',
       title: 'Babylon 全 solid family',
-      desc: '切到 Babylon Core 后端，展示 core Solid(...) 当前全部可渲染族',
+      desc: '展示 core Solid(...) 当前全部可渲染族，可在三个首发后端间切换',
       commands: [
         'cube = Solid("cube", size=1.4, x=-6, y=0, z=0)',
         'box = Solid("rectangular-prism", width=1.8, depth=1, height=1.2, x=-3.8)',
@@ -178,7 +140,7 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
     {
       emoji: '🧊',
       title: 'Babylon 基础立体',
-      desc: '切换到 Babylon Core 后端后渲染同一份 Solid 指令',
+      desc: '同一份 Solid 指令在三个首发后端中保持语义一致',
       commands: [
         'cube = Solid("cube", size=2, x=-2)',
         'sphere = Solid("sphere", radius=1.2, x=1.6)',
@@ -188,42 +150,39 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
     {
       emoji: '🌊',
       title: '波浪曲面',
-      desc: '二元函数 sin(x)cos(y) 的曲面：JSXGraph 路径；Babylon 会明确提示未支持',
-      commands: ['z = sin(x)*cos(y)']
+      desc: '二元函数 z = sin(x)cos(y) 的真实曲面线框',
+      commands: ['z = sin(x)*cos(y)', 'Text(-4, 4, "z = sin(x)cos(y)")']
     },
     {
       emoji: '🏔️',
       title: '高斯曲面',
       desc: '二维高斯正态分布钟形曲面',
-      commands: ['z = exp(-(x^2 + y^2)/4)']
+      commands: ['z = exp(-(x^2 + y^2)/4)', 'Text(-4, 4, "Gaussian surface")']
     },
     {
       emoji: '🌀',
       title: '马鞍面',
       desc: '经典双曲抛物面 z = x²-y²',
-      commands: ['z = x^2 - y^2']
+      commands: ['z = 0.18*(x^2 - y^2)', 'Text(-4, 4, "saddle surface")']
     },
     {
       emoji: '🏖️',
       title: '涟漪曲面',
       desc: '以原点为中心的衰减波',
-      commands: ['z = sin(sqrt(x^2 + y^2)) / (sqrt(x^2 + y^2) + 0.01)']
+      commands: ['z = sin(sqrt(x^2 + y^2))/(sqrt(x^2 + y^2)+0.01)', 'Text(-4, 4, "radial ripple surface")']
     },
     {
       emoji: '🍩',
       title: '环面 (甜甜圈)',
-      desc: '使用 Surface 参数曲面方程生成',
+      desc: '参数曲面 Surface(...) 真实表达环面线框',
       commands: [
-        'R = 3',
-        'r = 1',
-        'X(u, v) = (R + r*cos(v))*cos(u)',
-        'Y(u, v) = (R + r*cos(v))*sin(u)',
-        'Z(u, v) = r*sin(v)',
-        'Surface(X(u, v), Y(u, v), Z(u, v))'
+        'torus = Surface((3+cos(v))*cos(u), (3+cos(v))*sin(u), sin(v), 0, 2*pi, 0, 2*pi)',
+        'Text(-3, 4, "parametric torus")'
       ]
     }
   ],
   geometry: [
+    ...curriculumParityDemos,
     {
       emoji: '🧭',
       title: '关系面板练习',

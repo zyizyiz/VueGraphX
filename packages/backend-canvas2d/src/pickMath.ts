@@ -114,6 +114,12 @@ export const pickGraphObjectNode = (
     return distancePx <= tolerancePx ? { target, backendId, layerId, clientPoint: { ...clientPoint }, worldPoint: { dimension: '2d', ...point }, distancePx } : null;
   }
 
+  const multiline = readMultilineGeometry(node);
+  if (multiline) {
+    const distancePx = Math.min(...multiline.map((segment) => distanceToPolyline(point, segment)));
+    return distancePx <= tolerancePx ? { target, backendId, layerId, clientPoint: { ...clientPoint }, worldPoint: { dimension: '2d', ...point }, distancePx } : null;
+  }
+
   const arc = readArcLikeGeometry(node);
   if (arc) {
     const distancePx = distanceToArcLike(point, arc);
@@ -132,6 +138,19 @@ export const pickGraphObjectNode = (
   }
 
   return null;
+};
+
+const readMultilineGeometry = (node: GraphObjectNode): MathPoint2D[][] | null => {
+  const payload = node.payload as Record<string, unknown> | undefined;
+  const geometry = payload?.geometry;
+  if (typeof geometry !== 'object' || geometry === null) return null;
+  const record = geometry as Record<string, unknown>;
+  if (record.kind !== 'multiline' && record.kind !== 'wireframe') return null;
+  if (!Array.isArray(record.segments)) return null;
+  const segments = record.segments
+    .filter(Array.isArray)
+    .map((segment) => segment.filter(isPointLike));
+  return segments.some((segment) => segment.length >= 2) ? segments : null;
 };
 
 const readArcLikeGeometry = (

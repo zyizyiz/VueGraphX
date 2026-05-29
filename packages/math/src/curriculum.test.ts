@@ -30,6 +30,26 @@ describe('math knowledge catalog', () => {
     expect(summary.byArea['calculus-basics']).toBeGreaterThan(0);
   });
 
+  it('declares standard-backed demo and backend evidence for every catalog entry', () => {
+    for (const entry of mathKnowledgeCatalog) {
+      expect(entry.sourceRefs.length).toBeGreaterThan(0);
+      expect(entry.demoIds).toEqual([`curriculum.${entry.id}`]);
+      const statuses = Object.values(entry.backendEvidence).map((evidence) => evidence.status);
+      expect(statuses.every((status) => ['native', 'sampled', 'projected', 'dom-overlay'].includes(status))).toBe(true);
+      expect(entry.backendEvidence.jsxgraph.demoIds).toEqual(entry.demoIds);
+      expect(entry.backendEvidence.canvas2d.demoIds).toEqual(entry.demoIds);
+      expect(entry.backendEvidence.babylon.demoIds).toEqual(entry.demoIds);
+      expect(entry.visualObjectTypes.length).toBeGreaterThan(0);
+      expect(entry.capabilityFamilies.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('uses honest backend evidence where rendering is sampled, projected, or DOM-overlayed', () => {
+    expect(getMathKnowledgePoint('solid.ir-surface')?.backendEvidence.canvas2d.status).toBe('projected');
+    expect(getMathKnowledgePoint('algebra.symbolic-derivative')?.backendEvidence.canvas2d.status).toBe('sampled');
+    expect(getMathKnowledgePoint('statistics.descriptive')?.backendEvidence.babylon.status).toBe('dom-overlay');
+  });
+
   it('filters and clones catalog entries so callers cannot mutate package truth', () => {
     const seniorTrigonometry = listMathKnowledgePoints({ stage: 'senior-high', area: 'trigonometry' });
     expect(seniorTrigonometry.map((point) => point.id)).toContain('trigonometry.angle-triangle');

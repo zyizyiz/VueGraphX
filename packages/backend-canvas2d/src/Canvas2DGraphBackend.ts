@@ -20,6 +20,7 @@ export interface CanvasWorldBounds {
 
 export interface Canvas2DGraphBackendOptions extends MemoryGraphBackendOptions {
   canvas?: HTMLCanvasElement;
+  context?: CanvasRenderingContext2D;
   pixelRatio?: number;
   worldBounds?: CanvasWorldBounds;
   showAxes?: boolean;
@@ -42,6 +43,7 @@ interface CanvasDrawablePayload {
     endAngle?: number;
     vertices?: Array<{ x: number; y: number }>;
     points?: Array<{ x: number; y: number }>;
+    segments?: Array<Array<{ x: number; y: number }>>;
     start?: { x: number; y: number };
     end?: { x: number; y: number };
     point?: { x: number; y: number };
@@ -79,11 +81,17 @@ const CANVAS2D_SUPPORTED_TYPES = new Set([
   'tangent',
   'translated',
   'rotated',
-  'conic'
+  'conic',
+  'equation',
+  'solid',
+  'parametric'
 ]);
-const CANVAS2D_PARTIAL_TYPES = new Set(['solid']);
+const CANVAS2D_PARTIAL_TYPES = new Set<string>();
 
 const getCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
+  if (node.type === 'implicit') {
+    return isDrawableCanvas2DNode(node) ? 'success' : 'unsupported';
+  }
   if (CANVAS2D_SUPPORTED_TYPES.has(node.type)) {
     return isDrawableCanvas2DNode(node) ? 'success' : 'partial-support';
   }
@@ -95,7 +103,12 @@ const isDrawableCanvas2DNode = (node: GraphObjectNode): boolean => {
   const payload = node.payload as CanvasDrawablePayload | undefined;
   if (!payload) return false;
   if (isCanvasPoint(payload.point)) return true;
-  if (node.type === 'measurement') return isCanvasPoint(payload.point);
+  if (node.type === 'measurement') {
+    if (isCanvasPoint(payload.point)) return true;
+    return payload.measurementKind === 'angle'
+      && Array.isArray(payload.points)
+      && payload.points.filter(isCanvasPoint).length >= 3;
+  }
   if (node.type === 'angle') return Array.isArray(payload.points) && payload.points.filter(isCanvasPoint).length >= 3;
   if (isCanvasPoint(payload.start) && isCanvasPoint(payload.end)) return true;
 
@@ -111,6 +124,9 @@ const isDrawableCanvas2DNode = (node: GraphObjectNode): boolean => {
   if (geometry.kind === 'polygon') return Array.isArray(geometry.vertices) && geometry.vertices.filter(isCanvasPoint).length > 0;
   if (geometry.kind === 'segment') return isCanvasPoint(geometry.start) && isCanvasPoint(geometry.end);
   if (geometry.kind === 'polyline') return Array.isArray(geometry.points) && geometry.points.filter(isCanvasPoint).length > 1;
+  if (geometry.kind === 'multiline' || geometry.kind === 'wireframe') {
+    return Array.isArray(geometry.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.filter(isCanvasPoint).length > 1);
+  }
   if (geometry.kind === 'line') return isCanvasPoint(geometry.point) && isCanvasPoint(geometry.direction);
   if (geometry.kind === 'ray') return isCanvasPoint(geometry.origin ?? geometry.point) && isCanvasPoint(geometry.direction);
   return false;
@@ -145,6 +161,7 @@ const createBackendSupportDiagnosticResult = (
 export class Canvas2DGraphBackend extends MemoryGraphBackend {
   private canvas: HTMLCanvasElement | null;
   private context: CanvasRenderingContext2D | null = null;
+  private readonly providedContext: CanvasRenderingContext2D | null;
   private pixelRatio: number;
   private worldBounds: CanvasWorldBounds | null;
   private readonly showAxes: boolean;
@@ -152,6 +169,8 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
   public constructor(options: Canvas2DGraphBackendOptions = {}) {
     super({ id: options.id ?? 'canvas2d', capabilities: { dimensions: ['2d'], ...(options.capabilities ?? {}) } });
     this.canvas = options.canvas ?? null;
+    this.providedContext = options.context ?? null;
+    this.context = this.providedContext;
     this.pixelRatio = options.pixelRatio ?? 1;
     this.worldBounds = options.worldBounds ?? null;
     this.showAxes = options.showAxes ?? true;
@@ -170,7 +189,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     } else if (hostElement && !this.canvas.parentElement && hostElement !== this.canvas) {
       hostElement.appendChild(this.canvas);
     }
-    this.context = getCanvasContext(this.canvas);
+    this.context = this.providedContext ?? getCanvasContext(this.canvas);
     const result = super.mount(host, options);
     if (options.size) this.resize(options.size);
     return result;
@@ -204,7 +223,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.canvas.height = Math.max(1, Math.round(size.height * ratio));
     this.canvas.style.width = `${size.width}px`;
     this.canvas.style.height = `${size.height}px`;
-    this.context = getCanvasContext(this.canvas);
+    this.context = this.providedContext ?? getCanvasContext(this.canvas);
     if (this.context && ratio !== 1) this.context.setTransform(ratio, 0, 0, ratio, 0, 0);
     this.flush();
   }
@@ -262,14 +281,25 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (!this.context) return;
     if (node.renderHints?.visible === false) return;
     const payload = node.payload as CanvasDrawablePayload;
+    const strokeColor = readString(node.renderHints?.strokeColor, '#1f6feb');
+    const fillColor = readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
+    const strokeWidth = readNumber(node.renderHints?.strokeWidth, 2);
     this.context.save();
-    this.context.strokeStyle = readString(node.renderHints?.strokeColor, '#1f6feb');
-    this.context.fillStyle = readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
-    this.context.lineWidth = readNumber(node.renderHints?.strokeWidth, 2);
+    this.context.strokeStyle = strokeColor;
+    this.context.fillStyle = fillColor;
+    this.context.lineWidth = strokeWidth;
+    this.context.lineCap = 'round';
+    this.context.lineJoin = 'round';
     const dash = readNumber(node.renderHints?.dash, 0);
     if (dash > 0) this.context.setLineDash([dash * 4, dash * 3]);
 
     if (node.type === 'measurement') {
+      if (payload.measurementKind === 'angle' && payload.points && payload.points.length >= 3) {
+        this.drawAngle(payload.points);
+        this.drawMeasurement(payload);
+        this.context.restore();
+        return;
+      }
       this.drawMeasurement(payload);
       this.context.restore();
       return;
@@ -281,8 +311,22 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
         this.context.font = readString(node.renderHints?.font, '14px sans-serif');
         this.context.fillText(payload.text, point.x, point.y);
       } else {
+        const radius = readNumber(node.renderHints?.radius, 4);
+        this.context.save();
         this.context.beginPath();
-        this.context.arc(point.x, point.y, readNumber(node.renderHints?.radius, 4), 0, Math.PI * 2);
+        this.context.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        this.context.strokeStyle = 'rgba(255, 255, 255, 0.96)';
+        this.context.lineWidth = Math.max(strokeWidth + 2, 4);
+        this.context.arc(point.x, point.y, radius + 2, 0, Math.PI * 2);
+        this.context.fill();
+        this.context.stroke();
+        this.context.restore();
+
+        this.context.beginPath();
+        this.context.fillStyle = strokeColor;
+        this.context.strokeStyle = strokeColor;
+        this.context.lineWidth = Math.max(strokeWidth, 2);
+        this.context.arc(point.x, point.y, radius, 0, Math.PI * 2);
         this.context.fill();
         this.context.stroke();
       }
@@ -321,6 +365,10 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
       this.drawPointPath([geometry.start, geometry.end]);
     } else if (geometry?.kind === 'polyline' && geometry.points && geometry.points.length > 1) {
       this.drawPointPath(geometry.points);
+    } else if ((geometry?.kind === 'multiline' || geometry?.kind === 'wireframe') && Array.isArray(geometry.segments)) {
+      for (const segment of geometry.segments) {
+        if (Array.isArray(segment) && segment.length > 1) this.drawPointPath(segment);
+      }
     } else if (geometry?.kind === 'line' && geometry.point && geometry.direction) {
       const endpoints = this.extendLineToBounds(geometry.point, geometry.direction, false);
       if (endpoints) this.drawPointPath(endpoints);
@@ -381,13 +429,30 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
   private drawPointPath(points: Array<{ x: number; y: number }>, close = false, fill = false): void {
     if (!this.context || points.length === 0) return;
     const first = this.projectPoint(points[0]);
-    this.context.beginPath();
-    this.context.moveTo(first.x, first.y);
-    for (const point of points.slice(1)) {
-      const projected = this.projectPoint(point);
-      this.context.lineTo(projected.x, projected.y);
+    const strokeStyle = this.context.strokeStyle;
+    const lineWidth = this.context.lineWidth;
+    const drawPath = () => {
+      this.context!.beginPath();
+      this.context!.moveTo(first.x, first.y);
+      for (const point of points.slice(1)) {
+        const projected = this.projectPoint(point);
+        this.context!.lineTo(projected.x, projected.y);
+      }
+      if (close) this.context!.closePath();
+    };
+
+    if (!fill) {
+      this.context.save();
+      this.context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      this.context.lineWidth = Math.max(Number(lineWidth) + 3, 5);
+      drawPath();
+      this.context.stroke();
+      this.context.restore();
     }
-    if (close) this.context.closePath();
+
+    this.context.strokeStyle = strokeStyle;
+    this.context.lineWidth = lineWidth;
+    drawPath();
     if (fill) this.context.fill();
     this.context.stroke();
   }

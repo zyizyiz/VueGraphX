@@ -110,7 +110,7 @@ describe('GraphXEngine relation assist options', () => {
 });
 
 describe('GraphXEngine command backend routing', () => {
-  it('keeps function expressions on the legacy JSXGraph renderer so shared math scope is preserved', () => {
+  it('allows function expressions on the JSXGraph backend after scope is serialized into the node', () => {
     const fakeEngine = {
       boardMgr: {
         mode: '2d',
@@ -126,7 +126,7 @@ describe('GraphXEngine command backend routing', () => {
       layerId: 'content'
     });
 
-    expect(canRender).toBe(false);
+    expect(canRender).toBe(true);
   });
 });
 
@@ -194,6 +194,7 @@ describe('GraphXEngine board option cloning', () => {
       runtimeSceneStore: new GraphSceneStore('test-runtime-scene'),
       commandCoreObjectIds: new Map(),
       commandSymbols: new Map(),
+      commandNumericScope: new Map(),
       clearVariables: vi.fn(),
       setupGlobalEvents: vi.fn(),
       currentOptions: undefined,

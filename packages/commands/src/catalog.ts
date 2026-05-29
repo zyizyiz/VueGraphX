@@ -25,6 +25,7 @@ export type GraphCommandNodeType =
   | 'vector'
   | 'coordinate-system'
   | 'solid'
+  | 'surface'
   | 'perpendicular-line'
   | 'parallel-line'
   | 'midpoint'
@@ -339,6 +340,24 @@ export const GRAPH_COMMAND_CATALOG: readonly GraphCommandCatalogEntry[] = [
     parameters: [parameter('family', 'solid-family', { optional: true }), parameter('parameters', 'keyword-argument', { variadic: true })],
     examples: ['cube = Solid("cube", size=2)'],
     support: support(['solid'], { capabilityIds: ['math.solid.toggle-section'] })
+  },
+
+  {
+    canonicalName: 'Surface',
+    type: 'surface',
+    aliases: ['Surface'],
+    arity: { min: 3, max: 7 },
+    parameters: [
+      parameter('xExpression', 'expression'),
+      parameter('yExpression', 'expression'),
+      parameter('zExpression', 'expression'),
+      parameter('uMin', 'number', { optional: true }),
+      parameter('uMax', 'number', { optional: true }),
+      parameter('vMin', 'number', { optional: true }),
+      parameter('vMax', 'number', { optional: true })
+    ],
+    examples: ['torus = Surface((3+cos(v))*cos(u), (3+cos(v))*sin(u), sin(v), 0, 2*pi, 0, 2*pi)'],
+    support: support(['solid'], { capabilityIds: ['math.surface.sample-wireframe'] })
   },
   {
     canonicalName: 'PerpendicularLine',

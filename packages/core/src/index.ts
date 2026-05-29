@@ -10,3 +10,4 @@ export * from './capabilityExecutor';
 export * from './eventRouter';
 export * from './dragOperations';
 export * from './renderRuntime';
+export * from './parityMatrix';

@@ -65,6 +65,12 @@ const createFakeEngine = () => {
     syncView3DToBoard: vi.fn(),
     destroy: vi.fn()
   };
+  const mathScope = {
+    data: {} as Record<string, number>,
+    clear: vi.fn(() => {
+      mathScope.data = {};
+    })
+  };
 
   const engine = Object.assign(Object.create(GraphXEngine.prototype), {
     boardMgr,
@@ -93,6 +99,7 @@ const createFakeEngine = () => {
     runtimeSceneStore: new GraphSceneStore('test-runtime-scene'),
     commandCoreObjectIds: new Map<string, string[]>(),
     commandSymbols: new Map(),
+    commandNumericScope: new Map(),
     jsxGraphCommandBackend: null,
     jsxGraphCommandRuntime: null,
     jsxGraphCommandBoard: null,
@@ -103,11 +110,11 @@ const createFakeEngine = () => {
         if (expression === 'bad()') {
           throw new Error('bad command');
         }
+        const assignment = expression.match(/^([a-zA-Z_]\w*)\s*=\s*(-?\d+(?:\.\d+)?)$/);
+        if (assignment) mathScope.data[assignment[1]] = Number(assignment[2]);
         return [{ name: `${id}:${expression}` }];
       }),
-      mathScope: {
-        clear: vi.fn()
-      }
+      mathScope
     },
     shapeDefinitions: new Map<string, GraphShapeDefinition>(),
     shapeInstances: new Map<string, GraphShapeInstance>(),
@@ -308,7 +315,7 @@ describe('GraphXEngine scene document support', () => {
     expect(engine.getRuntimeSceneSnapshot().objects.map((node) => node.id)).toEqual(['B', 'segment-3']);
   });
 
-  it('keeps function command DSL on the legacy JSXGraph renderer while exporting M1 function IR', () => {
+  it('routes function command DSL through the JSXGraph backend with serializable shared numeric scope', () => {
     const engine = createFakeEngine();
     const created: Array<{ type: string; args: unknown[] }> = [];
     const board = (engine as any).boardMgr.board;
@@ -319,12 +326,20 @@ describe('GraphXEngine scene document support', () => {
     });
     board.removeObject = vi.fn();
 
-    engine.executeCommand('cmd_f', 'f = Function("x^2", -2, 2)', '#0ea5e9');
+    engine.executeCommand('cmd_a', 'a = 0.5', '#64748b');
+    engine.executeCommand('cmd_f', 'f(x) = sin(x) + a', '#0ea5e9');
     engine.executeCommand('cmd_df', 'df = Derivative(f)', '#f43f5e');
 
-    expect(created).toEqual([]);
-    expect((engine as any).renderer.render).toHaveBeenCalledTimes(2);
-    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual(['function', 'function']);
+    expect(created.map((entry) => entry.type)).toEqual(['functiongraph', 'functiongraph']);
+    expect((created[0].args[0] as (x: number) => number)(0)).toBeCloseTo(0.5);
+    expect((created[1].args[0] as (x: number) => number)(0)).toBeCloseTo(1);
+    expect((engine as any).renderer.render).toHaveBeenCalledTimes(1);
+    expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual(['variable', 'function', 'function']);
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'f')?.payload).toMatchObject({
+      objectType: 'function',
+      expression: 'sin(x) + a',
+      parameters: { a: 0.5 }
+    });
   });
 
   it('routes angle command DSL through the JSXGraph backend adapter', () => {
@@ -447,6 +462,7 @@ describe('GraphXEngine scene document support', () => {
 
     expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.payload).toEqual({
       objectType: 'point',
+      point: { x: 4, y: 1 },
       position: { dimension: '2d', x: 4, y: 1 },
       schemaVersion: 1
     });

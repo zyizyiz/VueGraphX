@@ -15,3 +15,4 @@ export * from './complex';
 export * from './linearAlgebra';
 export * from './sets';
 export * from './calculus';
+export * from './sceneSampling';

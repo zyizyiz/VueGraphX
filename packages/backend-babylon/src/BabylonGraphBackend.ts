@@ -28,8 +28,10 @@ export interface BabylonRuntimePickResult {
 
 export interface BabylonRuntimePort {
   mount(host: HTMLElement, options?: GraphBackendMountOptions): void;
-  createSolid(node: GraphObjectNode, handle: GraphRenderHandle, context?: GraphBackendContext): void;
-  updateSolid(handle: GraphRenderHandle, patch: GraphObjectPatch, context?: GraphBackendContext): void;
+  createObject(node: GraphObjectNode, handle: GraphRenderHandle, context?: GraphBackendContext): void;
+  updateObject(handle: GraphRenderHandle, patch: GraphObjectPatch, context?: GraphBackendContext): void;
+  createSolid?(node: GraphObjectNode, handle: GraphRenderHandle, context?: GraphBackendContext): void;
+  updateSolid?(handle: GraphRenderHandle, patch: GraphObjectPatch, context?: GraphBackendContext): void;
   remove(handle: GraphRenderHandle): void;
   pick(point: GraphClientPoint, options?: GraphPickOptions): BabylonRuntimePickResult | null;
   project?(point: GraphWorldPoint, viewport?: GraphViewportRef): GraphClientPoint | null;
@@ -47,9 +49,41 @@ export interface BabylonGraphBackendOptions {
 
 type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
 
-const getBabylonSupportStatus = (node: GraphObjectNode): BackendSupportStatus => (
-  node.type === 'solid' ? 'success' : 'unsupported'
-);
+const BABYLON_SUPPORTED_TYPES = new Set([
+  'point',
+  'text',
+  'angle',
+  'circle',
+  'arc',
+  'sector',
+  'semicircle',
+  'polygon',
+  'segment',
+  'line',
+  'ray',
+  'polyline',
+  'function',
+  'derivative',
+  'vector',
+  'measurement',
+  'midpoint',
+  'intersection',
+  'perpendicular-line',
+  'parallel-line',
+  'tangent',
+  'translated',
+  'rotated',
+  'conic',
+  'equation',
+  'solid'
+]);
+
+const getBabylonSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
+  if (node.type === 'implicit') return hasRenderableProxyGeometry(node) ? 'success' : 'unsupported';
+  if (node.type === 'solid') return 'success';
+  if (!BABYLON_SUPPORTED_TYPES.has(node.type)) return 'unsupported';
+  return isDrawableBabylonProxyNode(node) ? 'success' : 'partial-support';
+};
 
 const createBackendSupportDiagnosticResult = (
   backendId: string,
@@ -87,7 +121,7 @@ export class BabylonGraphBackend implements GraphRenderBackend {
       unproject: true,
       drag: true,
       layers: true,
-      dimensions: ['3d'],
+      dimensions: ['2d', '3d'],
       ...(options.capabilities ?? {})
     };
   }
@@ -118,7 +152,7 @@ export class BabylonGraphBackend implements GraphRenderBackend {
     };
     this.nodes.set(stored.id, { ...stored, layerId });
     this.handles.set(handle.id, handle);
-    this.runtime?.createSolid(node, handle, context);
+    this.runtime?.createObject(stored, handle, context);
     return okResult(handle);
   }
 
@@ -128,7 +162,7 @@ export class BabylonGraphBackend implements GraphRenderBackend {
       const next = mergeGraphObjectPatch(current, patch);
       this.nodes.set(handle.objectId, { ...next, layerId: context.layerId ?? next.layerId ?? handle.layerId });
     }
-    this.runtime?.updateSolid(handle, patch, context);
+    this.runtime?.updateObject(handle, patch, context);
   }
 
   public remove(handle: GraphRenderHandle): void {
@@ -191,3 +225,57 @@ const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
 };
 
 export const createBabylonGraphBackend = (options?: BabylonGraphBackendOptions): BabylonGraphBackend => new BabylonGraphBackend(options);
+
+const hasRenderableProxyGeometry = (node: GraphObjectNode): boolean => {
+  const payload = asRecord(node.payload);
+  const geometry = asRecord(payload?.geometry);
+  if (Array.isArray(geometry?.points) && geometry.points.length >= 2) return true;
+  if (Array.isArray(geometry?.vertices) && geometry.vertices.length >= 2) return true;
+  if (Array.isArray(geometry?.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.length >= 2)) return true;
+  return ['circle', 'ellipse', 'hyperbola', 'arc', 'sector', 'semicircle', 'segment', 'line', 'ray', 'polyline', 'polygon', 'multiline', 'wireframe'].includes(
+    typeof geometry?.kind === 'string' ? geometry.kind : ''
+  );
+};
+
+const isDrawableBabylonProxyNode = (node: GraphObjectNode): boolean => {
+  const payload = asRecord(node.payload);
+  if (!payload) return false;
+  if (isPointLike(payload.point) || isPointLike(payload.position)) return true;
+  if (node.type === 'text' && isPointLike(payload.anchor)) return true;
+  if (node.type === 'measurement' || node.type === 'angle') {
+    return Array.isArray(payload.points) && payload.points.filter(isPointLike).length >= 3;
+  }
+  if (isPointLike(payload.start) && isPointLike(payload.end)) return true;
+
+  const geometry = asRecord(payload.geometry);
+  if (!geometry?.kind) return false;
+  if (geometry.kind === 'circle') return isPointLike(geometry.center) && isFiniteNumber(geometry.radius);
+  if (geometry.kind === 'ellipse' || geometry.kind === 'hyperbola') {
+    return isPointLike(geometry.center) && isFiniteNumber(geometry.radiusX) && isFiniteNumber(geometry.radiusY);
+  }
+  if (geometry.kind === 'arc' || geometry.kind === 'sector' || geometry.kind === 'semicircle') {
+    return isPointLike(geometry.center) && isPointLike(geometry.start) && isPointLike(geometry.end);
+  }
+  if (geometry.kind === 'polygon') return Array.isArray(geometry.vertices) && geometry.vertices.filter(isPointLike).length >= 2;
+  if (geometry.kind === 'polyline') return Array.isArray(geometry.points) && geometry.points.filter(isPointLike).length >= 2;
+  if (geometry.kind === 'multiline' || geometry.kind === 'wireframe') {
+    return Array.isArray(geometry.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.filter(isPointLike).length >= 2);
+  }
+  if (geometry.kind === 'segment') return isPointLike(geometry.start) && isPointLike(geometry.end);
+  if (geometry.kind === 'line') return isPointLike(geometry.point) && isPointLike(geometry.direction);
+  if (geometry.kind === 'ray') return isPointLike(geometry.origin ?? geometry.point) && isPointLike(geometry.direction);
+  return false;
+};
+
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+const isPointLike = (value: unknown): boolean => {
+  const point = asRecord(value);
+  const coordinates = asRecord(point?.coordinates);
+  const source = coordinates ?? point;
+  return isFiniteNumber(source?.x) && isFiniteNumber(source?.y);
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => (
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
+);

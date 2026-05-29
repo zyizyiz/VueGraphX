@@ -129,32 +129,32 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
     const point = readPoint2D(payload.point) ?? readPoint2D(payload.position);
     return point ? {
       objectType: 'point',
-      payload: { objectType: 'point', position: toWorldPoint2D(point) }
+      payload: withLegacyPayload(payload, { objectType: 'point', position: toWorldPoint2D(point) })
     } : null;
   }
 
   if (node.type === 'derivative') {
     return typeof payload.expression === 'string' ? {
       objectType: 'function',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'function',
         expression: payload.expression,
         variable: typeof payload.variable === 'string' ? payload.variable : 'x',
         domain: readLegacyDomain(payload.domain),
         parameters: readNumberRecord(payload.parameters)
-      }
+      })
     } : null;
   }
 
   if (node.type === 'angle') {
     return Array.isArray(node.dependencies) && node.dependencies.length >= 3 ? {
       objectType: 'measurement',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'measurement',
         measurementKind: 'angle',
         targets: node.dependencies.slice(0, 3).map((objectId) => ({ objectId })),
         expression: typeof payload.degrees === 'number' ? `${payload.degrees}deg` : undefined
-      }
+      })
     } : null;
   }
 
@@ -171,11 +171,11 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
     const vertices = readPoint2DArray(geometry?.vertices ?? geometry?.points);
     return vertices && vertices.length >= (node.type === 'polygon' ? 3 : 2) ? {
       objectType: 'polygon',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'polygon',
         vertices: vertices.map(toCoordinateSource),
         closed: node.type === 'polygon'
-      }
+      })
     } : null;
   }
 
@@ -185,7 +185,7 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
     const radius = readFiniteNumber(geometry?.radius);
     return center && radius !== null ? {
       objectType: 'conic',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'conic',
         conicKind: 'circle',
         definition: {
@@ -194,7 +194,7 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
           radiusX: radius,
           radiusY: radius
         }
-      }
+      })
     } : null;
   }
 
@@ -202,37 +202,37 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
     const point = readPoint2D(payload.point);
     return point && typeof payload.text === 'string' ? {
       objectType: 'text',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'text',
         content: payload.text,
         anchor: toCoordinateSource(point),
         format: 'plain'
-      }
+      })
     } : null;
   }
 
   if (node.type === 'function') {
     return typeof payload.expression === 'string' ? {
       objectType: 'function',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'function',
         expression: payload.expression,
         variable: typeof payload.variable === 'string' ? payload.variable : 'x',
         domain: readLegacyDomain(payload.domain),
         parameters: readNumberRecord(payload.parameters)
-      }
+      })
     } : null;
   }
 
   if (node.type === 'equation') {
     return typeof payload.expression === 'string' ? {
       objectType: 'implicit',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'implicit',
         expression: payload.expression,
         variables: ['x', 'y'],
         parameters: readNumberRecord(payload.parameters)
-      }
+      })
     } : null;
   }
 
@@ -242,27 +242,27 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
     if (start && end) {
       return {
         objectType: 'vector',
-        payload: { objectType: 'vector', start: toCoordinateSource(start), end: toCoordinateSource(end) }
+        payload: withLegacyPayload(payload, { objectType: 'vector', start: toCoordinateSource(start), end: toCoordinateSource(end) })
       };
     }
     const vector = readPoint2D(payload.vector);
     return vector ? {
       objectType: 'vector',
-      payload: { objectType: 'vector', components: { dimension: '2d', x: vector.x, y: vector.y } }
+      payload: withLegacyPayload(payload, { objectType: 'vector', components: { dimension: '2d', x: vector.x, y: vector.y } })
     } : null;
   }
 
   if (node.type === 'solid') {
     return {
       objectType: 'solid',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'solid',
         solidKind: 'custom',
         parameters: {
           ...(asRecord(payload.parameters) ?? {}),
           ...(typeof payload.family === 'string' ? { family: payload.family } : {})
         }
-      }
+      })
     };
   }
 
@@ -275,7 +275,7 @@ const readLegacyCircularGeometryIrInput = (payload: Record<string, unknown>): { 
   const radius = readFiniteNumber(geometry?.radius);
   return center && radius !== null ? {
     objectType: 'conic',
-    payload: {
+    payload: withLegacyPayload(payload, {
       objectType: 'conic',
       conicKind: 'circle',
       definition: {
@@ -284,7 +284,7 @@ const readLegacyCircularGeometryIrInput = (payload: Record<string, unknown>): { 
         radiusX: radius,
         radiusY: radius
       }
-    }
+    })
   } : null;
 };
 
@@ -300,14 +300,14 @@ const readLegacyLinearObjectIrInput = (
     const direction = readPoint2D(geometry.direction);
     return point && direction ? {
       objectType: 'line',
-      payload: {
+      payload: withLegacyPayload(payload, {
         objectType: 'line',
         definition: {
           mode: 'point-direction',
           point: toCoordinateSource(point),
           direction: { dimension: '2d', x: direction.x, y: direction.y }
         }
-      }
+      })
     } : null;
   }
 
@@ -316,7 +316,7 @@ const readLegacyLinearObjectIrInput = (
     const end = readPoint2D(geometry.end);
     return start && end ? {
       objectType: 'segment',
-      payload: { objectType: 'segment', endpoints: [toCoordinateSource(start), toCoordinateSource(end)] }
+      payload: withLegacyPayload(payload, { objectType: 'segment', endpoints: [toCoordinateSource(start), toCoordinateSource(end)] })
     } : null;
   }
 
@@ -324,13 +324,21 @@ const readLegacyLinearObjectIrInput = (
   const direction = readPoint2D(geometry.direction);
   return origin && direction ? {
     objectType: 'ray',
-    payload: {
+    payload: withLegacyPayload(payload, {
       objectType: 'ray',
       origin: toCoordinateSource(origin),
       direction: { dimension: '2d', x: direction.x, y: direction.y }
-    }
+    })
   } : null;
 };
+
+const withLegacyPayload = <Canonical extends Record<string, unknown>>(
+  legacyPayload: Record<string, unknown>,
+  canonicalPayload: Canonical
+): Record<string, unknown> => ({
+  ...legacyPayload,
+  ...canonicalPayload
+});
 
 const asRecord = (value: unknown): Record<string, unknown> | null => (
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null

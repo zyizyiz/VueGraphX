@@ -1,8 +1,69 @@
 import { describe, expect, it } from 'vitest';
+import { GraphSceneRuntime, compareParitySnapshots } from '@vuegraphx/core';
+import { createBabylonGraphBackend } from '@vuegraphx/backend-babylon';
+import { createCanvas2DGraphBackend } from '@vuegraphx/backend-canvas2d';
+import { createJsxGraphBackend } from '@vuegraphx/backend-jsxgraph';
 import { allDemos } from '../showcase';
-import { buildPlaygroundBabylonScene, buildPlaygroundCanvasScene, type PlaygroundCanvasCommand } from './canvasScene';
+import {
+  getParityCapabilitySummaries,
+  getParityDemoCommands,
+  isBackendSelectableForMode,
+  parityRendererBackends
+} from '../parityStatus';
+import {
+  buildPlaygroundBabylonScene,
+  buildPlaygroundCanvasScene,
+  buildPlaygroundJsxGraphScene,
+  createPlaygroundParitySnapshot,
+  type PlaygroundCanvasCommand
+} from './canvasScene';
+
+const toCommands = (
+  commands: (string | { expr: string; options?: Record<string, unknown> })[]
+): PlaygroundCanvasCommand[] => commands.map((command, index) => ({
+  id: `demo-${index}`,
+  expression: typeof command === 'string' ? command : command.expr,
+  color: '#0ea5e9',
+  options: typeof command === 'string' ? undefined : command.options
+}));
 
 describe('buildPlaygroundCanvasScene', () => {
+  it('keeps playground drawing geometry when routed through GraphSceneRuntime scene validation', () => {
+    const result = buildPlaygroundCanvasScene([
+      { id: 'fn', expression: 'sin(x)', color: '#0ea5e9' },
+      { id: 'A', expression: 'A = Point(-2, 0)', color: '#f43f5e' },
+      { id: 'circle', expression: 'c = Circle(A, Point(0, 0))', color: '#10b981' },
+      { id: 'eq', expression: 'eq = Equation("x^2 + y^2 = 4")', color: '#8b5cf6' }
+    ]);
+    expect(result.diagnostics).toEqual([]);
+
+    const runtime = new GraphSceneRuntime();
+    for (const node of result.nodes) {
+      const add = runtime.addObject(node);
+      expect(add.diagnostics, node.id).toEqual([]);
+      expect(add.ok, node.id).toBe(true);
+    }
+
+    const objects = runtime.snapshot().objects;
+    expect(objects.find((node) => node.id === 'fn')?.payload).toMatchObject({
+      objectType: 'function',
+      geometry: { kind: 'polyline', points: expect.any(Array) }
+    });
+    expect(objects.find((node) => node.id === 'A')?.payload).toMatchObject({
+      objectType: 'point',
+      point: { x: -2, y: 0 },
+      position: { dimension: '2d', x: -2, y: 0 }
+    });
+    expect(objects.find((node) => node.id === 'c')?.payload).toMatchObject({
+      objectType: 'conic',
+      geometry: { kind: 'circle' }
+    });
+    expect(objects.find((node) => node.id === 'eq')?.payload).toMatchObject({
+      objectType: 'implicit',
+      geometry: { kind: 'polyline', points: expect.any(Array) }
+    });
+  });
+
   it('builds Canvas2D nodes from legacy point and geometry commands', () => {
     const result = buildPlaygroundCanvasScene([
       { id: 'a', expression: 'A=(-2,0)', color: '#0ea5e9' },
@@ -68,7 +129,42 @@ describe('buildPlaygroundCanvasScene', () => {
     expect(result.nodes.find((node) => node.id === 'area')?.payload).toMatchObject({ measurementKind: 'area' });
   });
 
-  it('reports unsupported Canvas2D scene commands instead of silently dropping them', () => {
+  it('lowers 3D z-expression defaults to a visible cross-backend surface wireframe without unsupported diagnostics', () => {
+    const result = buildPlaygroundCanvasScene([
+      { id: 'surface-default', expression: 'z = sin(x)*cos(y)', color: '#0ea5e9' }
+    ]);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0]).toMatchObject({
+      id: 'surface-default',
+      type: 'solid',
+      payload: {
+        solidKind: 'surface',
+        family: 'surface',
+        geometry: { kind: 'wireframe', projection: 'isometric' }
+      }
+    });
+    expect((result.nodes[0].payload as any).geometry.segments.length).toBeGreaterThan(20);
+  });
+
+  it('keeps Babylon 3D mode surfaces in native xyz wireframe geometry', () => {
+    const result = buildPlaygroundBabylonScene([
+      { id: 'surface-3d', expression: 'z = sin(x)*cos(y)', color: '#0ea5e9' }
+    ], { renderMode: '3d' });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes[0]).toMatchObject({
+      type: 'solid',
+      payload: {
+        geometry: { kind: 'wireframe', projection: 'xyz' }
+      }
+    });
+    const firstPoint = ((result.nodes[0].payload as any).geometry.segments[0][0]) as { x: number; y: number; z?: number };
+    expect(typeof firstPoint.z).toBe('number');
+  });
+
+  it('lowers Equation, Parabola, and Solid commands for Canvas2D without unsupported diagnostics', () => {
     const result = buildPlaygroundCanvasScene([
       { id: 'eq', expression: 'eq = Equation("x^2 + y^2 = 1")', color: '#0ea5e9' },
       { id: 'parabola-focus', expression: 'F = Point(0, 1)', color: '#0ea5e9' },
@@ -79,18 +175,14 @@ describe('buildPlaygroundCanvasScene', () => {
       { id: 'solid', expression: 'cube = Solid("cube", size=2)', color: '#0ea5e9' }
     ]);
 
-    expect(result.nodes.map((node) => node.id)).toEqual(['F', 'A', 'B', 'l']);
-    expect(result.diagnostics.map((diagnostic) => diagnostic.commandId)).toEqual(['eq', 'parabola', 'solid']);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes.map((node) => node.id)).toEqual(expect.arrayContaining(['eq', 'F', 'A', 'B', 'l', 'p', 'cube']));
+    expect(result.nodes.find((node) => node.id === 'eq')?.payload).toMatchObject({ geometry: { kind: 'polyline' } });
+    expect(result.nodes.find((node) => node.id === 'p')?.payload).toMatchObject({ conicKind: 'parabola', geometry: { kind: 'polyline' } });
+    expect(result.nodes.find((node) => node.id === 'cube')?.payload).toMatchObject({ family: 'cube', geometry: { kind: 'polyline' } });
   });
 
   it('keeps curated Canvas and Babylon showcase demos renderable on their intended backends', () => {
-    const toCommands = (commands: (string | { expr: string; options?: Record<string, unknown> })[]): PlaygroundCanvasCommand[] => commands.map((command, index) => ({
-      id: `demo-${index}`,
-      expression: typeof command === 'string' ? command : command.expr,
-      color: '#0ea5e9',
-      options: typeof command === 'string' ? undefined : command.options
-    }));
-
     const canvasDemo = allDemos['2d'].find((demo) => demo.title === 'Canvas2D 全功能巡检');
     const babylonDemo = allDemos['3d'].find((demo) => demo.title === 'Babylon 全 solid family');
     expect(canvasDemo).toBeDefined();
@@ -121,7 +213,7 @@ describe('buildPlaygroundCanvasScene', () => {
     expect((result.nodes[0].payload as any).geometry.kind).toBe('polyline');
     expect((result.nodes[0].payload as any).geometry.points.length).toBeGreaterThan(20);
     const tangent = result.nodes.find((node) => node.id === 't');
-    expect(tangent).toMatchObject({ type: 'tangent' });
+    expect(tangent).toMatchObject({ type: 'line' });
     expect((tangent?.payload as any).through.y).toBeCloseTo(Math.sin(1) + 0.5);
   });
 
@@ -140,16 +232,95 @@ describe('buildPlaygroundCanvasScene', () => {
     }
   });
 
-  it('builds a real Babylon core scene from Solid commands and rejects non-solid commands explicitly', () => {
+  it('builds a real Babylon core scene from Solid and non-solid curriculum commands', () => {
     const result = buildPlaygroundBabylonScene([
       { id: 'cube', expression: 'cube = Solid("cube", size=2, x=-1)', color: '#0ea5e9' },
       { id: 'sphere', expression: 'sphere = Solid("sphere", radius=1, x=2)', color: '#22c55e' },
       { id: 'point', expression: 'A = Point(0, 0)', color: '#f43f5e' }
     ]);
 
-    expect(result.nodes.map((node) => node.type)).toEqual(['solid', 'solid']);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes.map((node) => node.type)).toEqual(['solid', 'solid', 'point']);
     expect(result.nodes[0].payload).toMatchObject({ family: 'cube', parameters: { size: 2 }, origin: { x: -1, y: 0, z: 0 } });
     expect(result.nodes[1].payload).toMatchObject({ family: 'sphere', parameters: { radius: 1 }, origin: { x: 2, y: 0, z: 0 } });
-    expect(result.diagnostics).toEqual([{ commandId: 'point', message: 'Babylon 后端当前只接收 core Solid(...) 立体对象；曲面/函数仍请切回 JSXGraph。' }]);
+  });
+
+  it('keeps every curriculum parity demo diagnostic-free and equivalent across first-release backends', () => {
+    const demoCommands = getParityDemoCommands();
+    expect(demoCommands.length).toBeGreaterThan(20);
+
+    for (const demo of demoCommands) {
+      const jsxGraph = buildPlaygroundJsxGraphScene(demo.commands);
+      const canvas = buildPlaygroundCanvasScene(demo.commands);
+      const babylon = buildPlaygroundBabylonScene(demo.commands);
+
+      expect(jsxGraph.diagnostics, demo.demoId).toEqual([]);
+      expect(canvas.diagnostics, demo.demoId).toEqual([]);
+      expect(babylon.diagnostics, demo.demoId).toEqual([]);
+
+      const expected = createPlaygroundParitySnapshot(demo.demoId, jsxGraph.nodes, 'jsxgraph', demo.rowIds);
+      const canvasComparison = compareParitySnapshots(expected, createPlaygroundParitySnapshot(demo.demoId, canvas.nodes, 'canvas2d', demo.rowIds));
+      const babylonComparison = compareParitySnapshots(expected, createPlaygroundParitySnapshot(demo.demoId, babylon.nodes, 'babylon', demo.rowIds));
+      expect(canvasComparison.diagnostics, demo.demoId).toEqual([]);
+      expect(babylonComparison.diagnostics, demo.demoId).toEqual([]);
+    }
+  });
+
+  it('creates backend handles for every curriculum parity node on all selectable first-release backends', () => {
+    const demoCommands = getParityDemoCommands();
+    const builders = {
+      jsxgraph: buildPlaygroundJsxGraphScene,
+      canvas2d: buildPlaygroundCanvasScene,
+      babylon: buildPlaygroundBabylonScene
+    };
+    const backendFactories = {
+      jsxgraph: () => createJsxGraphBackend({ id: 'jsxgraph' }),
+      canvas2d: () => createCanvas2DGraphBackend({ id: 'canvas2d' }),
+      babylon: () => createBabylonGraphBackend({ id: 'babylon' })
+    };
+
+    for (const demo of demoCommands) {
+      for (const backend of parityRendererBackends) {
+        const result = builders[backend.id](demo.commands);
+        expect(result.diagnostics, `${backend.id}:${demo.demoId}`).toEqual([]);
+        const runtime = new GraphSceneRuntime({ backend: backendFactories[backend.id]() });
+        for (const node of result.nodes) {
+          const added = runtime.addObject(node);
+          expect(added.ok, `${backend.id}:${demo.demoId}:${node.id}`).toBe(true);
+        }
+        expect(runtime.snapshot().handles.map((handle) => handle.objectId), `${backend.id}:${demo.demoId}`).toEqual(
+          result.nodes.map((node) => node.id)
+        );
+      }
+    }
+  });
+
+  it('derives selector availability and capability summaries from parity status instead of hardcoded unsupported gaps', () => {
+    expect(parityRendererBackends.map((backend) => backend.id)).toEqual(['jsxgraph', 'canvas2d', 'babylon']);
+    for (const backend of parityRendererBackends) {
+      expect(isBackendSelectableForMode('2d', backend.id)).toBe(true);
+      expect(isBackendSelectableForMode('geometry', backend.id)).toBe(true);
+      expect(isBackendSelectableForMode('3d', backend.id)).toBe(true);
+      expect(isBackendSelectableForMode('dual-layer', backend.id)).toBe(backend.id === 'jsxgraph');
+      expect(getParityCapabilitySummaries()[backend.id].unsupported).toEqual([]);
+    }
+  });
+
+  it('keeps every selectable playground demo diagnostic-free for every selectable backend', () => {
+    const builders = {
+      jsxgraph: buildPlaygroundJsxGraphScene,
+      canvas2d: buildPlaygroundCanvasScene,
+      babylon: buildPlaygroundBabylonScene
+    };
+
+    for (const mode of Object.keys(allDemos) as Array<keyof typeof allDemos>) {
+      for (const backend of parityRendererBackends) {
+        if (!isBackendSelectableForMode(mode, backend.id)) continue;
+        for (const demo of allDemos[mode]) {
+          const result = builders[backend.id](toCommands(demo.commands));
+          expect(result.diagnostics, `${mode}:${backend.id}:${demo.title}`).toEqual([]);
+        }
+      }
+    }
   });
 });

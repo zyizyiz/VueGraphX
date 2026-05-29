@@ -709,6 +709,7 @@ describe('renderer-neutral core runtime contracts', () => {
   it('detects renderer-owned data before it can enter scene truth', () => {
     expect(hasRendererFrameworkLeak({ payload: { point: { x: 1, y: 2 } } })).toBe(false);
     expect(hasRendererFrameworkLeak({ payload: { element: 'mathematical-term' } })).toBe(false);
+    expect(hasRendererFrameworkLeak({ payload: { objectType: 'text', content: 'Babylon文字OK' } })).toBe(false);
     expect(hasRendererFrameworkLeak({ payload: { board: { id: 'JXG board' } } })).toBe(true);
     expect(hasRendererFrameworkLeak({ payload: 'BABYLON.Mesh' })).toBe(true);
   });

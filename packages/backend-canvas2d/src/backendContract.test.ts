@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GraphInteractionRouter } from '@vuegraphx/core';
+import { GraphInteractionRouter, createParityFixtureNode, curriculumParityRows } from '@vuegraphx/core';
 import type {
   GraphClientPoint,
   GraphObjectNode,
@@ -24,12 +24,85 @@ const pointNode: GraphObjectNode = {
   layerId: 'content'
 };
 
-const solidNode: GraphObjectNode = {
-  id: 'cube',
-  kind: 'shape',
-  type: 'solid',
-  payload: { family: 'cube', parameters: { size: 2 } },
-  layerId: 'content'
+const solidNode: GraphObjectNode = createParityFixtureNode({ id: 'cube', type: 'solid', rowIds: ['solid.metrics'] });
+
+type CanvasDrawOp =
+  | { name: 'lineTo'; x: number; y: number }
+  | { name: 'arc'; x: number; y: number; radius: number; fillStyle: string; strokeStyle: string }
+  | { name: 'stroke'; strokeStyle: string; lineWidth: number; lineToCount: number }
+  | { name: 'fill'; fillStyle: string }
+  | { name: 'fillText' | 'strokeText'; text: string; x: number; y: number; fillStyle?: string; strokeStyle?: string }
+  | { name: string; [key: string]: unknown };
+
+const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; ops: CanvasDrawOp[] } => {
+  const ops: CanvasDrawOp[] = [];
+  const stack: Array<Pick<CanvasRenderingContext2D, 'strokeStyle' | 'fillStyle' | 'lineWidth' | 'font' | 'globalAlpha'>> = [];
+  let lineToCount = 0;
+  const context: any = {
+    strokeStyle: '#000000',
+    fillStyle: '#000000',
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    font: '10px sans-serif',
+    globalAlpha: 1,
+    save() {
+      stack.push({
+        strokeStyle: this.strokeStyle,
+        fillStyle: this.fillStyle,
+        lineWidth: this.lineWidth,
+        font: this.font,
+        globalAlpha: this.globalAlpha
+      });
+    },
+    restore() {
+      const entry = stack.pop();
+      if (!entry) return;
+      this.strokeStyle = entry.strokeStyle;
+      this.fillStyle = entry.fillStyle;
+      this.lineWidth = entry.lineWidth;
+      this.font = entry.font;
+      this.globalAlpha = entry.globalAlpha;
+    },
+    beginPath() {
+      lineToCount = 0;
+      ops.push({ name: 'beginPath' });
+    },
+    moveTo(x: number, y: number) {
+      ops.push({ name: 'moveTo', x, y });
+    },
+    lineTo(x: number, y: number) {
+      lineToCount += 1;
+      ops.push({ name: 'lineTo', x, y });
+    },
+    closePath() {
+      ops.push({ name: 'closePath' });
+    },
+    arc(x: number, y: number, radius: number) {
+      ops.push({ name: 'arc', x, y, radius, fillStyle: String(this.fillStyle), strokeStyle: String(this.strokeStyle) });
+    },
+    ellipse() {
+      ops.push({ name: 'ellipse' });
+    },
+    stroke() {
+      ops.push({ name: 'stroke', strokeStyle: String(this.strokeStyle), lineWidth: this.lineWidth, lineToCount });
+    },
+    fill() {
+      ops.push({ name: 'fill', fillStyle: String(this.fillStyle) });
+    },
+    fillText(text: string, x: number, y: number) {
+      ops.push({ name: 'fillText', text, x, y, fillStyle: String(this.fillStyle) });
+    },
+    strokeText(text: string, x: number, y: number) {
+      ops.push({ name: 'strokeText', text, x, y, strokeStyle: String(this.strokeStyle) });
+    },
+    clearRect() {
+      ops.push({ name: 'clearRect' });
+    },
+    setTransform() {},
+    setLineDash() {}
+  };
+  return { context: context as CanvasRenderingContext2D, ops };
 };
 
 const implicitNode: GraphObjectNode = {
@@ -62,7 +135,7 @@ const backendCapabilityExpectations: Record<BackendContractBackendId, BackendCap
   memory: { dimensions: ['2d'], pick: true, project: true, unproject: true, drag: true, layers: true },
   canvas2d: { dimensions: ['2d'], pick: true, project: true, unproject: true, drag: true, layers: true },
   jsxgraph: { dimensions: ['2d', '3d'], pick: true, project: true, unproject: true, drag: true, layers: true },
-  babylon: { dimensions: ['3d'], pick: true, project: true, unproject: true, drag: true, layers: true }
+  babylon: { dimensions: ['2d', '3d'], pick: true, project: true, unproject: true, drag: true, layers: true }
 };
 
 const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
@@ -73,7 +146,7 @@ const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
       memory: 'success',
       canvas2d: 'success',
       jsxgraph: 'success',
-      babylon: 'unsupported'
+      babylon: 'success'
     }
   },
   {
@@ -81,8 +154,8 @@ const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
     node: solidNode,
     expectations: {
       memory: 'success',
-      canvas2d: 'partial-support',
-      jsxgraph: 'partial-support',
+      canvas2d: 'success',
+      jsxgraph: 'success',
       babylon: 'success'
     }
   },
@@ -92,7 +165,7 @@ const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
     expectations: {
       memory: 'success',
       canvas2d: 'unsupported',
-      jsxgraph: 'partial-support',
+      jsxgraph: 'unsupported',
       babylon: 'unsupported'
     }
   }
@@ -146,6 +219,8 @@ const createBackendContractMatrix = () => {
   };
   const babylonRuntime: BabylonRuntimePort = {
     mount: vi.fn(),
+    createObject: vi.fn(),
+    updateObject: vi.fn(),
     createSolid: vi.fn(),
     updateSolid: vi.fn(),
     remove: vi.fn(),
@@ -332,12 +407,37 @@ describe('shared backend contract adapters', () => {
       }
     }
 
-    expect(jsxGraphRuntime.createObject).toHaveBeenCalledTimes(1);
-    expect(babylonRuntime.createSolid).toHaveBeenCalledTimes(1);
+    expect(jsxGraphRuntime.createObject).toHaveBeenCalledTimes(2);
+    expect(babylonRuntime.createObject).toHaveBeenCalledTimes(2);
 
     for (const backend of backends) {
       backend.destroy();
     }
+  });
+
+  it('accepts every curriculum parity primitive required by the first-release backend matrix', () => {
+    const { backends } = createBackendContractMatrix();
+    const backendsById = new Map(backends.map((backend) => [backend.id, backend]));
+
+    for (const backend of backends) {
+      backend.mount(document.createElement('div'), { size: { width: 100, height: 100 } });
+    }
+
+    for (const row of curriculumParityRows) {
+      for (const backendId of row.requiredBackends) {
+        const backend = backendsById.get(backendId);
+        expect(backend, `${row.id}:${backendId}`).toBeDefined();
+        for (const type of row.visualObjectTypes) {
+          const node = createParityFixtureNode({ id: `${row.id}:${type}`, type, rowIds: [row.id] });
+          const result = backend!.create(node);
+          expect(result.diagnostics, `${row.id}:${backendId}:${type}`).toEqual([]);
+          expect(result.ok, `${row.id}:${backendId}:${type}`).toBe(true);
+          backend!.remove(result.value!);
+        }
+      }
+    }
+
+    for (const backend of backends) backend.destroy();
   });
 
   it('maps Canvas2D client points to core world coordinates when a viewport is configured', () => {
@@ -395,6 +495,116 @@ describe('shared backend contract adapters', () => {
       id: 'drawable-ellipse',
       payload: { geometry: { kind: 'ellipse', center: { x: 0, y: 0 }, radiusX: 2, radiusY: 1 } }
     }).ok).toBe(true);
+
+    backend.destroy();
+  });
+
+  it('reports Babylon partial support for proxy nodes without drawable geometry instead of drawing placeholders', () => {
+    const runtime: BabylonRuntimePort = {
+      mount: vi.fn(),
+      createObject: vi.fn(),
+      updateObject: vi.fn(),
+      createSolid: vi.fn(),
+      updateSolid: vi.fn(),
+      remove: vi.fn(),
+      pick: vi.fn(() => null),
+      destroy: vi.fn()
+    };
+    const backend = createBabylonGraphBackend({ runtime });
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+
+    const rawFunction: GraphObjectNode = {
+      id: 'raw-function',
+      kind: 'shape',
+      type: 'function',
+      payload: { expression: 'x^2', variable: 'x' },
+      layerId: 'content'
+    };
+    const drawableFunction: GraphObjectNode = {
+      ...rawFunction,
+      id: 'sampled-function',
+      payload: { geometry: { kind: 'polyline', points: [{ x: -1, y: 1 }, { x: 1, y: 1 }] } }
+    };
+
+    expect(backend.create(rawFunction)).toEqual({
+      ok: false,
+      diagnostics: [createBackendContractDiagnostic(backend, { id: 'raw-function', node: rawFunction, expectations: backendContractFixtures[0].expectations }, 'partial-support')]
+    });
+    const drawable = backend.create(drawableFunction);
+    expect(drawable.ok).toBe(true);
+    expect(runtime.createObject).toHaveBeenCalledTimes(1);
+    backend.remove(drawable.value!);
+    backend.destroy();
+  });
+
+  it('visibly strokes sampled functions and root points on the real Canvas2D drawing path', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const canvas = document.createElement('canvas');
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-visible',
+      canvas,
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      showAxes: true
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 400, height: 300 } });
+    const nodes: GraphObjectNode[] = [
+      {
+        id: 'f',
+        kind: 'shape',
+        type: 'function',
+        payload: {
+          expression: 'x^2 - 4',
+          geometry: {
+            kind: 'polyline',
+            points: [{ x: -4, y: 12 }, { x: -3, y: 5 }, { x: -2, y: 0 }, { x: 0, y: -4 }, { x: 2, y: 0 }, { x: 3, y: 5 }, { x: 4, y: 12 }]
+          }
+        },
+        renderHints: { strokeColor: '#0ea5e9', strokeWidth: 2 },
+        layerId: 'content'
+      },
+      {
+        id: 'A',
+        kind: 'shape',
+        type: 'point',
+        payload: { point: { x: -2, y: 0 } },
+        renderHints: { strokeColor: '#8b5cf6', radius: 4 },
+        layerId: 'content'
+      },
+      {
+        id: 'B',
+        kind: 'shape',
+        type: 'point',
+        payload: { point: { x: 2, y: 0 } },
+        renderHints: { strokeColor: '#10b981', radius: 4 },
+        layerId: 'content'
+      },
+      {
+        id: 'd',
+        kind: 'overlay',
+        type: 'measurement',
+        payload: { point: { x: 0, y: 0 }, measurementKind: 'distance', value: 4, text: 'distance: 4' },
+        renderHints: { strokeColor: '#f59e0b' },
+        layerId: 'content'
+      }
+    ];
+
+    for (const node of nodes) expect(backend.create(node).ok).toBe(true);
+
+    ops.splice(0);
+    backend.flush();
+
+    const functionStroke = ops.find((op): op is Extract<CanvasDrawOp, { name: 'stroke' }> => (
+      op.name === 'stroke' && op.strokeStyle === '#0ea5e9'
+    ));
+    expect(functionStroke?.lineToCount).toBeGreaterThanOrEqual(6);
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'fill', fillStyle: '#8b5cf6' }),
+      expect.objectContaining({ name: 'fill', fillStyle: '#10b981' }),
+      expect.objectContaining({ name: 'fillText', text: 'distance: 4' })
+    ]));
 
     backend.destroy();
   });
@@ -561,6 +771,8 @@ describe('shared backend contract adapters', () => {
   it('supports Babylon solid picking through an injected runtime port', () => {
     const runtime: BabylonRuntimePort = {
       mount: vi.fn(),
+      createObject: vi.fn(),
+      updateObject: vi.fn(),
       createSolid: vi.fn(),
       updateSolid: vi.fn(),
       remove: vi.fn(),
@@ -573,7 +785,7 @@ describe('shared backend contract adapters', () => {
     const pick = backend.pick({ x: 5, y: 5 });
 
     expect(handle.objectId).toBe('cube');
-    expect(runtime.createSolid).toHaveBeenCalledOnce();
+    expect(runtime.createObject).toHaveBeenCalledOnce();
     expect(pick?.target).toMatchObject({ scope: 'component', objectId: 'cube', componentId: 'face:front', backendId: 'babylon' });
     expect(pick?.worldPoint).toEqual({ dimension: '3d', x: 0, y: 0, z: 1 });
   });

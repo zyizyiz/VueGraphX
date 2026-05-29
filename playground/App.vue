@@ -368,12 +368,18 @@ import {
   createBabylonGraphBackend,
   createBabylonRuntime,
   type BabylonGraphBackend,
-  type BabylonNamespaceLike
+  type BabylonNamespaceLike,
+  type BabylonRenderMode
 } from '@vuegraphx/backend-babylon';
 import { useFormulaStore, type CommandItem } from './stores/formula';
 import { useSceneDocument } from './composables/useSceneDocument';
-import { buildPlaygroundBabylonScene, buildPlaygroundCanvasScene, PLAYGROUND_CANVAS_WORLD_BOUNDS } from './renderers/canvasScene';
+import {
+  buildPlaygroundBabylonScene,
+  buildPlaygroundCanvasScene,
+  PLAYGROUND_CANVAS_WORLD_BOUNDS
+} from './renderers/canvasScene';
 import { allDemos, playgroundBackendCapabilities, rendererBackends, type PlaygroundRenderBackend } from './showcase';
+import { isBackendSelectableForMode } from './parityStatus';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 import DualLayerPanel from './components/DualLayerPanel.vue';
@@ -434,34 +440,32 @@ const currentDemos = computed(() => (
     !demo.compatibleBackends || demo.compatibleBackends.includes(activeRendererBackend.value)
   ))
 ));
-const supportsCanvasRenderer = computed(() => store.activeMode === '2d' || store.activeMode === 'geometry');
-const supportsBabylonRenderer = computed(() => store.activeMode === '3d');
+const supportsCanvasRenderer = computed(() => isBackendSelectableForMode(store.activeMode, 'canvas2d'));
+const supportsBabylonRenderer = computed(() => isBackendSelectableForMode(store.activeMode, 'babylon'));
 const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'canvas2d' && supportsCanvasRenderer.value);
 const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
 const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
 const rendererBackendHint = computed(() => {
-  if (isBabylonRendererActive.value) return babylonRuntimeError.value || '同一份指令已切到 Babylon core 立体后端';
-  if (store.activeMode === '3d') return '3D 默认由 JSXGraph view3d 承载，也可切 Canvas2D Core / Babylon Core 做后端兼容验证';
+  if (isBabylonRendererActive.value) return babylonRuntimeError.value || '同一份课程语义场景已切到 Babylon Core';
+  if (isCanvasRendererActive.value) return '同一份课程语义场景已切到 Canvas2D Core';
   if (store.activeMode === 'dual-layer') return '双层模式固定使用 JSXGraph 双实例';
-  return isCanvasRendererActive.value ? '同一份指令已切到 core Canvas2D 后端' : '兼容 JSXGraph 渲染';
+  return 'JSXGraph 与 Canvas2D / Babylon 共用课程 parity 合同';
 });
 const coreRendererPanelMessage = computed(() => {
   if (isBabylonRendererActive.value) {
     return babylonRuntimeError.value
-      || 'Babylon 后端正在通过 GraphSceneRuntime 渲染 core Solid(...) 立体对象；曲面/函数会在输入行显示不支持，避免伪装成已迁移。';
+      || 'Babylon 后端正在通过 GraphSceneRuntime 渲染同一份课程语义场景；2D 对象使用原生 mesh proxy，Solid 使用原生 Babylon mesh。';
   }
-  return 'Canvas2D 后端正在用同一份指令渲染 core IR。JSXGraph 专属的场景文档、关系面板、拖拽设计器暂不展示；不支持的指令会直接标在对应输入行上，避免误以为已经完整迁移。';
+  return 'Canvas2D 后端正在用同一份课程语义场景渲染 core IR；Equation / Parabola / Solid 会降维为可绘制教学对象。';
 });
 const isRendererBackendSupported = (backend: PlaygroundRenderBackend): boolean => (
-  backend === 'jsxgraph'
-  || (backend === 'canvas2d' && supportsCanvasRenderer.value)
-  || (backend === 'babylon' && supportsBabylonRenderer.value)
+  isBackendSelectableForMode(store.activeMode, backend)
 );
 const activeBackendCapability = computed(() => playgroundBackendCapabilities[activeRendererBackend.value]);
 const coreSceneSummary = computed(() => {
   if (!isCoreRendererActive.value) return null;
   const result = isBabylonRendererActive.value
-    ? buildPlaygroundBabylonScene(store.commands)
+    ? buildPlaygroundBabylonScene(store.commands, { renderMode: getBabylonRenderModeForCurrentMode() })
     : buildPlaygroundCanvasScene(store.commands);
   return {
     commandCount: store.commands.filter((command) => command.expression.trim()).length,
@@ -677,10 +681,13 @@ const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
 };
 
 const loadBabylonNamespace = async (): Promise<BabylonNamespaceLike> => {
-  const [engineModule, sceneModule, vectorModule, cameraModule, lightModule, meshBuilderModule] = await Promise.all([
+  const [engineModule, sceneModule, vectorModule, colorModule, materialModule, textureModule, cameraModule, lightModule, meshBuilderModule] = await Promise.all([
     import('@babylonjs/core/Engines/engine'),
     import('@babylonjs/core/scene'),
     import('@babylonjs/core/Maths/math.vector'),
+    import('@babylonjs/core/Maths/math.color'),
+    import('@babylonjs/core/Materials/standardMaterial'),
+    import('@babylonjs/core/Materials/Textures/dynamicTexture'),
     import('@babylonjs/core/Cameras/arcRotateCamera'),
     import('@babylonjs/core/Lights/hemisphericLight'),
     import('@babylonjs/core/Meshes/meshBuilder')
@@ -690,6 +697,10 @@ const loadBabylonNamespace = async (): Promise<BabylonNamespaceLike> => {
     Engine: engineModule.Engine,
     Scene: sceneModule.Scene,
     Vector3: vectorModule.Vector3,
+    Color3: colorModule.Color3,
+    Color4: colorModule.Color4,
+    StandardMaterial: materialModule.StandardMaterial,
+    DynamicTexture: textureModule.DynamicTexture,
     ArcRotateCamera: cameraModule.ArcRotateCamera,
     HemisphericLight: lightModule.HemisphericLight,
     MeshBuilder: meshBuilderModule.MeshBuilder
@@ -702,17 +713,22 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
 
   host.replaceChildren();
   babylonRuntimeError.value = '';
+  const renderMode = getBabylonRenderModeForCurrentMode();
   try {
     const BABYLON = await loadBabylonNamespace();
     const runtimePort = createBabylonRuntime(BABYLON, {
-      attachCameraControl: true,
+      renderMode,
+      attachCameraControl: renderMode === '3d',
       canvasPointerEvents: 'auto'
     });
     const backend = createBabylonGraphBackend({
       id: 'playground-babylon',
       runtime: runtimePort
     });
-    backend.mount(host, { size: getGraphViewportSize() });
+    backend.mount(host, {
+      size: getGraphViewportSize(),
+      attributes: { renderMode, worldBounds: PLAYGROUND_CANVAS_WORLD_BOUNDS }
+    });
     babylonBackendRef.value = backend;
     babylonRuntimeRef.value = new GraphSceneRuntime({
       backend,
@@ -727,6 +743,10 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
   }
   startResizeObserver();
 };
+
+const getBabylonRenderModeForCurrentMode = (): BabylonRenderMode => (
+  store.activeMode === '3d' ? '3d' : '2d'
+);
 
 const initJsxGraphRenderer = (options: { syncCommands?: boolean } = {}) => {
   if (!graphContainerRef.value) return;
@@ -888,7 +908,7 @@ const syncAllToEngine = () => {
       return;
     }
     runtime.clear();
-    const result = buildPlaygroundBabylonScene(store.commands);
+    const result = buildPlaygroundBabylonScene(store.commands, { renderMode: getBabylonRenderModeForCurrentMode() });
     store.commands.forEach((command) => {
       const diagnostic = result.diagnostics.find((item) => item.commandId === command.id);
       store.setCommandError(command.id, diagnostic?.message ?? '');

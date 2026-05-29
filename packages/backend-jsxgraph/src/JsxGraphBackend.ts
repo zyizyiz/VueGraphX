@@ -39,10 +39,38 @@ export interface JsxGraphBackendOptions {
 
 type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
 
-const JSXGRAPH_SUPPORTED_TYPES = new Set(['point', 'text', 'angle', 'circle', 'arc', 'sector', 'semicircle', 'polygon', 'segment', 'line', 'ray', 'polyline', 'function', 'derivative', 'vector', 'measurement']);
-const JSXGRAPH_PARTIAL_TYPES = new Set(['solid', 'implicit', 'parametric']);
+const JSXGRAPH_SUPPORTED_TYPES = new Set([
+  'point',
+  'text',
+  'angle',
+  'circle',
+  'arc',
+  'sector',
+  'semicircle',
+  'polygon',
+  'segment',
+  'line',
+  'ray',
+  'polyline',
+  'function',
+  'derivative',
+  'vector',
+  'measurement',
+  'midpoint',
+  'intersection',
+  'perpendicular-line',
+  'parallel-line',
+  'tangent',
+  'translated',
+  'rotated',
+  'conic',
+  'equation',
+  'solid'
+]);
+const JSXGRAPH_PARTIAL_TYPES = new Set(['parametric']);
 
 const getJsxGraphSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
+  if (node.type === 'implicit') return hasRenderablePathGeometry(node) ? 'success' : 'unsupported';
   if (JSXGRAPH_SUPPORTED_TYPES.has(node.type)) return 'success';
   if (JSXGRAPH_PARTIAL_TYPES.has(node.type)) return 'partial-support';
   return 'unsupported';
@@ -170,3 +198,17 @@ const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
 };
 
 export const createJsxGraphBackend = (options?: JsxGraphBackendOptions): JsxGraphBackend => new JsxGraphBackend(options);
+
+const hasRenderablePathGeometry = (node: GraphObjectNode): boolean => {
+  const payload = asRecord(node.payload);
+  const geometry = asRecord(payload?.geometry);
+  if (Array.isArray(geometry?.points) && geometry.points.length >= 2) return true;
+  if (Array.isArray(geometry?.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.length >= 2)) return true;
+  return ['circle', 'ellipse', 'hyperbola', 'arc', 'sector', 'semicircle', 'segment', 'line', 'ray', 'polyline', 'polygon', 'multiline', 'wireframe'].includes(
+    typeof geometry?.kind === 'string' ? geometry.kind : ''
+  );
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => (
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
+);
