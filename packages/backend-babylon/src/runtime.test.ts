@@ -242,8 +242,8 @@ describe('BabylonRuntime', () => {
       mode: 1,
       orthoLeft: -6,
       orthoRight: 6,
-      orthoTop: 4,
-      orthoBottom: -4,
+      orthoTop: 4.5,
+      orthoBottom: -4.5,
       lowerAlphaLimit: -Math.PI / 2,
       upperAlphaLimit: -Math.PI / 2,
       lowerBetaLimit: Math.PI / 2,
@@ -277,8 +277,30 @@ describe('BabylonRuntime', () => {
     expect(runtime.unproject({ x: 10, y: 20 })).toEqual({ dimension: '2d', x: 10, y: 20 });
     expect(runtime.pick({ x: 10, y: 20 })?.worldPoint).toEqual({ dimension: '2d', x: 1, y: 2 });
 
-    runtime.resize({ width: 640, height: 480 });
-    expect(FakeCamera.last).toMatchObject({ orthoLeft: -6, orthoRight: 6, orthoTop: 4, orthoBottom: -4 });
+    runtime.resize({ width: 480, height: 240 });
+    expect(FakeCamera.last).toMatchObject({ orthoLeft: -8, orthoRight: 8, orthoTop: 4, orthoBottom: -4 });
+
+    runtime.destroy();
+  });
+
+  it('expands square 2D world bounds to preserve circular point geometry on rectangular canvases', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), {
+      renderMode: '2d',
+      attachCameraControl: false
+    });
+    const host = document.createElement('div');
+
+    runtime.mount(host, {
+      size: { width: 400, height: 300 },
+      attributes: { renderMode: '2d', worldBounds: { left: -10, right: 10, top: 10, bottom: -10 } }
+    });
+
+    expect(FakeCamera.last).toMatchObject({
+      orthoLeft: expect.closeTo(-13.333333333333334),
+      orthoRight: expect.closeTo(13.333333333333334),
+      orthoTop: 10,
+      orthoBottom: -10
+    });
 
     runtime.destroy();
   });

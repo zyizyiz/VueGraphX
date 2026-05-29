@@ -178,6 +178,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
   private ownsCanvas = false;
   private renderMode: BabylonRenderMode;
   private worldBounds: Babylon2DWorldBounds = DEFAULT_BABYLON_2D_WORLD_BOUNDS;
+  private viewportSize: GraphViewportSize | null = null;
   private readonly objects = new Map<string, BabylonStoredObject>();
   private readonly helperMeshes: BabylonMeshLike[] = [];
 
@@ -192,6 +193,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
   public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): void {
     this.renderMode = resolveRenderMode(options.attributes?.renderMode, this.options.renderMode ?? this.renderMode);
     this.worldBounds = read2DWorldBounds(options.attributes?.worldBounds) ?? DEFAULT_BABYLON_2D_WORLD_BOUNDS;
+    this.viewportSize = null;
     this.installLabelLayer(host);
 
     if (!this.canvas) {
@@ -307,6 +309,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
     this.scene = null;
     this.camera = null;
     this.renderLoop = null;
+    this.viewportSize = null;
   }
 
   private requireScene(): BabylonSceneLike {
@@ -519,9 +522,12 @@ export class BabylonRuntime implements BabylonRuntimePort {
   }
 
   private applyCanvasSize(size: GraphViewportSize): void {
+    const width = Math.max(1, Math.round(size.width));
+    const height = Math.max(1, Math.round(size.height));
+    this.viewportSize = { width, height };
     if (!this.canvas) return;
-    this.canvas.width = Math.max(1, Math.round(size.width));
-    this.canvas.height = Math.max(1, Math.round(size.height));
+    this.canvas.width = width;
+    this.canvas.height = height;
   }
 
   private installLabelLayer(host: HTMLElement): void {
@@ -584,10 +590,11 @@ export class BabylonRuntime implements BabylonRuntimePort {
 
   private applyOrthographicCameraBounds(camera = this.camera): void {
     if (!camera) return;
-    camera.orthoLeft = this.worldBounds.left;
-    camera.orthoRight = this.worldBounds.right;
-    camera.orthoTop = this.worldBounds.top;
-    camera.orthoBottom = this.worldBounds.bottom;
+    const cameraBounds = fitBoundsToViewportAspect(this.worldBounds, this.viewportSize ?? readCanvasViewportSize(this.canvas));
+    camera.orthoLeft = cameraBounds.left;
+    camera.orthoRight = cameraBounds.right;
+    camera.orthoTop = cameraBounds.top;
+    camera.orthoBottom = cameraBounds.bottom;
   }
 
   private createPickWorldPoint(point: BabylonVector3Like): GraphWorldPoint {
@@ -784,6 +791,59 @@ const projectWorldPointToLayerPercent = (
   left: ((point.x - bounds.left) / (bounds.right - bounds.left)) * 100,
   top: ((bounds.top - point.y) / (bounds.top - bounds.bottom)) * 100
 });
+
+const readCanvasViewportSize = (canvas: HTMLCanvasElement | null): GraphViewportSize | null => {
+  if (!canvas) return null;
+  const width = firstPositiveFiniteNumber(canvas.width, canvas.clientWidth);
+  const height = firstPositiveFiniteNumber(canvas.height, canvas.clientHeight);
+  return width && height ? { width, height } : null;
+};
+
+const fitBoundsToViewportAspect = (
+  bounds: Babylon2DWorldBounds,
+  viewportSize: GraphViewportSize | null
+): Babylon2DWorldBounds => {
+  const worldWidth = bounds.right - bounds.left;
+  const worldHeight = bounds.top - bounds.bottom;
+  if (worldWidth <= 0 || worldHeight <= 0) return bounds;
+
+  const viewportAspect = viewportSize && viewportSize.width > 0 && viewportSize.height > 0
+    ? viewportSize.width / viewportSize.height
+    : worldWidth / worldHeight;
+  if (!Number.isFinite(viewportAspect) || viewportAspect <= 0) return bounds;
+
+  const worldAspect = worldWidth / worldHeight;
+  if (Math.abs(worldAspect - viewportAspect) < 1e-9) return bounds;
+
+  const centerX = (bounds.left + bounds.right) / 2;
+  const centerY = (bounds.top + bounds.bottom) / 2;
+  if (viewportAspect > worldAspect) {
+    const fittedWidth = worldHeight * viewportAspect;
+    const halfWidth = fittedWidth / 2;
+    return {
+      left: centerX - halfWidth,
+      right: centerX + halfWidth,
+      top: bounds.top,
+      bottom: bounds.bottom
+    };
+  }
+
+  const fittedHeight = worldWidth / viewportAspect;
+  const halfHeight = fittedHeight / 2;
+  return {
+    left: bounds.left,
+    right: bounds.right,
+    top: centerY + halfHeight,
+    bottom: centerY - halfHeight
+  };
+};
+
+const firstPositiveFiniteNumber = (...values: number[]): number | null => {
+  for (const value of values) {
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+};
 
 const visualTextLength = (text: string): number => {
   let length = 0;
