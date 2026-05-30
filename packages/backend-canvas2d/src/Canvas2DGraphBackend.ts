@@ -9,6 +9,13 @@ import type {
   GraphRenderHandle,
   GraphViewportSize
 } from '@vuegraphx/core';
+import {
+  createStandardCoordinateTickModel,
+  STANDARD_COORDINATE_UI,
+  formatStandardCoordinateLabel,
+  isStandardZeroCoordinate,
+  type StandardCoordinateTickModel
+} from '@vuegraphx/core';
 import { MemoryGraphBackend, type MemoryGraphBackendOptions } from './memory';
 
 export interface CanvasWorldBounds {
@@ -24,6 +31,7 @@ export interface Canvas2DGraphBackendOptions extends MemoryGraphBackendOptions {
   pixelRatio?: number;
   worldBounds?: CanvasWorldBounds;
   showAxes?: boolean;
+  preserveAspectRatio?: boolean;
 }
 
 interface CanvasDrawablePayload {
@@ -87,6 +95,8 @@ const CANVAS2D_SUPPORTED_TYPES = new Set([
   'parametric'
 ]);
 const CANVAS2D_PARTIAL_TYPES = new Set<string>();
+const CANVAS2D_MIN_VISUAL_ZOOM_SCALE = 0.25;
+const CANVAS2D_MAX_VISUAL_ZOOM_SCALE = 8;
 
 const getCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
   if (node.type === 'implicit') {
@@ -164,7 +174,9 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
   private readonly providedContext: CanvasRenderingContext2D | null;
   private pixelRatio: number;
   private worldBounds: CanvasWorldBounds | null;
+  private visualBaselineWorldBounds: CanvasWorldBounds | null;
   private readonly showAxes: boolean;
+  private readonly preserveAspectRatio: boolean;
 
   public constructor(options: Canvas2DGraphBackendOptions = {}) {
     super({ id: options.id ?? 'canvas2d', capabilities: { dimensions: ['2d'], ...(options.capabilities ?? {}) } });
@@ -173,13 +185,20 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.context = this.providedContext;
     this.pixelRatio = options.pixelRatio ?? 1;
     this.worldBounds = options.worldBounds ?? null;
+    this.visualBaselineWorldBounds = this.worldBounds ? { ...this.worldBounds } : null;
     this.showAxes = options.showAxes ?? true;
+    this.preserveAspectRatio = options.preserveAspectRatio ?? false;
   }
 
   public override mount(host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
     const hostElement = resolveHostElement(host);
     const worldBounds = readWorldBounds(options.attributes?.worldBounds);
-    if (worldBounds) this.worldBounds = worldBounds;
+    if (worldBounds) {
+      this.worldBounds = worldBounds;
+      this.visualBaselineWorldBounds = { ...worldBounds };
+    } else if (this.worldBounds && !this.visualBaselineWorldBounds) {
+      this.visualBaselineWorldBounds = { ...this.worldBounds };
+    }
     if (!this.canvas) {
       if (!hostElement) {
         throw new Error('Canvas2DGraphBackend requires an HTMLElement host or a canvas option.');
@@ -233,6 +252,16 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.flush();
   }
 
+  public setWorldBounds(bounds: CanvasWorldBounds): void {
+    if (!this.visualBaselineWorldBounds) this.visualBaselineWorldBounds = { ...bounds };
+    this.worldBounds = { ...bounds };
+    this.flush();
+  }
+
+  public getWorldBounds(): CanvasWorldBounds | null {
+    return this.worldBounds ? { ...this.worldBounds } : null;
+  }
+
   public override flush(): void {
     if (!this.context || !this.canvas) return;
     const width = this.canvas.width / this.pixelRatio;
@@ -262,7 +291,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (!this.worldBounds || !this.canvas) return { dimension: '2d', x: point.x, y: point.y };
     const width = this.canvas.width / this.pixelRatio;
     const height = this.canvas.height / this.pixelRatio;
-    const { left, right, top, bottom } = this.worldBounds;
+    const { left, right, top, bottom } = this.getVisibleWorldBoundsForSize(width, height) ?? this.worldBounds;
     return {
       dimension: '2d',
       x: left + (point.x / Math.max(1, width)) * (right - left),
@@ -281,9 +310,16 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (!this.context) return;
     if (node.renderHints?.visible === false) return;
     const payload = node.payload as CanvasDrawablePayload;
-    const strokeColor = readString(node.renderHints?.strokeColor, '#1f6feb');
-    const fillColor = readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
-    const strokeWidth = readNumber(node.renderHints?.strokeWidth, 2);
+    const selected = isSelectedNode(node);
+    const visualScale = this.getVisualZoomScale();
+    const strokeColor = selected
+      ? readString(node.renderHints?.selectionStrokeColor, '#f97316')
+      : readString(node.renderHints?.strokeColor, '#1f6feb');
+    const fillColor = selected
+      ? readString(node.renderHints?.selectionFillColor, 'rgba(249, 115, 22, 0.2)')
+      : readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
+    const baseStrokeWidth = readNumber(node.renderHints?.strokeWidth, 2);
+    const strokeWidth = (selected ? Math.max(baseStrokeWidth + 2, 4) : baseStrokeWidth) * visualScale;
     this.context.save();
     this.context.strokeStyle = strokeColor;
     this.context.fillStyle = fillColor;
@@ -291,7 +327,9 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.context.lineCap = 'round';
     this.context.lineJoin = 'round';
     const dash = readNumber(node.renderHints?.dash, 0);
-    if (dash > 0) this.context.setLineDash([dash * 4, dash * 3]);
+    if (dash > 0) this.context.setLineDash([dash * 4 * visualScale, dash * 3 * visualScale]);
+    if (selected) this.context.shadowColor = readString(node.renderHints?.selectionShadowColor, 'rgba(249, 115, 22, 0.35)');
+    if (selected) this.context.shadowBlur = readNumber(node.renderHints?.selectionShadowBlur, 10) * visualScale;
 
     if (node.type === 'measurement') {
       if (payload.measurementKind === 'angle' && payload.points && payload.points.length >= 3) {
@@ -308,16 +346,16 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (payload.point) {
       const point = this.projectPoint(payload.point);
       if (node.type === 'text' && payload.text) {
-        this.context.font = readString(node.renderHints?.font, '14px sans-serif');
+        this.context.font = scaleCssFont(readString(node.renderHints?.font, '14px sans-serif'), visualScale);
         this.context.fillText(payload.text, point.x, point.y);
       } else {
-        const radius = readNumber(node.renderHints?.radius, 4);
+        const radius = readNumber(node.renderHints?.radius, 4) * visualScale;
         this.context.save();
         this.context.beginPath();
         this.context.fillStyle = 'rgba(255, 255, 255, 0.96)';
         this.context.strokeStyle = 'rgba(255, 255, 255, 0.96)';
-        this.context.lineWidth = Math.max(strokeWidth + 2, 4);
-        this.context.arc(point.x, point.y, radius + 2, 0, Math.PI * 2);
+        this.context.lineWidth = Math.max(strokeWidth + 2 * visualScale, 4 * visualScale);
+        this.context.arc(point.x, point.y, radius + 2 * visualScale, 0, Math.PI * 2);
         this.context.fill();
         this.context.stroke();
         this.context.restore();
@@ -325,7 +363,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
         this.context.beginPath();
         this.context.fillStyle = strokeColor;
         this.context.strokeStyle = strokeColor;
-        this.context.lineWidth = Math.max(strokeWidth, 2);
+        this.context.lineWidth = Math.max(strokeWidth, 2 * visualScale);
         this.context.arc(point.x, point.y, radius, 0, Math.PI * 2);
         this.context.fill();
         this.context.stroke();
@@ -386,44 +424,136 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
 
   private drawAxes(width: number, height: number): void {
     if (!this.context || !this.worldBounds || !this.showAxes) return;
-    const { left, right, top, bottom } = this.worldBounds;
+    const bounds = this.getVisibleWorldBoundsForSize(width, height) ?? this.worldBounds;
+    const { left, right, top, bottom } = bounds;
+    const origin = this.projectPoint({ x: 0, y: 0 });
+    const xAxisVisible = bottom <= 0 && top >= 0;
+    const yAxisVisible = left <= 0 && right >= 0;
+    const xAxisY = origin.y;
+    const yAxisX = origin.x;
+    const visualScale = this.getVisualZoomScale();
+    const xTicks = createStandardCoordinateTickModel(left, right, width / visualScale);
+    const yTicks = createStandardCoordinateTickModel(bottom, top, height / visualScale);
+
     this.context.save();
-    this.context.lineWidth = 1;
-    this.context.strokeStyle = 'rgba(148, 163, 184, 0.22)';
-    const minX = Math.ceil(left);
-    const maxX = Math.floor(right);
-    for (let x = minX; x <= maxX; x += 1) {
-      const point = this.projectPoint({ x, y: 0 });
+    this.drawStandardCoordinateAxes({
+      xTicks,
+      yTicks,
+      width,
+      height,
+      xAxisY,
+      yAxisX,
+      xAxisVisible,
+      yAxisVisible,
+      visualScale
+    });
+    this.context.restore();
+  }
+
+  private drawStandardCoordinateAxes(options: {
+    xTicks: StandardCoordinateTickModel;
+    yTicks: StandardCoordinateTickModel;
+    width: number;
+    height: number;
+    xAxisY: number;
+    yAxisX: number;
+    xAxisVisible: boolean;
+    yAxisVisible: boolean;
+    visualScale: number;
+  }): void {
+    if (!this.context) return;
+    const axisStrokeWidth = STANDARD_COORDINATE_UI.axisStrokeWidthPx * options.visualScale;
+    const arrowLength = STANDARD_COORDINATE_UI.axisArrowLengthPx * options.visualScale;
+    const arrowHalfHeight = STANDARD_COORDINATE_UI.axisArrowHalfHeightPx * options.visualScale;
+    this.context.save();
+    this.context.strokeStyle = STANDARD_COORDINATE_UI.axisStrokeColor;
+    this.context.fillStyle = STANDARD_COORDINATE_UI.axisStrokeColor;
+    this.context.lineWidth = axisStrokeWidth;
+    this.context.lineCap = 'round';
+
+    if (options.xAxisVisible) {
       this.context.beginPath();
-      this.context.moveTo(point.x, 0);
-      this.context.lineTo(point.x, height);
+      this.context.moveTo(axisStrokeWidth / 2, options.xAxisY);
+      this.context.lineTo(options.width - arrowLength, options.xAxisY);
       this.context.stroke();
-    }
-    const minY = Math.ceil(bottom);
-    const maxY = Math.floor(top);
-    for (let y = minY; y <= maxY; y += 1) {
-      const point = this.projectPoint({ x: 0, y });
-      this.context.beginPath();
-      this.context.moveTo(0, point.y);
-      this.context.lineTo(width, point.y);
-      this.context.stroke();
+      this.drawFilledArrowHead([
+        { x: options.width, y: options.xAxisY },
+        { x: options.width - arrowLength, y: options.xAxisY - arrowHalfHeight },
+        { x: options.width - arrowLength, y: options.xAxisY + arrowHalfHeight }
+      ]);
     }
 
-    this.context.strokeStyle = 'rgba(71, 85, 105, 0.42)';
-    const origin = this.projectPoint({ x: 0, y: 0 });
-    if (left <= 0 && right >= 0) {
+    if (options.yAxisVisible) {
       this.context.beginPath();
-      this.context.moveTo(origin.x, 0);
-      this.context.lineTo(origin.x, height);
+      this.context.moveTo(options.yAxisX, options.height);
+      this.context.lineTo(options.yAxisX, arrowLength);
       this.context.stroke();
+      this.drawFilledArrowHead([
+        { x: options.yAxisX, y: 0 },
+        { x: options.yAxisX - arrowHalfHeight, y: arrowLength },
+        { x: options.yAxisX + arrowHalfHeight, y: arrowLength }
+      ]);
     }
-    if (bottom <= 0 && top >= 0) {
-      this.context.beginPath();
-      this.context.moveTo(0, origin.y);
-      this.context.lineTo(width, origin.y);
-      this.context.stroke();
+
+    this.context.fillStyle = STANDARD_COORDINATE_UI.tickLabelColor;
+    this.context.font = scaleCssFont(STANDARD_COORDINATE_UI.tickLabelFont, options.visualScale);
+    this.context.textBaseline = 'top';
+
+    if (options.xAxisVisible) {
+      this.context.textAlign = 'center';
+      for (const x of options.xTicks.positions) {
+        if (isStandardZeroCoordinate(x)) continue;
+        const point = this.projectPoint({ x, y: 0 });
+        this.context.fillText(
+          formatStandardCoordinateLabel(x),
+          point.x,
+          options.xAxisY + STANDARD_COORDINATE_UI.xTickLabelTopOffsetPx * options.visualScale
+        );
+      }
+      this.context.textAlign = 'left';
+      this.context.fillText(
+        'x',
+        options.width - STANDARD_COORDINATE_UI.xAxisLabelRightInsetPx * options.visualScale,
+        options.xAxisY + STANDARD_COORDINATE_UI.xAxisLabelTopOffsetPx * options.visualScale
+      );
+    }
+
+    if (options.yAxisVisible) {
+      this.context.textAlign = 'left';
+      for (const y of options.yTicks.positions) {
+        if (isStandardZeroCoordinate(y)) continue;
+        const point = this.projectPoint({ x: 0, y });
+        this.context.fillText(
+          formatStandardCoordinateLabel(y),
+          options.yAxisX + STANDARD_COORDINATE_UI.yTickLabelLeftOffsetPx * options.visualScale,
+          point.y + STANDARD_COORDINATE_UI.yTickLabelTopOffsetPx * options.visualScale
+        );
+      }
+      this.context.fillText(
+        'y',
+        options.yAxisX + STANDARD_COORDINATE_UI.yAxisLabelLeftOffsetPx * options.visualScale,
+        STANDARD_COORDINATE_UI.yAxisLabelTopPx * options.visualScale
+      );
+    }
+
+    if (options.xAxisVisible && options.yAxisVisible) {
+      this.context.textAlign = 'left';
+      this.context.fillText(
+        'O',
+        options.yAxisX + STANDARD_COORDINATE_UI.originLabelLeftOffsetPx * options.visualScale,
+        options.xAxisY + STANDARD_COORDINATE_UI.originLabelTopOffsetPx * options.visualScale
+      );
     }
     this.context.restore();
+  }
+
+  private drawFilledArrowHead(points: Array<{ x: number; y: number }>): void {
+    if (!this.context) return;
+    this.context.beginPath();
+    this.context.moveTo(points[0].x, points[0].y);
+    for (const point of points.slice(1)) this.context.lineTo(point.x, point.y);
+    this.context.closePath();
+    this.context.fill();
   }
 
   private drawPointPath(points: Array<{ x: number; y: number }>, close = false, fill = false): void {
@@ -431,6 +561,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const first = this.projectPoint(points[0]);
     const strokeStyle = this.context.strokeStyle;
     const lineWidth = this.context.lineWidth;
+    const visualScale = this.getVisualZoomScale();
     const drawPath = () => {
       this.context!.beginPath();
       this.context!.moveTo(first.x, first.y);
@@ -444,7 +575,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (!fill) {
       this.context.save();
       this.context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      this.context.lineWidth = Math.max(Number(lineWidth) + 3, 5);
+      this.context.lineWidth = Math.max(Number(lineWidth) + 3 * visualScale, 5 * visualScale);
       drawPath();
       this.context.stroke();
       this.context.restore();
@@ -465,10 +596,11 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const thirdScreen = this.projectPoint(third);
     const firstAngle = Math.atan2(firstScreen.y - vertexScreen.y, firstScreen.x - vertexScreen.x);
     const thirdAngle = Math.atan2(thirdScreen.y - vertexScreen.y, thirdScreen.x - vertexScreen.x);
+    const visualScale = this.getVisualZoomScale();
     const radius = Math.min(
-      48,
+      48 * visualScale,
       Math.max(
-        18,
+        18 * visualScale,
         Math.min(
           Math.hypot(firstScreen.x - vertexScreen.x, firstScreen.y - vertexScreen.y),
           Math.hypot(thirdScreen.x - vertexScreen.x, thirdScreen.y - vertexScreen.y)
@@ -494,13 +626,14 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (!this.context || !payload.point) return;
     const point = this.projectPoint(payload.point);
     const label = payload.text ?? `${payload.measurementKind ?? 'measure'}: ${formatNumber(payload.value)}`;
+    const visualScale = this.getVisualZoomScale();
     this.context.save();
-    this.context.font = '12px sans-serif';
-    this.context.lineWidth = 3;
+    this.context.font = scaleCssFont('12px sans-serif', visualScale);
+    this.context.lineWidth = 3 * visualScale;
     this.context.strokeStyle = 'rgba(255, 255, 255, 0.92)';
-    this.context.strokeText(label, point.x + 8, point.y - 8);
+    this.context.strokeText(label, point.x + 8 * visualScale, point.y - 8 * visualScale);
     this.context.fillStyle = '#334155';
-    this.context.fillText(label, point.x + 8, point.y - 8);
+    this.context.fillText(label, point.x + 8 * visualScale, point.y - 8 * visualScale);
     this.context.restore();
   }
 
@@ -541,7 +674,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const start = this.projectPoint(startPoint);
     const end = this.projectPoint(endPoint);
     const angle = Math.atan2(end.y - start.y, end.x - start.x);
-    const size = 10;
+    const size = 10 * this.getVisualZoomScale();
     this.context.beginPath();
     this.context.moveTo(end.x, end.y);
     this.context.lineTo(end.x - size * Math.cos(angle - Math.PI / 6), end.y - size * Math.sin(angle - Math.PI / 6));
@@ -586,7 +719,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (!this.worldBounds || !this.canvas) return { x: point.x, y: point.y };
     const width = this.canvas.width / this.pixelRatio;
     const height = this.canvas.height / this.pixelRatio;
-    const { left, right, top, bottom } = this.worldBounds;
+    const { left, right, top, bottom } = this.getVisibleWorldBoundsForSize(width, height) ?? this.worldBounds;
     return {
       x: ((point.x - left) / (right - left)) * width,
       y: ((top - point.y) / (top - bottom)) * height
@@ -603,10 +736,35 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (!this.worldBounds || !this.canvas) return { x: 1, y: 1 };
     const width = this.canvas.width / this.pixelRatio;
     const height = this.canvas.height / this.pixelRatio;
+    const bounds = this.getVisibleWorldBoundsForSize(width, height) ?? this.worldBounds;
     return {
-      x: width / Math.max(1e-6, Math.abs(this.worldBounds.right - this.worldBounds.left)),
-      y: height / Math.max(1e-6, Math.abs(this.worldBounds.top - this.worldBounds.bottom))
+      x: width / Math.max(1e-6, Math.abs(bounds.right - bounds.left)),
+      y: height / Math.max(1e-6, Math.abs(bounds.top - bounds.bottom))
     };
+  }
+
+  private getVisualZoomScale(): number {
+    if (!this.worldBounds || !this.visualBaselineWorldBounds || !this.canvas) return 1;
+    const width = this.canvas.width / this.pixelRatio;
+    const height = this.canvas.height / this.pixelRatio;
+    const currentBounds = this.getVisibleWorldBoundsForSize(width, height) ?? this.worldBounds;
+    const baselineBounds = this.preserveAspectRatio
+      ? fitCanvasBoundsToViewportAspect(this.visualBaselineWorldBounds, { width, height })
+      : this.visualBaselineWorldBounds;
+    const currentScale = pixelsPerWorldUnit(currentBounds, { width, height });
+    const baselineScale = pixelsPerWorldUnit(baselineBounds, { width, height });
+    const scale = Math.min(
+      currentScale.x / Math.max(1e-9, baselineScale.x),
+      currentScale.y / Math.max(1e-9, baselineScale.y)
+    );
+    return clampVisualZoomScale(scale);
+  }
+
+  private getVisibleWorldBoundsForSize(width: number, height: number): CanvasWorldBounds | null {
+    if (!this.worldBounds) return null;
+    return this.preserveAspectRatio
+      ? fitCanvasBoundsToViewportAspect(this.worldBounds, { width, height })
+      : this.worldBounds;
   }
 
   private extendLineToBounds(
@@ -614,7 +772,10 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     direction: { x: number; y: number },
     ray: boolean
   ): Array<{ x: number; y: number }> | null {
-    const bounds = this.worldBounds ?? { left: -1000, right: 1000, top: 1000, bottom: -1000 };
+    const bounds = this.getVisibleWorldBoundsForSize(
+      this.canvas ? this.canvas.width / this.pixelRatio : 0,
+      this.canvas ? this.canvas.height / this.pixelRatio : 0
+    ) ?? this.worldBounds ?? { left: -1000, right: 1000, top: 1000, bottom: -1000 };
     const length = Math.max(Math.abs(bounds.right - bounds.left), Math.abs(bounds.top - bounds.bottom)) * 2;
     const magnitude = Math.hypot(direction.x, direction.y);
     if (magnitude <= 1e-9) return null;
@@ -630,6 +791,27 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
 
 const readString = (value: unknown, fallback: string): string => typeof value === 'string' ? value : fallback;
 const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const clampVisualZoomScale = (value: number): number => (
+  Number.isFinite(value)
+    ? Math.min(CANVAS2D_MAX_VISUAL_ZOOM_SCALE, Math.max(CANVAS2D_MIN_VISUAL_ZOOM_SCALE, value))
+    : 1
+);
+const pixelsPerWorldUnit = (
+  bounds: CanvasWorldBounds,
+  viewport: { width: number; height: number }
+): { x: number; y: number } => ({
+  x: Math.max(1e-9, viewport.width) / Math.max(1e-9, Math.abs(bounds.right - bounds.left)),
+  y: Math.max(1e-9, viewport.height) / Math.max(1e-9, Math.abs(bounds.top - bounds.bottom))
+});
+const scaleCssFont = (font: string, visualScale: number): string => (
+  font.replace(/(\d+(?:\.\d+)?)px/g, (_match, value: string) => `${formatCssNumber(Number(value) * visualScale)}px`)
+);
+const formatCssNumber = (value: number): string => (
+  Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '0'
+);
+const isSelectedNode = (node: GraphObjectNode): boolean => (
+  node.meta?.selected === true || node.renderHints?.selected === true
+);
 const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '';
 const rotateAroundOrigin = (point: { x: number; y: number }, radians: number, center: { x: number; y: number }): { x: number; y: number } => {
   const cos = Math.cos(radians);
@@ -656,6 +838,41 @@ const readWorldBounds = (value: unknown): CanvasWorldBounds | null => {
     return { left, top, right, bottom } as CanvasWorldBounds;
   }
   return null;
+};
+const fitCanvasBoundsToViewportAspect = (
+  bounds: CanvasWorldBounds,
+  viewport: { width: number; height: number }
+): CanvasWorldBounds => {
+  const worldWidth = bounds.right - bounds.left;
+  const worldHeight = bounds.top - bounds.bottom;
+  if (worldWidth <= 0 || worldHeight <= 0 || viewport.width <= 0 || viewport.height <= 0) {
+    return bounds;
+  }
+
+  const viewportAspect = viewport.width / viewport.height;
+  if (!Number.isFinite(viewportAspect) || viewportAspect <= 0) return bounds;
+  const worldAspect = worldWidth / worldHeight;
+  if (Math.abs(worldAspect - viewportAspect) < 1e-9) return bounds;
+
+  const centerX = (bounds.left + bounds.right) / 2;
+  const centerY = (bounds.top + bounds.bottom) / 2;
+  if (viewportAspect > worldAspect) {
+    const halfWidth = (worldHeight * viewportAspect) / 2;
+    return {
+      left: centerX - halfWidth,
+      right: centerX + halfWidth,
+      top: bounds.top,
+      bottom: bounds.bottom
+    };
+  }
+
+  const halfHeight = (worldWidth / viewportAspect) / 2;
+  return {
+    left: bounds.left,
+    right: bounds.right,
+    top: centerY + halfHeight,
+    bottom: centerY - halfHeight
+  };
 };
 const getCanvasContext = (canvas: HTMLCanvasElement): CanvasRenderingContext2D | null => {
   if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) {

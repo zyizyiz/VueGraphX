@@ -16,7 +16,13 @@ import type {
   GraphViewportSize,
   GraphWorldPoint
 } from '@vuegraphx/core';
-import { createGraphObjectNode, mergeGraphObjectPatch, okResult } from '@vuegraphx/core';
+import {
+  createGraphBackendInteractionCapability,
+  createGraphBackendMathInteractionCapabilities,
+  createGraphObjectNode,
+  mergeGraphObjectPatch,
+  okResult
+} from '@vuegraphx/core';
 
 export interface JsxGraphRuntimePort {
   mount(host: HTMLElement, options?: GraphBackendMountOptions): void;
@@ -112,6 +118,22 @@ export class JsxGraphBackend implements GraphRenderBackend {
       drag: true,
       layers: true,
       dimensions: ['2d', '3d'],
+      mathInteractions: createGraphBackendMathInteractionCapabilities({
+        'viewport.zoom': createGraphBackendInteractionCapability('supported', { mechanism: 'JSXGraph board zoom' }),
+        'viewport.gestureZoom': createGraphBackendInteractionCapability('supported', {
+          mechanism: 'JSXGraph pinch plus VueGraphX modifier-wheel bridge',
+          native: true
+        }),
+        'viewport.pan': createGraphBackendInteractionCapability('supported', { mechanism: 'JSXGraph pan plus VueGraphX wheel bridge' }),
+        'object.pick': createGraphBackendInteractionCapability('supported', { mechanism: 'runtime-pick' }),
+        'object.select': createGraphBackendInteractionCapability('supported', { mechanism: 'core-meta-selected' }),
+        'object.highlight': createGraphBackendInteractionCapability('supported', {
+          mechanism: 'explicit selected attributes; global JSXGraph hover highlight is not required'
+        }),
+        project: createGraphBackendInteractionCapability('supported', { mechanism: 'JSXGraph Coords adapter' }),
+        unproject: createGraphBackendInteractionCapability('supported', { mechanism: 'JSXGraph Coords adapter' }),
+        diagnostics: createGraphBackendInteractionCapability('supported', { mechanism: 'GraphOperationDiagnostic' })
+      }),
       ...(options.capabilities ?? {})
     };
     this.runtime = options.runtime ?? null;

@@ -16,7 +16,13 @@ import type {
   GraphViewportSize,
   GraphWorldPoint
 } from '@vuegraphx/core';
-import { createGraphObjectNode, mergeGraphObjectPatch, okResult } from '@vuegraphx/core';
+import {
+  createGraphBackendInteractionCapability,
+  createGraphBackendMathInteractionCapabilities,
+  createGraphObjectNode,
+  mergeGraphObjectPatch,
+  okResult
+} from '@vuegraphx/core';
 
 export interface BabylonRuntimePickResult {
   objectId: string;
@@ -36,6 +42,7 @@ export interface BabylonRuntimePort {
   pick(point: GraphClientPoint, options?: GraphPickOptions): BabylonRuntimePickResult | null;
   project?(point: GraphWorldPoint, viewport?: GraphViewportRef): GraphClientPoint | null;
   unproject?(point: GraphClientPoint, viewport?: GraphViewportRef): GraphWorldPoint | null;
+  setWorldBounds?(bounds: { left: number; right: number; top: number; bottom: number }): void;
   resize?(size: GraphViewportSize): void;
   renderFrame?(): void;
   destroy(): void;
@@ -122,6 +129,25 @@ export class BabylonGraphBackend implements GraphRenderBackend {
       drag: true,
       layers: true,
       dimensions: ['2d', '3d'],
+      mathInteractions: createGraphBackendMathInteractionCapabilities({
+        'viewport.zoom': createGraphBackendInteractionCapability('supported', {
+          mechanism: '2D orthographic bounds bridge; 3D ArcRotateCamera controls'
+        }),
+        'viewport.gestureZoom': createGraphBackendInteractionCapability('partial-support', {
+          mechanism: 'native 3D camera controls plus playground pointer-pinch bridge for 2D',
+          native: true,
+          reason: 'Babylon supports native camera gestures in 3D; 2D mode uses VueGraphX host gesture bridging instead of Babylon-native pinch.'
+        }),
+        'viewport.pan': createGraphBackendInteractionCapability('supported', {
+          mechanism: '2D orthographic bounds bridge; 3D ArcRotateCamera controls'
+        }),
+        'object.pick': createGraphBackendInteractionCapability('supported', { mechanism: 'runtime scene.pick metadata' }),
+        'object.select': createGraphBackendInteractionCapability('supported', { mechanism: 'core-meta-selected' }),
+        'object.highlight': createGraphBackendInteractionCapability('supported', { mechanism: 'selected material color/emissive boost' }),
+        project: createGraphBackendInteractionCapability('supported', { mechanism: 'runtime project adapter' }),
+        unproject: createGraphBackendInteractionCapability('supported', { mechanism: 'runtime unproject adapter' }),
+        diagnostics: createGraphBackendInteractionCapability('supported', { mechanism: 'GraphOperationDiagnostic' })
+      }),
       ...(options.capabilities ?? {})
     };
   }
@@ -208,6 +234,10 @@ export class BabylonGraphBackend implements GraphRenderBackend {
   public resize(size: GraphViewportSize): void {
     this.size = { ...size };
     this.runtime?.resize?.(size);
+  }
+
+  public setWorldBounds(bounds: { left: number; right: number; top: number; bottom: number }): void {
+    this.runtime?.setWorldBounds?.(bounds);
   }
 
   public destroy(): void {

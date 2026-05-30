@@ -156,7 +156,190 @@ export interface GraphBackendCapabilities {
   drag: boolean;
   layers: boolean;
   dimensions: ReadonlyArray<'2d' | '3d'>;
+  /**
+   * Optional, compatibility-preserving detail for math-canvas interactions.
+   *
+   * The legacy booleans above remain the broad renderer-neutral contract.
+   * This nested shape makes active math backend gaps explicit without forcing
+   * existing consumers to change their capability reads.
+   */
+  mathInteractions?: GraphBackendMathInteractionCapabilities;
 }
+
+export type GraphBackendInteractionStatus = 'supported' | 'partial-support' | 'unsupported';
+
+export interface GraphBackendInteractionCapability {
+  status: GraphBackendInteractionStatus;
+  reason?: string;
+  mechanism?: string;
+  native?: boolean;
+  diagnostics?: readonly GraphOperationDiagnostic[];
+}
+
+export interface GraphBackendMathInteractionCapabilities {
+  viewport: {
+    zoom: GraphBackendInteractionCapability;
+    gestureZoom: GraphBackendInteractionCapability;
+    pan: GraphBackendInteractionCapability;
+  };
+  object: {
+    pick: GraphBackendInteractionCapability;
+    select: GraphBackendInteractionCapability;
+    highlight: GraphBackendInteractionCapability;
+  };
+  project: GraphBackendInteractionCapability;
+  unproject: GraphBackendInteractionCapability;
+  diagnostics: GraphBackendInteractionCapability;
+}
+
+export const GRAPH_MATH_INTERACTION_CAPABILITY_PATHS = [
+  'viewport.zoom',
+  'viewport.gestureZoom',
+  'viewport.pan',
+  'object.pick',
+  'object.select',
+  'object.highlight',
+  'project',
+  'unproject',
+  'diagnostics'
+] as const;
+
+export type GraphMathInteractionCapabilityPath = typeof GRAPH_MATH_INTERACTION_CAPABILITY_PATHS[number];
+
+export const createGraphBackendInteractionCapability = (
+  status: GraphBackendInteractionStatus = 'supported',
+  detail: Omit<GraphBackendInteractionCapability, 'status'> = {}
+): GraphBackendInteractionCapability => ({ status, ...detail });
+
+export const createGraphBackendMathInteractionCapabilities = (
+  overrides: Partial<{
+    [Path in GraphMathInteractionCapabilityPath]: GraphBackendInteractionCapability;
+  }> = {}
+): GraphBackendMathInteractionCapabilities => ({
+  viewport: {
+    zoom: cloneInteractionCapability(overrides['viewport.zoom'] ?? createUndeclaredInteractionCapability('viewport.zoom')),
+    gestureZoom: cloneInteractionCapability(overrides['viewport.gestureZoom'] ?? createUndeclaredInteractionCapability('viewport.gestureZoom')),
+    pan: cloneInteractionCapability(overrides['viewport.pan'] ?? createUndeclaredInteractionCapability('viewport.pan'))
+  },
+  object: {
+    pick: cloneInteractionCapability(overrides['object.pick'] ?? createUndeclaredInteractionCapability('object.pick')),
+    select: cloneInteractionCapability(overrides['object.select'] ?? createUndeclaredInteractionCapability('object.select')),
+    highlight: cloneInteractionCapability(overrides['object.highlight'] ?? createUndeclaredInteractionCapability('object.highlight'))
+  },
+  project: cloneInteractionCapability(overrides.project ?? createUndeclaredInteractionCapability('project')),
+  unproject: cloneInteractionCapability(overrides.unproject ?? createUndeclaredInteractionCapability('unproject')),
+  diagnostics: cloneInteractionCapability(overrides.diagnostics ?? createUndeclaredInteractionCapability('diagnostics'))
+});
+
+const createUndeclaredInteractionCapability = (
+  path: GraphMathInteractionCapabilityPath
+): GraphBackendInteractionCapability => ({
+  status: 'unsupported',
+  reason: `Math interaction capability ${path} is undeclared.`
+});
+
+export const validateGraphBackendMathInteractionCapabilities = (
+  backendId: string,
+  capabilities: GraphBackendCapabilities
+): GraphOperationDiagnostic[] => {
+  const diagnostics: GraphOperationDiagnostic[] = [];
+  const interactions = capabilities.mathInteractions;
+  if (!interactions) {
+    diagnostics.push(createBackendInteractionDiagnostic(
+      'backend.math-interactions.missing',
+      `Backend ${backendId} does not declare the active math interaction contract.`,
+      'error',
+      backendId
+    ));
+    return diagnostics;
+  }
+
+  for (const path of GRAPH_MATH_INTERACTION_CAPABILITY_PATHS) {
+    const capability = readMathInteractionCapability(interactions, path);
+    if (!capability) {
+      diagnostics.push(createBackendInteractionDiagnostic(
+        'backend.math-interaction.missing',
+        `Backend ${backendId} is missing math interaction capability ${path}.`,
+        'error',
+        backendId
+      ));
+      continue;
+    }
+    if (!isGraphBackendInteractionStatus(capability.status)) {
+      diagnostics.push(createBackendInteractionDiagnostic(
+        'backend.math-interaction.invalid-status',
+        `Backend ${backendId} reports an invalid status for math interaction capability ${path}.`,
+        'error',
+        backendId
+      ));
+      continue;
+    }
+    if (capability.status === 'partial-support' || capability.status === 'unsupported') {
+      diagnostics.push(createBackendInteractionDiagnostic(
+        capability.status === 'partial-support'
+          ? 'backend.math-interaction.partial-support'
+          : 'backend.math-interaction.unsupported',
+        capability.reason ?? `Backend ${backendId} reports ${capability.status} for math interaction capability ${path}.`,
+        capability.status === 'partial-support' ? 'warning' : 'error',
+        backendId
+      ));
+    }
+  }
+
+  return diagnostics;
+};
+
+const cloneInteractionCapability = (
+  capability: GraphBackendInteractionCapability
+): GraphBackendInteractionCapability => ({
+  ...capability,
+  diagnostics: capability.diagnostics ? capability.diagnostics.map((diagnostic) => ({
+    ...diagnostic,
+    target: diagnostic.target ? { ...diagnostic.target } : undefined
+  })) : undefined
+});
+
+const readMathInteractionCapability = (
+  capabilities: GraphBackendMathInteractionCapabilities,
+  path: GraphMathInteractionCapabilityPath
+): GraphBackendInteractionCapability | undefined => {
+  switch (path) {
+    case 'viewport.zoom':
+      return capabilities.viewport.zoom;
+    case 'viewport.gestureZoom':
+      return capabilities.viewport.gestureZoom;
+    case 'viewport.pan':
+      return capabilities.viewport.pan;
+    case 'object.pick':
+      return capabilities.object.pick;
+    case 'object.select':
+      return capabilities.object.select;
+    case 'object.highlight':
+      return capabilities.object.highlight;
+    case 'project':
+      return capabilities.project;
+    case 'unproject':
+      return capabilities.unproject;
+    case 'diagnostics':
+      return capabilities.diagnostics;
+  }
+};
+
+const isGraphBackendInteractionStatus = (status: unknown): status is GraphBackendInteractionStatus => (
+  status === 'supported' || status === 'partial-support' || status === 'unsupported'
+);
+
+const createBackendInteractionDiagnostic = (
+  code: string,
+  message: string,
+  severity: GraphOperationDiagnostic['severity'],
+  backendId: string
+): GraphOperationDiagnostic => ({
+  code,
+  message,
+  severity,
+  target: { scope: 'backend-layer', backendId }
+});
 
 export interface GraphBackendMountOptions {
   backendId?: string;

@@ -22,6 +22,23 @@ export interface GraphCapabilityTemplate {
   category: GraphMathObjectProfile | 'base';
 }
 
+export const GRAPH_ACTIVE_MATH_VIEWPORT_CAPABILITY_IDS = [
+  'math.viewport.select',
+  'math.viewport.move',
+  'math.viewport.resize',
+  'math.viewport.pan',
+  'math.viewport.zoom'
+] as const;
+
+export const GRAPH_ACTIVE_MATH_OBJECT_INTERACTION_CAPABILITY_IDS = [
+  'math.object.select'
+] as const;
+
+export const GRAPH_ACTIVE_MATH_INTERACTION_CAPABILITY_IDS = [
+  ...GRAPH_ACTIVE_MATH_VIEWPORT_CAPABILITY_IDS,
+  ...GRAPH_ACTIVE_MATH_OBJECT_INTERACTION_CAPABILITY_IDS
+] as const;
+
 const baseObjectTemplates: readonly GraphCapabilityTemplate[] = [
   { id: 'math.object.select', label: '选择', kind: 'action', category: 'base' },
   { id: 'math.object.move', label: '移动', kind: 'drag', category: 'base' },

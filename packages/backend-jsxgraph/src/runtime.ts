@@ -369,15 +369,24 @@ export const createJsxGraphRuntime = (
 const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext): Record<string, unknown> => {
   const hints = node.renderHints ?? {};
   const name = typeof hints.name === 'string' ? hints.name : node.id;
-  const fillColor = typeof hints.fillColor === 'string' ? hints.fillColor : typeof hints.strokeColor === 'string' ? hints.strokeColor : '#0ea5e9';
+  const selected = isSelectedNode(node);
+  const defaultStrokeColor = selected ? '#f97316' : '#0ea5e9';
+  const strokeColor = selected
+    ? typeof hints.selectionStrokeColor === 'string' ? hints.selectionStrokeColor : defaultStrokeColor
+    : typeof hints.strokeColor === 'string' ? hints.strokeColor : defaultStrokeColor;
+  const fillColor = selected
+    ? typeof hints.selectionFillColor === 'string' ? hints.selectionFillColor : strokeColor
+    : typeof hints.fillColor === 'string' ? hints.fillColor : typeof hints.strokeColor === 'string' ? hints.strokeColor : '#0ea5e9';
+  const strokeWidth = typeof hints.strokeWidth === 'number' ? hints.strokeWidth : 2;
   return {
     name,
     withLabel: Boolean(name),
-    strokeColor: typeof hints.strokeColor === 'string' ? hints.strokeColor : '#0ea5e9',
+    highlight: false,
+    strokeColor,
     fillColor,
-    fillOpacity: typeof hints.fillOpacity === 'number' ? hints.fillOpacity : 0.15,
-    strokeWidth: typeof hints.strokeWidth === 'number' ? hints.strokeWidth : 2,
-    size: typeof hints.radius === 'number' ? hints.radius : 3,
+    fillOpacity: selected ? readNumber(hints.selectionFillOpacity, 0.32) : readNumber(hints.fillOpacity, 0.15),
+    strokeWidth: selected ? Math.max(strokeWidth + 2, 4) : strokeWidth,
+    size: selected ? Math.max(readNumber(hints.radius, 3) + 1, 5) : readNumber(hints.radius, 3),
     visible: hints.visible !== false,
     fixed: asRecord(node.meta)?.locked === true
   };
@@ -389,6 +398,7 @@ const normalizeElements = (value: JsxGraphElement | JsxGraphElement[] | null | u
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
+const isSelectedNode = (node: GraphObjectNode): boolean => node.meta?.selected === true || node.renderHints?.selected === true;
 const isPoint2D = (value: unknown): value is Point2D => {
   const record = asRecord(value);
   return typeof record?.x === 'number' && Number.isFinite(record.x) && typeof record.y === 'number' && Number.isFinite(record.y);

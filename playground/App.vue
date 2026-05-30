@@ -253,6 +253,30 @@
                 </div>
                 <div v-if="isCoreRendererActive" class="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-[11px] leading-5 text-sky-800">
                   {{ coreRendererPanelMessage }}
+                  <span v-if="coreSelectedObjectId" class="mt-1 block font-semibold">当前选中：{{ coreSelectedObjectId }}</span>
+                </div>
+                <div class="mt-3 grid grid-cols-2 gap-1.5">
+                  <div
+                    v-for="item in activeBackendCapability.interactions"
+                    :key="`interaction-${activeRendererBackend}-${item.id}`"
+                    class="rounded-lg border px-2 py-1.5"
+                    :class="interactionStatusClass(item.status)"
+                  >
+                    <p class="text-[10px] font-semibold">{{ item.label }}</p>
+                    <p class="text-[10px]">{{ item.status }}</p>
+                  </div>
+                </div>
+                <div v-if="coreInteractionDiagnostics.length > 0" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Interaction diagnostics</p>
+                  <ul class="mt-1 space-y-1">
+                    <li
+                      v-for="item in coreInteractionDiagnostics.slice(0, 5)"
+                      :key="item"
+                      class="text-[11px] leading-5 text-slate-700"
+                    >
+                      {{ item }}
+                    </li>
+                  </ul>
                 </div>
               </div>
             </div>
@@ -298,9 +322,15 @@
             id="vuegraphx-mount"
             :class="[
               'absolute inset-0 z-[5] jxgbox',
-              store.activeMode === 'dual-layer' ? 'dual-layer-pass-through' : ''
+              store.activeMode === 'dual-layer' ? 'dual-layer-pass-through' : '',
+              isCoreRendererActive ? 'core-interaction-surface' : ''
             ]"
             ref="graphContainerRef"
+            @wheel="handleCoreRendererWheel"
+            @pointerdown="handleCoreRendererPointerDown"
+            @pointermove="handleCoreRendererPointerMove"
+            @pointerup="handleCoreRendererPointerUp"
+            @pointercancel="handleCoreRendererPointerUp"
           ></div>
           <!-- 顶层 2D 层：仅在 dual-layer 模式下显示 -->
           <div
@@ -362,8 +392,8 @@ import { shallowRef, ref, onMounted, onUnmounted, nextTick, computed, watch } fr
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { GraphXEngine, type EngineMode } from 'vuegraphx';
-import { GraphSceneRuntime } from '@vuegraphx/core';
-import { createCanvas2DGraphBackend, type Canvas2DGraphBackend } from '@vuegraphx/backend-canvas2d';
+import { GraphSceneRuntime, type GraphClientPoint, type GraphOperationDiagnostic, type GraphPickResult } from '@vuegraphx/core';
+import { createCanvas2DGraphBackend, type Canvas2DGraphBackend, type CanvasWorldBounds } from '@vuegraphx/backend-canvas2d';
 import {
   createBabylonGraphBackend,
   createBabylonRuntime,
@@ -387,6 +417,11 @@ import HiddenLinePanel from './components/HiddenLinePanel.vue';
 import RelationPanel from './components/RelationPanel.vue';
 import { registerDualLayerBottomShapes, registerDualLayerTopShapes, registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
+import {
+  panFittedBoundsByPointerDelta,
+  panFittedBoundsByWheelDelta,
+  zoomFittedBoundsAroundClientPoint
+} from './viewportBounds';
 
 const onDrop = (e: DragEvent) => {
   e.preventDefault();
@@ -433,6 +468,26 @@ const dualLayerPassChecked = ref(false);
 const sidebarBottomHeight = ref(420);
 const sidebarBottomMaxHeight = ref(920);
 const isSidebarBottomResizing = ref(false);
+const coreViewportBounds = ref<CanvasWorldBounds>({ ...PLAYGROUND_CANVAS_WORLD_BOUNDS });
+const coreInteractionDiagnostics = ref<string[]>([]);
+const coreSelectedObjectId = ref<string>('');
+
+interface CorePanSession {
+  pointerId: number;
+  startPoint: GraphClientPoint;
+  startBounds: CanvasWorldBounds;
+}
+
+interface CorePinchSession {
+  pointerIds: [number, number];
+  startDistance: number;
+  startCenter: GraphClientPoint;
+  startBounds: CanvasWorldBounds;
+}
+
+let corePanSession: CorePanSession | null = null;
+let corePinchSession: CorePinchSession | null = null;
+const corePointers = new Map<number, GraphClientPoint>();
 
 // 当前模式且当前后端可用的 Demo 列表
 const currentDemos = computed(() => (
@@ -473,6 +528,11 @@ const coreSceneSummary = computed(() => {
     diagnosticCount: result.diagnostics.length
   };
 });
+const interactionStatusClass = (status: string) => {
+  if (status === 'supported') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (status === 'partial-support') return 'border-amber-200 bg-amber-50 text-amber-700';
+  return 'border-rose-200 bg-rose-50 text-rose-700';
+};
 const SIDEBAR_BOTTOM_MIN_HEIGHT = 220;
 const SIDEBAR_BOTTOM_DEFAULT_HEIGHT = 400;
 const SIDEBAR_BOTTOM_ABSOLUTE_MAX = 720;
@@ -534,6 +594,164 @@ const waitForUiPaint = async () => {
 
 const getBoardOptionsForCurrentMode = (mode: PlaygroundMode) => getBoardOptionsForPlaygroundMode(mode, getGraphViewportSize());
 
+const cloneBounds = (bounds: CanvasWorldBounds): CanvasWorldBounds => ({ ...bounds });
+const resetCoreViewportBounds = () => {
+  coreViewportBounds.value = cloneBounds(PLAYGROUND_CANVAS_WORLD_BOUNDS);
+  applyCoreViewportBounds();
+};
+
+const setCoreViewportBounds = (bounds: CanvasWorldBounds, reason: string) => {
+  coreViewportBounds.value = cloneBounds(bounds);
+  applyCoreViewportBounds();
+  pushCoreInteractionDiagnostic(reason);
+};
+
+const applyCoreViewportBounds = () => {
+  canvasBackendRef.value?.setWorldBounds(coreViewportBounds.value);
+  babylonBackendRef.value?.setWorldBounds(coreViewportBounds.value);
+};
+
+const getCoreLocalPoint = (event: PointerEvent | WheelEvent): GraphClientPoint | null => {
+  const element = graphContainerRef.value;
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+};
+
+const pushCoreInteractionDiagnostic = (message: string) => {
+  coreInteractionDiagnostics.value = [
+    `${new Date().toLocaleTimeString()} · ${message}`,
+    ...coreInteractionDiagnostics.value
+  ].slice(0, 8);
+};
+
+const pushCoreDiagnostics = (diagnostics: readonly GraphOperationDiagnostic[]) => {
+  for (const diagnostic of diagnostics) {
+    pushCoreInteractionDiagnostic(`${diagnostic.code}: ${diagnostic.message}`);
+  }
+};
+
+const selectCoreObject = (objectId: string, pick?: GraphPickResult) => {
+  const runtime = isBabylonRendererActive.value ? babylonRuntimeRef.value : canvasRuntimeRef.value;
+  if (!runtime) return;
+
+  for (const node of runtime.scene.listObjects()) {
+    if (node.meta?.selected === true && node.id !== objectId) {
+      runtime.updateObject(node.id, { meta: { ...(node.meta ?? {}), selected: false } });
+    }
+  }
+
+  const node = runtime.scene.getObject(objectId);
+  if (node) runtime.updateObject(objectId, { meta: { ...(node.meta ?? {}), selected: true } });
+  coreSelectedObjectId.value = objectId;
+  pushCoreInteractionDiagnostic(`selected ${objectId}${pick?.backendId ? ` via ${pick.backendId}` : ''}`);
+};
+
+const handleCoreRendererWheel = (event: WheelEvent) => {
+  if (!isCoreRendererActive.value) return;
+  if (isBabylonRendererActive.value && getBabylonRenderModeForCurrentMode() === '3d') return;
+
+  const point = getCoreLocalPoint(event);
+  if (!point) return;
+  event.preventDefault();
+
+  if (event.ctrlKey || event.metaKey || event.deltaMode !== 0) {
+    const scale = event.deltaY < 0 ? 0.88 : 1.14;
+    setCoreViewportBounds(
+      zoomFittedBoundsAroundClientPoint(coreViewportBounds.value, point, getGraphViewportSize(), scale),
+      `${event.ctrlKey || event.metaKey ? 'pinch-like' : 'wheel'} zoom ${scale < 1 ? 'in' : 'out'}`
+    );
+    return;
+  }
+
+  setCoreViewportBounds(
+    panFittedBoundsByWheelDelta(coreViewportBounds.value, { x: event.deltaX, y: event.deltaY }, getGraphViewportSize()),
+    'trackpad pan'
+  );
+};
+
+const handleCoreRendererPointerDown = (event: PointerEvent) => {
+  if (!isCoreRendererActive.value) return;
+  const point = getCoreLocalPoint(event);
+  if (!point) return;
+  corePointers.set(event.pointerId, point);
+
+  if (corePointers.size >= 2) {
+    const [first, second] = [...corePointers.entries()].slice(0, 2);
+    corePinchSession = {
+      pointerIds: [first[0], second[0]],
+      startDistance: distanceBetweenPoints(first[1], second[1]),
+      startCenter: midpoint(first[1], second[1]),
+      startBounds: cloneBounds(coreViewportBounds.value)
+    };
+    corePanSession = null;
+    pushCoreInteractionDiagnostic('native pointer pinch started');
+    return;
+  }
+
+  const runtime = isBabylonRendererActive.value ? babylonRuntimeRef.value : canvasRuntimeRef.value;
+  const routed = runtime?.router.pickWithDiagnostics(point, { pickOptions: { tolerancePx: 10 } });
+  if (routed) pushCoreDiagnostics(routed.diagnostics);
+  if (routed?.pick?.target.objectId) {
+    selectCoreObject(routed.pick.target.objectId, routed.pick);
+    return;
+  }
+
+  corePanSession = {
+    pointerId: event.pointerId,
+    startPoint: point,
+    startBounds: cloneBounds(coreViewportBounds.value)
+  };
+  pushCoreInteractionDiagnostic('background pan started');
+};
+
+const handleCoreRendererPointerMove = (event: PointerEvent) => {
+  if (!isCoreRendererActive.value) return;
+  const point = getCoreLocalPoint(event);
+  if (!point) return;
+  if (corePointers.has(event.pointerId)) corePointers.set(event.pointerId, point);
+
+  if (corePinchSession) {
+    const first = corePointers.get(corePinchSession.pointerIds[0]);
+    const second = corePointers.get(corePinchSession.pointerIds[1]);
+    if (!first || !second || corePinchSession.startDistance <= 1) return;
+    const currentDistance = distanceBetweenPoints(first, second);
+    const scale = Math.max(0.25, Math.min(4, corePinchSession.startDistance / Math.max(1, currentDistance)));
+    setCoreViewportBounds(
+      zoomFittedBoundsAroundClientPoint(corePinchSession.startBounds, corePinchSession.startCenter, getGraphViewportSize(), scale),
+      'native pointer pinch zoom'
+    );
+    return;
+  }
+
+  if (corePanSession?.pointerId === event.pointerId) {
+    setCoreViewportBounds(
+      panFittedBoundsByPointerDelta(
+        corePanSession.startBounds,
+        { x: point.x - corePanSession.startPoint.x, y: point.y - corePanSession.startPoint.y },
+        getGraphViewportSize()
+      ),
+      'pointer pan'
+    );
+  }
+};
+
+const handleCoreRendererPointerUp = (event: PointerEvent) => {
+  if (!isCoreRendererActive.value) return;
+  corePointers.delete(event.pointerId);
+  if (corePanSession?.pointerId === event.pointerId) corePanSession = null;
+  if (corePinchSession?.pointerIds.includes(event.pointerId)) corePinchSession = null;
+};
+
+const distanceBetweenPoints = (a: GraphClientPoint, b: GraphClientPoint) => Math.hypot(a.x - b.x, a.y - b.y);
+const midpoint = (a: GraphClientPoint, b: GraphClientPoint): GraphClientPoint => ({
+  x: (a.x + b.x) / 2,
+  y: (a.y + b.y) / 2
+});
+
 let modeResizeObserver: ResizeObserver | null = null;
 let modeResizeRaf: number | null = null;
 let sidebarResizeObserver: ResizeObserver | null = null;
@@ -567,6 +785,9 @@ const startResizeObserver = () => {
     if (modeResizeRaf !== null) cancelAnimationFrame(modeResizeRaf);
     modeResizeRaf = requestAnimationFrame(() => {
       modeResizeRaf = null;
+      if (isCoreRendererActive.value) {
+        applyCoreViewportBounds();
+      }
       if (canvasBackendRef.value) canvasBackendRef.value.resize(getGraphViewportSize());
       if (babylonBackendRef.value) babylonBackendRef.value.resize(getGraphViewportSize());
       if (engineRef.value) engineRef.value.resize();
@@ -627,6 +848,9 @@ watch(
 );
 
 const destroyPrimaryRenderer = () => {
+  corePanSession = null;
+  corePinchSession = null;
+  corePointers.clear();
   if (engineRef.value) {
     engineRef.value.destroy();
     engineRef.value = null;
@@ -657,16 +881,18 @@ const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
   const host = graphContainerRef.value;
   if (!host) return;
 
+  const showAxes = shouldShowCoreAxesForCurrentMode();
   host.replaceChildren();
   const backend = createCanvas2DGraphBackend({
     id: 'playground-canvas2d',
     pixelRatio: window.devicePixelRatio || 1,
-    worldBounds: PLAYGROUND_CANVAS_WORLD_BOUNDS,
-    showAxes: true
+    worldBounds: coreViewportBounds.value,
+    showAxes,
+    preserveAspectRatio: true
   });
   backend.mount(host, {
     size: getGraphViewportSize(),
-    attributes: { worldBounds: PLAYGROUND_CANVAS_WORLD_BOUNDS }
+    attributes: { worldBounds: coreViewportBounds.value }
   });
   canvasBackendRef.value = backend;
   canvasRuntimeRef.value = new GraphSceneRuntime({
@@ -711,6 +937,7 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
   const host = graphContainerRef.value;
   if (!host) return;
 
+  const showAxes = shouldShowCoreAxesForCurrentMode();
   host.replaceChildren();
   babylonRuntimeError.value = '';
   const renderMode = getBabylonRenderModeForCurrentMode();
@@ -719,7 +946,8 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
     const runtimePort = createBabylonRuntime(BABYLON, {
       renderMode,
       attachCameraControl: renderMode === '3d',
-      canvasPointerEvents: 'auto'
+      canvasPointerEvents: 'auto',
+      showAxes
     });
     const backend = createBabylonGraphBackend({
       id: 'playground-babylon',
@@ -727,7 +955,7 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
     });
     backend.mount(host, {
       size: getGraphViewportSize(),
-      attributes: { renderMode, worldBounds: PLAYGROUND_CANVAS_WORLD_BOUNDS }
+      attributes: { renderMode, worldBounds: coreViewportBounds.value, showAxes }
     });
     babylonBackendRef.value = backend;
     babylonRuntimeRef.value = new GraphSceneRuntime({
@@ -746,6 +974,9 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
 
 const getBabylonRenderModeForCurrentMode = (): BabylonRenderMode => (
   store.activeMode === '3d' ? '3d' : '2d'
+);
+const shouldShowCoreAxesForCurrentMode = (): boolean => (
+  getBoardOptionsForCurrentMode(store.activeMode).axis !== false
 );
 
 const initJsxGraphRenderer = (options: { syncCommands?: boolean } = {}) => {
@@ -808,6 +1039,9 @@ const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolea
 
   stopResizeObserver();
   destroyPrimaryRenderer();
+  resetCoreViewportBounds();
+  coreInteractionDiagnostics.value = [];
+  coreSelectedObjectId.value = '';
 
   await waitForUiPaint();
   await initEngines(options);
@@ -820,6 +1054,9 @@ const switchRendererBackend = async (backend: PlaygroundRenderBackend) => {
 
   stopResizeObserver();
   destroyPrimaryRenderer();
+  resetCoreViewportBounds();
+  coreInteractionDiagnostics.value = [];
+  coreSelectedObjectId.value = '';
   await waitForUiPaint();
   await initEngines({ syncCommands: true });
 };
@@ -880,6 +1117,7 @@ const clearAll = () => {
   else if (canvasBackendRef.value) canvasBackendRef.value.clear();
   if (babylonRuntimeRef.value) babylonRuntimeRef.value.clear();
   activeDemo.value = -1;
+  coreSelectedObjectId.value = '';
 };
 
 const syncAllToEngine = () => {
@@ -887,6 +1125,7 @@ const syncAllToEngine = () => {
     const backend = canvasBackendRef.value;
     const runtime = canvasRuntimeRef.value;
     if (!backend || !runtime) return;
+    coreSelectedObjectId.value = '';
     runtime.clear();
     const result = buildPlaygroundCanvasScene(store.commands);
     store.commands.forEach((command) => {
@@ -907,6 +1146,7 @@ const syncAllToEngine = () => {
       });
       return;
     }
+    coreSelectedObjectId.value = '';
     runtime.clear();
     const result = buildPlaygroundBabylonScene(store.commands, { renderMode: getBabylonRenderModeForCurrentMode() });
     store.commands.forEach((command) => {
@@ -934,6 +1174,8 @@ const loadSelectedDemo = (idx: number) => {
   if (engineRef.value) engineRef.value.resetBoard(getBoardOptionsForCurrentMode(store.activeMode));
   if (canvasRuntimeRef.value) canvasRuntimeRef.value.clear();
   if (babylonRuntimeRef.value) babylonRuntimeRef.value.clear();
+  resetCoreViewportBounds();
+  coreSelectedObjectId.value = '';
   nextTick(() => {
     syncAllToEngine();
   });
@@ -1034,6 +1276,15 @@ body.sidebar-resize-active {
 
 #dual-layer-container .jxgbox canvas {
   will-change: contents;
+}
+
+#vuegraphx-mount.core-interaction-surface {
+  cursor: grab;
+  touch-action: none;
+}
+
+#vuegraphx-mount.core-interaction-surface:active {
+  cursor: grabbing;
 }
 
 #dual-layer-container .JXGinfobox,

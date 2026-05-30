@@ -6,6 +6,9 @@ export interface GraphCapabilityTemplate {
     kind: GraphRuntimeCapabilityKind;
     category: GraphMathObjectProfile | 'base';
 }
+export declare const GRAPH_ACTIVE_MATH_VIEWPORT_CAPABILITY_IDS: readonly ["math.viewport.select", "math.viewport.move", "math.viewport.resize", "math.viewport.pan", "math.viewport.zoom"];
+export declare const GRAPH_ACTIVE_MATH_OBJECT_INTERACTION_CAPABILITY_IDS: readonly ["math.object.select"];
+export declare const GRAPH_ACTIVE_MATH_INTERACTION_CAPABILITY_IDS: readonly ["math.viewport.select", "math.viewport.move", "math.viewport.resize", "math.viewport.pan", "math.viewport.zoom", "math.object.select"];
 export declare const GRAPH_MATH_CAPABILITY_PROFILE: Readonly<Record<GraphMathObjectProfile, readonly GraphCapabilityTemplate[]>>;
 export declare const inferGraphMathObjectProfile: (node: GraphObjectNode) => GraphMathObjectProfile | null;
 export declare const createGraphCapabilitiesForProfile: (profile: GraphMathObjectProfile, target: GraphRuntimeTargetRef, disabled?: Partial<Record<string, string>>) => GraphRuntimeCapabilityDescriptor[];

@@ -36,6 +36,23 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
   '2d': [
     ...curriculumParityDemos,
     {
+      emoji: '🖱️',
+      title: '交互合同验证',
+      desc: '滚轮/触控板缩放平移，点击对象后在三个首发后端显示 selected 高亮与诊断',
+      compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+      commands: [
+        'A = Point(-3, 1)',
+        'B = Point(2, 1)',
+        'C = Point(-0.5, 3.2)',
+        'base = Segment(A, B)',
+        'tri = Polygon(A, B, C)',
+        'O = Point(0, 0)',
+        'P = Point(2, 0)',
+        'circle = Circle(O, P)',
+        'label = Text(-4, -3, "wheel/pinch zoom · drag background pan · click select")'
+      ]
+    },
+    {
       emoji: '🧪',
       title: 'Canvas2D 全功能巡检',
       desc: '点线圆弧、多边形、圆锥曲线、文本、测量和变换，可直接切任一首发后端',

@@ -136,7 +136,38 @@ export interface GraphBackendCapabilities {
     drag: boolean;
     layers: boolean;
     dimensions: ReadonlyArray<'2d' | '3d'>;
+    mathInteractions?: GraphBackendMathInteractionCapabilities;
 }
+export type GraphBackendInteractionStatus = 'supported' | 'partial-support' | 'unsupported';
+export interface GraphBackendInteractionCapability {
+    status: GraphBackendInteractionStatus;
+    reason?: string;
+    mechanism?: string;
+    native?: boolean;
+    diagnostics?: readonly GraphOperationDiagnostic[];
+}
+export interface GraphBackendMathInteractionCapabilities {
+    viewport: {
+        zoom: GraphBackendInteractionCapability;
+        gestureZoom: GraphBackendInteractionCapability;
+        pan: GraphBackendInteractionCapability;
+    };
+    object: {
+        pick: GraphBackendInteractionCapability;
+        select: GraphBackendInteractionCapability;
+        highlight: GraphBackendInteractionCapability;
+    };
+    project: GraphBackendInteractionCapability;
+    unproject: GraphBackendInteractionCapability;
+    diagnostics: GraphBackendInteractionCapability;
+}
+export declare const GRAPH_MATH_INTERACTION_CAPABILITY_PATHS: readonly ["viewport.zoom", "viewport.gestureZoom", "viewport.pan", "object.pick", "object.select", "object.highlight", "project", "unproject", "diagnostics"];
+export type GraphMathInteractionCapabilityPath = typeof GRAPH_MATH_INTERACTION_CAPABILITY_PATHS[number];
+export declare const createGraphBackendInteractionCapability: (status?: GraphBackendInteractionStatus, detail?: Omit<GraphBackendInteractionCapability, 'status'>) => GraphBackendInteractionCapability;
+export declare const createGraphBackendMathInteractionCapabilities: (overrides?: Partial<{
+    [Path in GraphMathInteractionCapabilityPath]: GraphBackendInteractionCapability;
+}>) => GraphBackendMathInteractionCapabilities;
+export declare const validateGraphBackendMathInteractionCapabilities: (backendId: string, capabilities: GraphBackendCapabilities) => GraphOperationDiagnostic[];
 export interface GraphBackendMountOptions {
     backendId?: string;
     viewport?: GraphViewportRef;

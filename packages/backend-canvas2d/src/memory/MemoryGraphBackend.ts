@@ -1,5 +1,7 @@
 import {
   createGraphObjectNode,
+  createGraphBackendInteractionCapability,
+  createGraphBackendMathInteractionCapabilities,
   mergeGraphObjectPatch,
   okResult,
   type GraphBackendCapabilities,
@@ -32,7 +34,18 @@ const DEFAULT_CAPABILITIES: GraphBackendCapabilities = {
   unproject: true,
   drag: true,
   layers: true,
-  dimensions: ['2d']
+  dimensions: ['2d'],
+  mathInteractions: createGraphBackendMathInteractionCapabilities({
+    'viewport.zoom': createGraphBackendInteractionCapability('supported', { mechanism: 'core-viewport-contract' }),
+    'viewport.gestureZoom': createGraphBackendInteractionCapability('supported', { mechanism: 'host-gesture-bridge', native: true }),
+    'viewport.pan': createGraphBackendInteractionCapability('supported', { mechanism: 'core-viewport-contract' }),
+    'object.pick': createGraphBackendInteractionCapability('supported', { mechanism: 'backend-pick' }),
+    'object.select': createGraphBackendInteractionCapability('supported', { mechanism: 'core-meta-selected' }),
+    'object.highlight': createGraphBackendInteractionCapability('supported', { mechanism: 'selected-render-hints' }),
+    project: createGraphBackendInteractionCapability('supported', { mechanism: 'backend-project' }),
+    unproject: createGraphBackendInteractionCapability('supported', { mechanism: 'backend-unproject' }),
+    diagnostics: createGraphBackendInteractionCapability('supported', { mechanism: 'GraphOperationDiagnostic' })
+  })
 };
 
 export class MemoryGraphBackend implements GraphRenderBackend {

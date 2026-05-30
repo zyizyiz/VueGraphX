@@ -10,6 +10,14 @@ export interface PlaygroundBackendCapability {
   supported: readonly string[];
   unsupported: readonly string[];
   notes: readonly string[];
+  interactions: readonly PlaygroundInteractionStatus[];
+}
+
+export interface PlaygroundInteractionStatus {
+  id: string;
+  label: string;
+  status: 'supported' | 'partial-support' | 'unsupported';
+  detail: string;
 }
 
 export interface ParityDemoCommand {
@@ -49,7 +57,18 @@ export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, 
       summary: `课程标准原生同构后端：与 Canvas2D/Babylon 使用同一份语义场景和 ${coverage}。`,
       supported: [`对象族：${objectTypes.join(' / ')}`, `能力族：${families.join(' / ')}`],
       unsupported: [],
-      notes: ['关系面板、隐藏线调试、双层区仍属于 JSXGraph 专项面板；课程 parity demo 不依赖这些专项面板。']
+      notes: ['关系面板、隐藏线调试、双层区仍属于 JSXGraph 专项面板；课程 parity demo 不依赖这些专项面板。'],
+      interactions: [
+        { id: 'viewport.zoom', label: '缩放', status: 'supported', detail: 'JSXGraph board zoom + VueGraphX modifier-wheel bridge' },
+        { id: 'viewport.gestureZoom', label: '手势缩放', status: 'supported', detail: 'pinch 选项和 ctrl/meta wheel 兼容路径' },
+        { id: 'viewport.pan', label: '平移', status: 'supported', detail: 'JSXGraph pan + 双指/像素 wheel bridge' },
+        { id: 'object.pick', label: '拾取', status: 'supported', detail: 'runtime pick 路由' },
+        { id: 'object.select', label: '选中状态', status: 'supported', detail: 'core meta.selected 可观测状态' },
+        { id: 'object.highlight', label: '选中高亮', status: 'supported', detail: '使用 selected attrs，不依赖全局 hover highlight' },
+        { id: 'project', label: '投影', status: 'supported', detail: 'JSXGraph Coords project' },
+        { id: 'unproject', label: '反投影', status: 'supported', detail: 'JSXGraph Coords unproject' },
+        { id: 'diagnostics', label: '诊断', status: 'supported', detail: 'GraphOperationDiagnostic / pick diagnostics' }
+      ]
     },
     canvas2d: {
       id: 'canvas2d',
@@ -57,7 +76,18 @@ export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, 
       summary: `课程标准原生同构后端：Equation/Parabola/Solid 均降维为 Canvas 可绘制语义对象，覆盖 ${coverage}。`,
       supported: [`对象族：${objectTypes.join(' / ')}`, `能力族：${families.join(' / ')}`],
       unsupported: [],
-      notes: ['Canvas2D 对立体使用教学等价投影/线框表达，不回退到 JSXGraph。']
+      notes: ['Canvas2D 对立体使用教学等价投影/线框表达，不回退到 JSXGraph。'],
+      interactions: [
+        { id: 'viewport.zoom', label: '缩放', status: 'supported', detail: 'playground/core viewport bounds + project/unproject' },
+        { id: 'viewport.gestureZoom', label: '手势缩放', status: 'supported', detail: 'pointer pinch 与 ctrl/meta wheel bridge' },
+        { id: 'viewport.pan', label: '平移', status: 'supported', detail: 'pointer drag 和 trackpad wheel pan' },
+        { id: 'object.pick', label: '拾取', status: 'supported', detail: 'Canvas2D hit testing' },
+        { id: 'object.select', label: '选中状态', status: 'supported', detail: 'core meta.selected 可观测状态' },
+        { id: 'object.highlight', label: '选中高亮', status: 'supported', detail: 'selected meta -> orange stroke/fill' },
+        { id: 'project', label: '投影', status: 'supported', detail: 'worldBounds project' },
+        { id: 'unproject', label: '反投影', status: 'supported', detail: 'worldBounds unproject' },
+        { id: 'diagnostics', label: '诊断', status: 'supported', detail: 'GraphOperationDiagnostic / pick diagnostics' }
+      ]
     },
     babylon: {
       id: 'babylon',
@@ -65,7 +95,18 @@ export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, 
       summary: `课程标准原生同构后端：2D 画板使用正交 XY 平面，3D 画板使用可旋转立体视图，覆盖 ${coverage}。`,
       supported: [`对象族：${objectTypes.join(' / ')}`, `能力族：${families.join(' / ')}`],
       unsupported: [],
-      notes: ['Babylon 对平面对象使用原生 mesh proxy；在 2D 模式不会展示成倾斜 3D 视角。']
+      notes: ['Babylon 对平面对象使用原生 mesh proxy；在 2D 模式不会展示成倾斜 3D 视角。'],
+      interactions: [
+        { id: 'viewport.zoom', label: '缩放', status: 'supported', detail: '2D 正交 bounds；3D camera controls' },
+        { id: 'viewport.gestureZoom', label: '手势缩放', status: 'partial-support', detail: '3D 原生 camera；2D 通过 VueGraphX gesture bridge' },
+        { id: 'viewport.pan', label: '平移', status: 'supported', detail: '2D bounds pan；3D camera controls' },
+        { id: 'object.pick', label: '拾取', status: 'supported', detail: 'scene.pick metadata 映射' },
+        { id: 'object.select', label: '选中状态', status: 'supported', detail: 'core meta.selected 可观测状态' },
+        { id: 'object.highlight', label: '选中高亮', status: 'supported', detail: 'selected meta -> material/label highlight' },
+        { id: 'project', label: '投影', status: 'supported', detail: '2D worldBounds project；3D runtime fallback' },
+        { id: 'unproject', label: '反投影', status: 'supported', detail: '2D worldBounds unproject；3D pick point fallback' },
+        { id: 'diagnostics', label: '诊断', status: 'supported', detail: 'GraphOperationDiagnostic / backend partial support rows' }
+      ]
     }
   };
 };

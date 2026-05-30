@@ -10,7 +10,13 @@ import type {
   GraphViewportSize,
   GraphWorldPoint
 } from '@vuegraphx/core';
-import { mergeGraphObjectPatch } from '@vuegraphx/core';
+import {
+  createStandardCoordinateTickModel,
+  STANDARD_COORDINATE_UI,
+  formatStandardCoordinateLabel,
+  isStandardZeroCoordinate,
+  mergeGraphObjectPatch
+} from '@vuegraphx/core';
 import type { BabylonRuntimePickResult, BabylonRuntimePort } from './BabylonGraphBackend';
 
 export interface BabylonVector3Like {
@@ -22,6 +28,7 @@ export interface BabylonVector3Like {
 export interface BabylonMeshLike {
   name?: string;
   metadata?: Record<string, unknown>;
+  isPickable?: boolean;
   position?: BabylonVector3Like;
   rotation?: BabylonVector3Like;
   scaling?: BabylonVector3Like;
@@ -77,12 +84,15 @@ export interface BabylonMaterialLike {
   useAlphaFromDiffuseTexture?: boolean;
   backFaceCulling?: boolean;
   disableLighting?: boolean;
+  disableDepthWrite?: boolean;
   alpha?: number;
   dispose?(forceDisposeEffect?: boolean, forceDisposeTextures?: boolean): void;
 }
 
 export interface BabylonDynamicTextureLike {
   hasAlpha?: boolean;
+  getContext?(): CanvasRenderingContext2D;
+  update?(invertY?: boolean, premulAlpha?: boolean, allowGPUOptimization?: boolean): void;
   drawText(
     text: string,
     x: number | null | undefined,
@@ -113,9 +123,11 @@ export interface BabylonNamespaceLike {
   HemisphericLight?: new (name: string, direction: BabylonVector3Like, scene: BabylonSceneLike) => unknown;
   MeshBuilder: {
     CreateBox(name: string, options: Record<string, unknown>, scene: BabylonSceneLike): BabylonMeshLike;
+    CreateDisc?(name: string, options: Record<string, unknown>, scene: BabylonSceneLike): BabylonMeshLike;
     CreatePlane?(name: string, options: Record<string, unknown>, scene: BabylonSceneLike): BabylonMeshLike;
     CreateSphere?(name: string, options: Record<string, unknown>, scene: BabylonSceneLike): BabylonMeshLike;
     CreateCylinder?(name: string, options: Record<string, unknown>, scene: BabylonSceneLike): BabylonMeshLike;
+    CreateTube?(name: string, options: Record<string, unknown>, scene: BabylonSceneLike): BabylonMeshLike;
   };
 }
 
@@ -128,6 +140,7 @@ export interface BabylonRuntimeOptions {
   renderMode?: BabylonRenderMode;
   attachCameraControl?: boolean;
   canvasPointerEvents?: 'auto' | 'none';
+  showAxes?: boolean;
 }
 
 interface Babylon2DWorldBounds {
@@ -151,16 +164,50 @@ interface RgbaColor {
   a: number;
 }
 
+interface StandardCoordinateScreenMetrics {
+  width: number;
+  height: number;
+  origin: GraphClientPoint;
+  visualScale: number;
+  strokeWorld: number;
+  clientToWorld(point: GraphClientPoint, z: number): BabylonVector3Like;
+}
+
+interface Babylon2DCoordinateLabelMetadata {
+  text: string;
+  axis: 'x' | 'y' | 'plain';
+  left: number;
+  top: number;
+  visualScale: number;
+}
+
+interface Babylon2DCoordinateLayer {
+  mesh: BabylonMeshLike;
+  texture: BabylonDynamicTextureLike;
+  textureWidth: number;
+  textureHeight: number;
+}
+
 const VUEGRAPHX_METADATA_KEY = 'vuegraphx';
 const BABYLON_WORLD_HALF_EXTENT = 10;
 const BABYLON_GRID_STEP = 1;
-const BABYLON_GRID_Z = -0.025;
+// The 2D orthographic camera looks from negative Z toward the XY plane, so
+// larger Z values are farther away. Keep helper axes/grid behind user objects.
+const BABYLON_2D_GRID_Z = 0.08;
+const BABYLON_2D_COORDINATE_LABEL_Z = 0.07;
+const BABYLON_3D_GRID_Z = -0.025;
+const BABYLON_2D_PATH_Z = 0;
+const BABYLON_2D_POINT_Z = -0.02;
+const BABYLON_2D_SELECTED_Z = -0.04;
+const BABYLON_2D_TEXT_Z = -0.06;
 const BABYLON_PROXY_THICKNESS = 0.055;
 const BABYLON_CAMERA_ORTHOGRAPHIC_MODE = 1;
 const BABYLON_DOUBLE_SIDE = 2;
 const BABYLON_TEXT_PLANE_HEIGHT = 0.72;
 const BABYLON_TEXT_TEXTURE_HEIGHT = 128;
 const BABYLON_TEXT_TEXTURE_PADDING = 20;
+const BABYLON_MIN_VISUAL_ZOOM_SCALE = 0.25;
+const BABYLON_MAX_VISUAL_ZOOM_SCALE = 8;
 const DEFAULT_BABYLON_2D_WORLD_BOUNDS: Babylon2DWorldBounds = {
   left: -BABYLON_WORLD_HALF_EXTENT,
   right: BABYLON_WORLD_HALF_EXTENT,
@@ -178,9 +225,13 @@ export class BabylonRuntime implements BabylonRuntimePort {
   private ownsCanvas = false;
   private renderMode: BabylonRenderMode;
   private worldBounds: Babylon2DWorldBounds = DEFAULT_BABYLON_2D_WORLD_BOUNDS;
+  private visualBaselineWorldBounds: Babylon2DWorldBounds = DEFAULT_BABYLON_2D_WORLD_BOUNDS;
   private viewportSize: GraphViewportSize | null = null;
+  private showAxes: boolean;
   private readonly objects = new Map<string, BabylonStoredObject>();
   private readonly helperMeshes: BabylonMeshLike[] = [];
+  private readonly helperLabels: HTMLElement[] = [];
+  private coordinateLayer: Babylon2DCoordinateLayer | null = null;
 
   public constructor(
     private readonly BABYLON: BabylonNamespaceLike,
@@ -188,11 +239,14 @@ export class BabylonRuntime implements BabylonRuntimePort {
   ) {
     this.canvas = options.canvas ?? null;
     this.renderMode = options.renderMode ?? '3d';
+    this.showAxes = options.showAxes ?? true;
   }
 
   public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): void {
     this.renderMode = resolveRenderMode(options.attributes?.renderMode, this.options.renderMode ?? this.renderMode);
     this.worldBounds = read2DWorldBounds(options.attributes?.worldBounds) ?? DEFAULT_BABYLON_2D_WORLD_BOUNDS;
+    this.visualBaselineWorldBounds = { ...this.worldBounds };
+    this.showAxes = readBoolean(options.attributes?.showAxes) ?? this.options.showAxes ?? true;
     this.viewportSize = null;
     this.installLabelLayer(host);
 
@@ -275,17 +329,33 @@ export class BabylonRuntime implements BabylonRuntimePort {
   }
 
   public project(point: GraphWorldPoint, _viewport?: GraphViewportRef): GraphClientPoint | null {
+    if (point.dimension === '2d' && this.renderMode === '2d') {
+      return project2DWorldToClient(point, this.getVisible2DWorldBounds(), this.viewportSize ?? readCanvasViewportSize(this.canvas));
+    }
     return { x: point.x, y: point.y };
   }
 
   public unproject(point: GraphClientPoint, _viewport?: GraphViewportRef): GraphWorldPoint | null {
-    if (this.renderMode === '2d') return { dimension: '2d', x: point.x, y: point.y };
+    if (this.renderMode === '2d') {
+      const world = unproject2DClientToWorld(point, this.getVisible2DWorldBounds(), this.viewportSize ?? readCanvasViewportSize(this.canvas));
+      return { dimension: '2d', x: world.x, y: world.y };
+    }
     return { dimension: '3d', x: point.x, y: point.y, z: 0 };
+  }
+
+  public setWorldBounds(bounds: Babylon2DWorldBounds): void {
+    this.worldBounds = { ...bounds };
+    if (this.renderMode === '2d') this.applyOrthographicCameraBounds();
+    this.refresh2DHelperArtifacts();
+    this.refresh2DObjectLabels();
+    this.renderFrame();
   }
 
   public resize(size: GraphViewportSize): void {
     if (this.canvas) this.applyCanvasSize(size);
     if (this.renderMode === '2d') this.applyOrthographicCameraBounds();
+    this.refresh2DHelperArtifacts();
+    this.refresh2DObjectLabels();
     this.engine?.resize();
   }
 
@@ -298,6 +368,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
     for (const object of this.objects.values()) this.disposeStoredObject(object);
     this.objects.clear();
     this.disposeHelperMeshes();
+    this.disposeCoordinateLayer();
     this.scene?.dispose();
     this.engine?.dispose();
     this.labelLayer?.remove();
@@ -351,29 +422,129 @@ export class BabylonRuntime implements BabylonRuntimePort {
 
   private installGridAndAxes(): void {
     const scene = this.requireScene();
+    const gridZ = this.renderMode === '2d' ? BABYLON_2D_GRID_Z : BABYLON_3D_GRID_Z;
     this.disposeHelperMeshes();
-    for (let coordinate = -BABYLON_WORLD_HALF_EXTENT; coordinate <= BABYLON_WORLD_HALF_EXTENT; coordinate += BABYLON_GRID_STEP) {
-      const isAxis = coordinate === 0;
-      const color = isAxis ? { r: 0.28, g: 0.33, b: 0.41, a: 0.9 } : { r: 0.58, g: 0.64, b: 0.72, a: 0.28 };
-      const thickness = isAxis ? 0.035 : 0.012;
+    if (!this.showAxes) {
+      this.disposeCoordinateLayer();
+      return;
+    }
+
+    if (this.renderMode !== '2d') {
+      this.disposeCoordinateLayer();
+      for (let coordinate = -BABYLON_WORLD_HALF_EXTENT; coordinate <= BABYLON_WORLD_HALF_EXTENT; coordinate += BABYLON_GRID_STEP) {
+        const isAxis = coordinate === 0;
+        const color = isAxis ? { r: 0.28, g: 0.33, b: 0.41, a: 0.9 } : { r: 0.58, g: 0.64, b: 0.72, a: 0.28 };
+        const thickness = isAxis ? 0.035 : 0.012;
+        this.helperMeshes.push(this.createLineBox({
+          name: `vuegraphx-grid-x-${coordinate}`,
+          start: { x: -BABYLON_WORLD_HALF_EXTENT, y: coordinate, z: gridZ },
+          end: { x: BABYLON_WORLD_HALF_EXTENT, y: coordinate, z: gridZ },
+          thickness,
+          scene,
+          color,
+          metadata: null
+        }));
+        this.helperMeshes.push(this.createLineBox({
+          name: `vuegraphx-grid-y-${coordinate}`,
+          start: { x: coordinate, y: -BABYLON_WORLD_HALF_EXTENT, z: gridZ },
+          end: { x: coordinate, y: BABYLON_WORLD_HALF_EXTENT, z: gridZ },
+          thickness,
+          scene,
+          color,
+          metadata: null
+        }));
+      }
+      return;
+    }
+
+    if (this.update2DCoordinateLayer(scene)) return;
+    this.disposeCoordinateLayer();
+
+    const bounds = this.getVisible2DWorldBounds();
+    const xAxisVisible = bounds.bottom <= 0 && bounds.top >= 0;
+    const yAxisVisible = bounds.left <= 0 && bounds.right >= 0;
+    const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
+    const axisMetrics = createStandardCoordinateScreenMetrics(bounds, viewportSize, this.get2DVisualZoomScale());
+    const xTicks = createStandardCoordinateTickModel(bounds.left, bounds.right, axisMetrics.width / axisMetrics.visualScale);
+    const yTicks = createStandardCoordinateTickModel(bounds.bottom, bounds.top, axisMetrics.height / axisMetrics.visualScale);
+    const axisColor = rgbaFromHex(STANDARD_COORDINATE_UI.axisStrokeColor, 1);
+
+    if (xAxisVisible) {
       this.helperMeshes.push(this.createLineBox({
-        name: `vuegraphx-grid-x-${coordinate}`,
-        start: { x: -BABYLON_WORLD_HALF_EXTENT, y: coordinate, z: BABYLON_GRID_Z },
-        end: { x: BABYLON_WORLD_HALF_EXTENT, y: coordinate, z: BABYLON_GRID_Z },
-        thickness,
+        name: 'vuegraphx-coordinate-x-axis',
+        start: axisMetrics.clientToWorld({
+          x: (STANDARD_COORDINATE_UI.axisStrokeWidthPx * axisMetrics.visualScale) / 2,
+          y: axisMetrics.origin.y
+        }, gridZ),
+        end: axisMetrics.clientToWorld({
+          x: axisMetrics.width - STANDARD_COORDINATE_UI.axisArrowLengthPx * axisMetrics.visualScale,
+          y: axisMetrics.origin.y
+        }, gridZ),
+        thickness: axisMetrics.strokeWorld,
         scene,
-        color,
+        color: axisColor,
         metadata: null
       }));
+    }
+
+    if (yAxisVisible) {
       this.helperMeshes.push(this.createLineBox({
-        name: `vuegraphx-grid-y-${coordinate}`,
-        start: { x: coordinate, y: -BABYLON_WORLD_HALF_EXTENT, z: BABYLON_GRID_Z },
-        end: { x: coordinate, y: BABYLON_WORLD_HALF_EXTENT, z: BABYLON_GRID_Z },
-        thickness,
+        name: 'vuegraphx-coordinate-y-axis',
+        start: axisMetrics.clientToWorld({ x: axisMetrics.origin.x, y: axisMetrics.height }, gridZ),
+        end: axisMetrics.clientToWorld({
+          x: axisMetrics.origin.x,
+          y: STANDARD_COORDINATE_UI.axisArrowLengthPx * axisMetrics.visualScale
+        }, gridZ),
+        thickness: axisMetrics.strokeWorld,
         scene,
-        color,
+        color: axisColor,
         metadata: null
       }));
+    }
+
+    if (xAxisVisible) {
+      for (const x of xTicks.positions) {
+        if (isStandardZeroCoordinate(x)) continue;
+        const point = project2DWorldToClient({ x, y: 0 }, bounds, viewportSize);
+        this.createHelperLabel(formatStandardCoordinateLabel(x), {
+          left: point.x,
+          top: axisMetrics.origin.y + STANDARD_COORDINATE_UI.xTickLabelTopOffsetPx * axisMetrics.visualScale
+        }, 'x', axisMetrics.visualScale, scene, axisMetrics, BABYLON_2D_COORDINATE_LABEL_Z);
+      }
+      this.createAxisArrowHead('x', {
+        x: axisMetrics.width,
+        y: axisMetrics.origin.y
+      }, axisMetrics, scene, gridZ);
+      this.createHelperLabel('x', {
+        left: axisMetrics.width - STANDARD_COORDINATE_UI.xAxisLabelRightInsetPx * axisMetrics.visualScale,
+        top: axisMetrics.origin.y + STANDARD_COORDINATE_UI.xAxisLabelTopOffsetPx * axisMetrics.visualScale
+      }, 'plain', axisMetrics.visualScale, scene, axisMetrics, BABYLON_2D_COORDINATE_LABEL_Z);
+    }
+
+    if (yAxisVisible) {
+      for (const y of yTicks.positions) {
+        if (isStandardZeroCoordinate(y)) continue;
+        const point = project2DWorldToClient({ x: 0, y }, bounds, viewportSize);
+        this.createHelperLabel(formatStandardCoordinateLabel(y), {
+          left: axisMetrics.origin.x + STANDARD_COORDINATE_UI.yTickLabelLeftOffsetPx * axisMetrics.visualScale,
+          top: point.y + STANDARD_COORDINATE_UI.yTickLabelTopOffsetPx * axisMetrics.visualScale
+        }, 'y', axisMetrics.visualScale, scene, axisMetrics, BABYLON_2D_COORDINATE_LABEL_Z);
+      }
+      this.createAxisArrowHead('y', {
+        x: axisMetrics.origin.x,
+        y: 0
+      }, axisMetrics, scene, gridZ);
+      this.createHelperLabel('y', {
+        left: axisMetrics.origin.x + STANDARD_COORDINATE_UI.yAxisLabelLeftOffsetPx * axisMetrics.visualScale,
+        top: STANDARD_COORDINATE_UI.yAxisLabelTopPx * axisMetrics.visualScale
+      }, 'plain', axisMetrics.visualScale, scene, axisMetrics, BABYLON_2D_COORDINATE_LABEL_Z);
+    }
+
+    if (xAxisVisible && yAxisVisible) {
+      this.createHelperLabel('O', {
+        left: axisMetrics.origin.x + STANDARD_COORDINATE_UI.originLabelLeftOffsetPx * axisMetrics.visualScale,
+        top: axisMetrics.origin.y + STANDARD_COORDINATE_UI.originLabelTopOffsetPx * axisMetrics.visualScale
+      }, 'plain', axisMetrics.visualScale, scene, axisMetrics, BABYLON_2D_COORDINATE_LABEL_Z);
     }
   }
 
@@ -428,12 +599,15 @@ export class BabylonRuntime implements BabylonRuntimePort {
 
     if (node.type === 'point') {
       const anchor = readObjectAnchor(node);
+      const position = this.renderMode === '2d'
+        ? this.layerPoint(anchor, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_POINT_Z)
+        : { x: anchor.x, y: anchor.y, z: anchor.z + 0.02 };
       const mesh = this.BABYLON.MeshBuilder.CreateSphere
         ? this.BABYLON.MeshBuilder.CreateSphere(handle.id, { diameter: 0.32, segments: 18 }, scene)
         : this.BABYLON.MeshBuilder.CreateBox(handle.id, { size: 0.28 }, scene);
       mesh.name = handle.id;
       mesh.metadata = metadata;
-      mesh.position = new this.BABYLON.Vector3(anchor.x, anchor.y, anchor.z + 0.02);
+      mesh.position = new this.BABYLON.Vector3(position.x, position.y, position.z);
       mesh.material = this.createMaterial(`${handle.id}:material`, scene, color);
       return [mesh];
     }
@@ -444,7 +618,21 @@ export class BabylonRuntime implements BabylonRuntimePort {
       return pathSegments.flatMap((linePoints) => {
         const close = node.type === 'polygon' || geometry?.kind === 'polygon';
         const points = close ? closePointPath(linePoints) : linePoints;
-        return createPointSegments(points).map((segment) => {
+        const layeredPoints = this.layerPathPoints(points, node);
+        const tube = this.createPathTube({
+          name: `${handle.id}:segment-${segmentIndex + 1}`,
+          points: layeredPoints,
+          thickness: BABYLON_PROXY_THICKNESS,
+          scene,
+          color,
+          metadata
+        });
+        if (tube) {
+          segmentIndex += 1;
+          return [tube];
+        }
+
+        return createPointSegments(layeredPoints).map((segment) => {
           segmentIndex += 1;
           return this.createLineBox({
             name: `${handle.id}:segment-${segmentIndex}`,
@@ -459,11 +647,14 @@ export class BabylonRuntime implements BabylonRuntimePort {
       });
     }
 
-    const anchor = readObjectAnchor(node);
+    const rawAnchor = readObjectAnchor(node);
+    const anchor = this.renderMode === '2d'
+      ? this.layerPoint(rawAnchor, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z)
+      : { x: rawAnchor.x, y: rawAnchor.y, z: rawAnchor.z + 0.02 };
     const mesh = this.BABYLON.MeshBuilder.CreateBox(handle.id, proxyDimensionsForNode(node), scene);
     mesh.name = handle.id;
     mesh.metadata = metadata;
-    mesh.position = new this.BABYLON.Vector3(anchor.x, anchor.y, anchor.z + 0.02);
+    mesh.position = new this.BABYLON.Vector3(anchor.x, anchor.y, anchor.z);
     mesh.material = this.createMaterial(`${handle.id}:material`, scene, color);
     return [mesh];
   }
@@ -506,10 +697,13 @@ export class BabylonRuntime implements BabylonRuntimePort {
     const anchor = readObjectAnchor(node);
     mesh.name = handle.id;
     mesh.metadata = metadata;
+    const position = this.renderMode === '2d'
+      ? this.layerPoint(anchor, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_TEXT_Z)
+      : { x: anchor.x, y: anchor.y, z: anchor.z + 0.08 };
     mesh.position = new this.BABYLON.Vector3(
-      anchor.x + visualSize.width / 2,
-      anchor.y + visualSize.height / 2,
-      anchor.z + 0.08
+      position.x + visualSize.width / 2,
+      position.y + visualSize.height / 2,
+      position.z
     );
     mesh.material = this.createTextMaterial(`${handle.id}:text-material`, scene, texture, color);
     return mesh;
@@ -554,11 +748,13 @@ export class BabylonRuntime implements BabylonRuntimePort {
     if (!this.labelLayer || typeof document === 'undefined') return [];
     const anchor = readObjectAnchor(node);
     const color = readNodeColor(node, colorForNodeType(node.type));
+    const selected = isSelectedNode(node);
+    const visualScale = this.get2DVisualZoomScale();
     const label = document.createElement('div');
     label.textContent = readTextForNode(node);
     label.setAttribute('data-vuegraphx-object-id', handle.objectId);
     label.setAttribute('data-vuegraphx-component-id', proxyComponentForNode(node));
-    const position = projectWorldPointToLayerPercent(anchor, this.worldBounds);
+    const position = projectWorldPointToLayerPercent(anchor, this.getVisible2DWorldBounds());
     Object.assign(label.style, {
       position: 'absolute',
       left: `${position.left}%`,
@@ -566,15 +762,389 @@ export class BabylonRuntime implements BabylonRuntimePort {
       transform: 'translate(0, -100%)',
       color: rgbaToCss(color),
       background: 'rgba(255, 255, 255, 0.88)',
-      borderRadius: '4px',
-      padding: '1px 4px',
-      font: '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif',
+      borderRadius: `${formatCssNumber(4 * visualScale)}px`,
+      padding: `${formatCssNumber(1 * visualScale)}px ${formatCssNumber(4 * visualScale)}px`,
+      font: scaleCssFont('600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif', visualScale),
       whiteSpace: 'nowrap',
-      textShadow: '0 1px 0 rgba(255, 255, 255, 0.92)',
-      boxShadow: '0 0 0 1px rgba(148, 163, 184, 0.18)'
+      textShadow: `0 ${formatCssNumber(1 * visualScale)}px 0 rgba(255, 255, 255, 0.92)`,
+      boxShadow: selected
+        ? `0 0 0 ${formatCssNumber(2 * visualScale)}px rgba(249, 115, 22, 0.55)`
+        : `0 0 0 ${formatCssNumber(1 * visualScale)}px rgba(148, 163, 184, 0.18)`
     });
     this.labelLayer.appendChild(label);
     return [label];
+  }
+
+  private update2DCoordinateLayer(scene: BabylonSceneLike): boolean {
+    const createPlane = this.BABYLON.MeshBuilder.CreatePlane;
+    if (!this.BABYLON.DynamicTexture || !createPlane || !this.BABYLON.StandardMaterial) return false;
+
+    const bounds = this.getVisible2DWorldBounds();
+    const xAxisVisible = bounds.bottom <= 0 && bounds.top >= 0;
+    const yAxisVisible = bounds.left <= 0 && bounds.right >= 0;
+    const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
+    const metrics = createStandardCoordinateScreenMetrics(bounds, viewportSize, this.get2DVisualZoomScale());
+    const textureScale = 2;
+    const textureWidth = Math.max(1, Math.ceil(metrics.width * textureScale));
+    const textureHeight = Math.max(1, Math.ceil(metrics.height * textureScale));
+    let layer = this.coordinateLayer;
+
+    if (!layer || layer.textureWidth !== textureWidth || layer.textureHeight !== textureHeight) {
+      this.disposeCoordinateLayer();
+      const texture = new this.BABYLON.DynamicTexture(
+        'vuegraphx-coordinate-layer:texture',
+        { width: textureWidth, height: textureHeight },
+        scene,
+        false
+      );
+      texture.hasAlpha = true;
+      if (!texture.getContext?.()) {
+        texture.dispose?.();
+        return false;
+      }
+
+      const mesh = createPlane('vuegraphx-coordinate-layer', {
+        width: 1,
+        height: 1,
+        sideOrientation: BABYLON_DOUBLE_SIDE
+      }, scene);
+      mesh.name = 'vuegraphx-coordinate-layer';
+      mesh.isPickable = false;
+      const material = this.createTextMaterial(
+        'vuegraphx-coordinate-layer:material',
+        scene,
+        texture,
+        { r: 0, g: 0, b: 0, a: 1 }
+      ) as BabylonMaterialLike | undefined;
+      if (material) material.disableDepthWrite = true;
+      mesh.material = material;
+      layer = {
+        mesh,
+        texture,
+        textureWidth,
+        textureHeight
+      };
+      this.coordinateLayer = layer;
+    }
+
+    const context = layer.texture.getContext?.();
+    if (!context) {
+      this.disposeCoordinateLayer();
+      return false;
+    }
+    const xTicks = createStandardCoordinateTickModel(bounds.left, bounds.right, metrics.width / metrics.visualScale);
+    const yTicks = createStandardCoordinateTickModel(bounds.bottom, bounds.top, metrics.height / metrics.visualScale);
+    const labels = this.draw2DCoordinateTexture(context, {
+      bounds,
+      metrics,
+      textureWidth,
+      textureHeight,
+      textureScale,
+      xTicks,
+      yTicks,
+      xAxisVisible,
+      yAxisVisible
+    });
+
+    // Babylon DynamicTexture's default/invertY=true upload matches Canvas 2D's
+    // top-left origin. Passing false flips the coordinate texture vertically,
+    // making the y-axis and labels appear reversed during/after zoom.
+    layer.texture.update?.(true);
+    layer.mesh.position = new this.BABYLON.Vector3(
+      (bounds.left + bounds.right) / 2,
+      (bounds.top + bounds.bottom) / 2,
+      BABYLON_2D_GRID_Z
+    );
+    layer.mesh.scaling = new this.BABYLON.Vector3(
+      Math.max(1e-6, bounds.right - bounds.left),
+      Math.max(1e-6, bounds.top - bounds.bottom),
+      1
+    );
+    layer.mesh.metadata = {
+      ...(layer.mesh.metadata ?? {}),
+      vuegraphxCoordinateLayer: {
+        layer: 'coordinate',
+        kind: 'stable-texture',
+        z: BABYLON_2D_GRID_Z,
+        visualScale: metrics.visualScale,
+        labels
+      }
+    };
+    return true;
+  }
+
+  private draw2DCoordinateTexture(
+    context: CanvasRenderingContext2D,
+    options: {
+      bounds: Babylon2DWorldBounds;
+      metrics: StandardCoordinateScreenMetrics;
+      textureWidth: number;
+      textureHeight: number;
+      textureScale: number;
+      xTicks: ReturnType<typeof createStandardCoordinateTickModel>;
+      yTicks: ReturnType<typeof createStandardCoordinateTickModel>;
+      xAxisVisible: boolean;
+      yAxisVisible: boolean;
+    }
+  ): Babylon2DCoordinateLabelMetadata[] {
+    const { metrics } = options;
+    const axisStrokeWidth = STANDARD_COORDINATE_UI.axisStrokeWidthPx * metrics.visualScale;
+    const arrowLength = STANDARD_COORDINATE_UI.axisArrowLengthPx * metrics.visualScale;
+    const arrowHalfHeight = STANDARD_COORDINATE_UI.axisArrowHalfHeightPx * metrics.visualScale;
+    const labels: Babylon2DCoordinateLabelMetadata[] = [];
+
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, options.textureWidth, options.textureHeight);
+    context.setTransform(options.textureScale, 0, 0, options.textureScale, 0, 0);
+    context.strokeStyle = STANDARD_COORDINATE_UI.axisStrokeColor;
+    context.fillStyle = STANDARD_COORDINATE_UI.axisStrokeColor;
+    context.lineWidth = axisStrokeWidth;
+    context.lineCap = 'round';
+
+    if (options.xAxisVisible) {
+      context.beginPath();
+      context.moveTo(axisStrokeWidth / 2, metrics.origin.y);
+      context.lineTo(metrics.width - arrowLength, metrics.origin.y);
+      context.stroke();
+      drawFilledCanvasTriangle(context, [
+        { x: metrics.width, y: metrics.origin.y },
+        { x: metrics.width - arrowLength, y: metrics.origin.y - arrowHalfHeight },
+        { x: metrics.width - arrowLength, y: metrics.origin.y + arrowHalfHeight }
+      ]);
+    }
+
+    if (options.yAxisVisible) {
+      context.beginPath();
+      context.moveTo(metrics.origin.x, metrics.height);
+      context.lineTo(metrics.origin.x, arrowLength);
+      context.stroke();
+      drawFilledCanvasTriangle(context, [
+        { x: metrics.origin.x, y: 0 },
+        { x: metrics.origin.x - arrowHalfHeight, y: arrowLength },
+        { x: metrics.origin.x + arrowHalfHeight, y: arrowLength }
+      ]);
+    }
+
+    context.fillStyle = STANDARD_COORDINATE_UI.tickLabelColor;
+    context.font = scaleCssFont(STANDARD_COORDINATE_UI.tickLabelFont, metrics.visualScale);
+    context.textBaseline = 'top';
+
+    if (options.xAxisVisible) {
+      context.textAlign = 'center';
+      for (const x of options.xTicks.positions) {
+        if (isStandardZeroCoordinate(x)) continue;
+        const point = project2DWorldToClient({ x, y: 0 }, options.bounds, {
+          width: metrics.width,
+          height: metrics.height
+        });
+        const text = formatStandardCoordinateLabel(x);
+        const top = metrics.origin.y + STANDARD_COORDINATE_UI.xTickLabelTopOffsetPx * metrics.visualScale;
+        context.fillText(text, point.x, top);
+        labels.push({ text, axis: 'x', left: point.x, top, visualScale: metrics.visualScale });
+      }
+      context.textAlign = 'left';
+      const left = metrics.width - STANDARD_COORDINATE_UI.xAxisLabelRightInsetPx * metrics.visualScale;
+      const top = metrics.origin.y + STANDARD_COORDINATE_UI.xAxisLabelTopOffsetPx * metrics.visualScale;
+      context.fillText('x', left, top);
+      labels.push({ text: 'x', axis: 'plain', left, top, visualScale: metrics.visualScale });
+    }
+
+    if (options.yAxisVisible) {
+      context.textAlign = 'left';
+      for (const y of options.yTicks.positions) {
+        if (isStandardZeroCoordinate(y)) continue;
+        const point = project2DWorldToClient({ x: 0, y }, options.bounds, {
+          width: metrics.width,
+          height: metrics.height
+        });
+        const text = formatStandardCoordinateLabel(y);
+        const left = metrics.origin.x + STANDARD_COORDINATE_UI.yTickLabelLeftOffsetPx * metrics.visualScale;
+        const top = point.y + STANDARD_COORDINATE_UI.yTickLabelTopOffsetPx * metrics.visualScale;
+        context.fillText(text, left, top);
+        labels.push({ text, axis: 'y', left, top, visualScale: metrics.visualScale });
+      }
+      const left = metrics.origin.x + STANDARD_COORDINATE_UI.yAxisLabelLeftOffsetPx * metrics.visualScale;
+      const top = STANDARD_COORDINATE_UI.yAxisLabelTopPx * metrics.visualScale;
+      context.fillText('y', left, top);
+      labels.push({ text: 'y', axis: 'plain', left, top, visualScale: metrics.visualScale });
+    }
+
+    if (options.xAxisVisible && options.yAxisVisible) {
+      context.textAlign = 'left';
+      const left = metrics.origin.x + STANDARD_COORDINATE_UI.originLabelLeftOffsetPx * metrics.visualScale;
+      const top = metrics.origin.y + STANDARD_COORDINATE_UI.originLabelTopOffsetPx * metrics.visualScale;
+      context.fillText('O', left, top);
+      labels.push({ text: 'O', axis: 'plain', left, top, visualScale: metrics.visualScale });
+    }
+
+    context.restore();
+    return labels;
+  }
+
+  private createHelperLabel(
+    text: string,
+    position: { left: number; top: number },
+    axis: 'x' | 'y' | 'plain',
+    visualScale = 1,
+    scene?: BabylonSceneLike,
+    metrics?: StandardCoordinateScreenMetrics,
+    z = BABYLON_2D_COORDINATE_LABEL_Z
+  ): void {
+    if (scene && metrics && this.createHelperLabelPlane(text, position, axis, visualScale, scene, metrics, z)) return;
+    if (!this.labelLayer || typeof document === 'undefined') return;
+    const label = document.createElement('div');
+    label.textContent = text;
+    label.setAttribute('data-vuegraphx-helper-label', 'coordinate');
+    Object.assign(label.style, {
+      position: 'absolute',
+      left: `${position.left}px`,
+      top: `${position.top}px`,
+      transform: axis === 'x' ? 'translate(-50%, 0)' : 'none',
+      color: STANDARD_COORDINATE_UI.tickLabelColor,
+      font: scaleCssFont(STANDARD_COORDINATE_UI.tickLabelFont, visualScale),
+      lineHeight: `${formatCssNumber(STANDARD_COORDINATE_UI.tickLabelLineHeightPx * visualScale)}px`,
+      whiteSpace: 'nowrap',
+      textAlign: axis === 'x' ? 'center' : 'left'
+    });
+    this.labelLayer.appendChild(label);
+    this.helperLabels.push(label);
+  }
+
+  private createHelperLabelPlane(
+    text: string,
+    position: { left: number; top: number },
+    axis: 'x' | 'y' | 'plain',
+    visualScale: number,
+    scene: BabylonSceneLike,
+    metrics: StandardCoordinateScreenMetrics,
+    z: number
+  ): boolean {
+    const createPlane = this.BABYLON.MeshBuilder.CreatePlane;
+    if (!this.BABYLON.DynamicTexture || !createPlane) return false;
+
+    const paddingPx = Math.max(2, 2 * visualScale);
+    const textSize = estimateStandardCoordinateLabelPixelSize(text, visualScale);
+    const widthPx = textSize.width + paddingPx * 2;
+    const heightPx = textSize.height + paddingPx * 2;
+    const leftPx = axis === 'x' ? position.left - widthPx / 2 : position.left - paddingPx;
+    const topPx = position.top - paddingPx;
+    const centerWorld = metrics.clientToWorld({
+      x: leftPx + widthPx / 2,
+      y: topPx + heightPx / 2
+    }, z);
+    const topLeftWorld = metrics.clientToWorld({ x: leftPx, y: topPx }, z);
+    const bottomRightWorld = metrics.clientToWorld({ x: leftPx + widthPx, y: topPx + heightPx }, z);
+    const widthWorld = Math.max(1e-6, Math.abs(bottomRightWorld.x - topLeftWorld.x));
+    const heightWorld = Math.max(1e-6, Math.abs(topLeftWorld.y - bottomRightWorld.y));
+    const textureScale = 2;
+    const texture = new this.BABYLON.DynamicTexture(
+      `vuegraphx-coordinate-label-${sanitizeLabelName(text)}-${this.helperMeshes.length}:texture`,
+      {
+        width: Math.ceil(widthPx * textureScale),
+        height: Math.ceil(heightPx * textureScale)
+      },
+      scene,
+      false
+    );
+    texture.hasAlpha = true;
+    texture.drawText(
+      text,
+      paddingPx * textureScale,
+      null,
+      scaleCssFont(STANDARD_COORDINATE_UI.tickLabelFont, visualScale * textureScale),
+      STANDARD_COORDINATE_UI.tickLabelColor,
+      null,
+      true,
+      true
+    );
+
+    const name = `vuegraphx-coordinate-label-${sanitizeLabelName(text)}-${this.helperMeshes.length}`;
+    const mesh = createPlane(name, {
+      width: widthWorld,
+      height: heightWorld,
+      sideOrientation: BABYLON_DOUBLE_SIDE
+    }, scene);
+    mesh.name = name;
+    mesh.isPickable = false;
+    mesh.metadata = {
+      ...(mesh.metadata ?? {}),
+      vuegraphxHelperLabel: {
+        text,
+        axis,
+        layer: 'coordinate',
+        left: position.left,
+        top: position.top,
+        visualScale
+      }
+    };
+    mesh.position = new this.BABYLON.Vector3(centerWorld.x, centerWorld.y, z);
+    mesh.material = this.createTextMaterial(`${name}:material`, scene, texture, { r: 0, g: 0, b: 0, a: 1 });
+    this.helperMeshes.push(mesh);
+    return true;
+  }
+
+  private createAxisArrowHead(
+    axis: 'x' | 'y',
+    tip: GraphClientPoint,
+    metrics: StandardCoordinateScreenMetrics,
+    scene: BabylonSceneLike,
+    z: number
+  ): void {
+    const color = rgbaFromHex(STANDARD_COORDINATE_UI.axisStrokeColor, 1);
+    const arrowLength = STANDARD_COORDINATE_UI.axisArrowLengthPx * metrics.visualScale;
+    const arrowHalfHeight = STANDARD_COORDINATE_UI.axisArrowHalfHeightPx * metrics.visualScale;
+    const createDisc = this.BABYLON.MeshBuilder.CreateDisc;
+    if (createDisc) {
+      const tipWorld = metrics.clientToWorld(tip, z);
+      const baseCenter = axis === 'x'
+        ? { x: tip.x - arrowLength, y: tip.y }
+        : { x: tip.x, y: tip.y + arrowLength };
+      const baseCenterWorld = metrics.clientToWorld(baseCenter, z);
+      const arrowWorldLength = Math.hypot(tipWorld.x - baseCenterWorld.x, tipWorld.y - baseCenterWorld.y);
+      const radius = (arrowWorldLength * 2) / 3;
+      if (Number.isFinite(radius) && radius > 0) {
+        const name = `vuegraphx-axis-${axis}-arrow`;
+        const mesh = createDisc(name, {
+          radius,
+          tessellation: 3,
+          sideOrientation: BABYLON_DOUBLE_SIDE
+        }, scene);
+        mesh.name = name;
+        mesh.isPickable = false;
+        mesh.position = new this.BABYLON.Vector3(
+          tipWorld.x - (axis === 'x' ? radius : 0),
+          tipWorld.y - (axis === 'y' ? radius : 0),
+          z
+        );
+        mesh.rotation = new this.BABYLON.Vector3(0, 0, axis === 'y' ? Math.PI / 2 : 0);
+        mesh.material = this.createMaterial(`${name}:material`, scene, color);
+        this.helperMeshes.push(mesh);
+        return;
+      }
+    }
+
+    const starts = axis === 'x'
+      ? [
+          { x: tip.x - arrowLength, y: tip.y - arrowHalfHeight },
+          { x: tip.x - arrowLength, y: tip.y + arrowHalfHeight }
+        ]
+      : [
+          { x: tip.x - arrowHalfHeight, y: tip.y + arrowLength },
+          { x: tip.x + arrowHalfHeight, y: tip.y + arrowLength }
+        ];
+    const tipWorld = metrics.clientToWorld(tip, z);
+    starts.forEach((start, index) => {
+      this.helperMeshes.push(this.createLineBox({
+        name: `vuegraphx-axis-${axis}-arrow-${index + 1}`,
+        start: metrics.clientToWorld(start, z),
+        end: tipWorld,
+        thickness: metrics.strokeWorld,
+        scene,
+        color,
+        metadata: null
+      }));
+    });
   }
 
   private configureCameraFor2D(camera: BabylonCameraLike): void {
@@ -590,17 +1160,50 @@ export class BabylonRuntime implements BabylonRuntimePort {
 
   private applyOrthographicCameraBounds(camera = this.camera): void {
     if (!camera) return;
-    const cameraBounds = fitBoundsToViewportAspect(this.worldBounds, this.viewportSize ?? readCanvasViewportSize(this.canvas));
+    const cameraBounds = this.getVisible2DWorldBounds();
     camera.orthoLeft = cameraBounds.left;
     camera.orthoRight = cameraBounds.right;
     camera.orthoTop = cameraBounds.top;
     camera.orthoBottom = cameraBounds.bottom;
   }
 
+  private getVisible2DWorldBounds(): Babylon2DWorldBounds {
+    return fitBoundsToViewportAspect(this.worldBounds, this.viewportSize ?? readCanvasViewportSize(this.canvas));
+  }
+
+  private get2DVisualZoomScale(): number {
+    if (this.renderMode !== '2d') return 1;
+    const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
+    const currentBounds = this.getVisible2DWorldBounds();
+    const baselineBounds = fitBoundsToViewportAspect(this.visualBaselineWorldBounds, viewportSize);
+    return clampVisualZoomScale(boundsZoomScale(baselineBounds, currentBounds));
+  }
+
+  private refresh2DHelperArtifacts(): void {
+    if (this.renderMode === '2d' && this.scene) this.installGridAndAxes();
+  }
+
+  private refresh2DObjectLabels(): void {
+    if (this.renderMode !== '2d') return;
+    for (const stored of this.objects.values()) {
+      for (const label of stored.labels) label.remove();
+      stored.labels = this.createLabelsForObject(stored.node, stored.handle);
+    }
+  }
+
   private createPickWorldPoint(point: BabylonVector3Like): GraphWorldPoint {
     return this.renderMode === '2d'
       ? { dimension: '2d', x: point.x, y: point.y }
       : { dimension: '3d', x: point.x, y: point.y, z: point.z };
+  }
+
+  private layerPoint(point: BabylonVector3Like, z: number): BabylonVector3Like {
+    return this.renderMode === '2d' ? { x: point.x, y: point.y, z } : point;
+  }
+
+  private layerPathPoints(points: BabylonVector3Like[], node: GraphObjectNode): BabylonVector3Like[] {
+    const z = isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z;
+    return points.map((point) => this.layerPoint(point, z));
   }
 
   private createLineBox(options: {
@@ -622,6 +1225,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
       depth: options.thickness
     }, options.scene);
     mesh.name = options.name;
+    if (!options.metadata) mesh.isPickable = false;
     if (options.metadata) mesh.metadata = { ...(mesh.metadata ?? {}), ...options.metadata };
     mesh.position = new this.BABYLON.Vector3(
       (options.start.x + options.end.x) / 2,
@@ -629,6 +1233,29 @@ export class BabylonRuntime implements BabylonRuntimePort {
       (options.start.z + options.end.z) / 2
     );
     mesh.rotation = new this.BABYLON.Vector3(0, -Math.atan2(dz, Math.hypot(dx, dy)), Math.atan2(dy, dx));
+    mesh.material = this.createMaterial(`${options.name}:material`, options.scene, options.color);
+    return mesh;
+  }
+
+  private createPathTube(options: {
+    name: string;
+    points: BabylonVector3Like[];
+    thickness: number;
+    scene: BabylonSceneLike;
+    color: RgbaColor;
+    metadata: Record<string, unknown> | null;
+  }): BabylonMeshLike | null {
+    const createTube = this.BABYLON.MeshBuilder.CreateTube;
+    if (!createTube || options.points.length < 2) return null;
+
+    const mesh = createTube(options.name, {
+      path: options.points.map((point) => new this.BABYLON.Vector3(point.x, point.y, point.z)),
+      radius: options.thickness / 2,
+      tessellation: 8,
+      cap: 3
+    }, options.scene);
+    mesh.name = options.name;
+    if (options.metadata) mesh.metadata = { ...(mesh.metadata ?? {}), ...options.metadata };
     mesh.material = this.createMaterial(`${options.name}:material`, options.scene, options.color);
     return mesh;
   }
@@ -682,7 +1309,21 @@ export class BabylonRuntime implements BabylonRuntimePort {
   }
 
   private disposeHelperMeshes(): void {
-    for (const mesh of this.helperMeshes.splice(0)) mesh.dispose();
+    for (const mesh of this.helperMeshes.splice(0)) {
+      disposeMaterialLike(mesh.material);
+      mesh.dispose();
+    }
+    for (const label of this.helperLabels.splice(0)) label.remove();
+  }
+
+  private disposeCoordinateLayer(): void {
+    const layer = this.coordinateLayer;
+    if (!layer) return;
+    const hadMaterial = Boolean(layer.mesh.material);
+    disposeMaterialLike(layer.mesh.material);
+    if (!hadMaterial) layer.texture.dispose?.();
+    layer.mesh.dispose();
+    this.coordinateLayer = null;
   }
 }
 
@@ -1076,11 +1717,16 @@ const colorForNodeType = (type: string): RgbaColor => {
 };
 
 const readNodeColor = (node: GraphObjectNode, fallback: RgbaColor): RgbaColor => {
+  if (isSelectedNode(node)) return { r: 0.98, g: 0.45, b: 0.09, a: 1 };
   const renderHints = asRecord(node.renderHints);
   const fromStroke = typeof renderHints?.strokeColor === 'string' ? parseCssHexColor(renderHints.strokeColor) : null;
   const fromFill = typeof renderHints?.fillColor === 'string' ? parseCssHexColor(renderHints.fillColor) : null;
   return fromStroke ?? fromFill ?? fallback;
 };
+
+const isSelectedNode = (node: GraphObjectNode): boolean => (
+  node.meta?.selected === true || node.renderHints?.selected === true
+);
 
 const parseCssHexColor = (value: string): RgbaColor | null => {
   const normalized = value.trim();
@@ -1106,6 +1752,111 @@ const parseCssHexColor = (value: string): RgbaColor | null => {
 const rgbaToCss = (color: RgbaColor): string => (
   `rgba(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)}, ${color.a})`
 );
+
+const drawFilledCanvasTriangle = (
+  context: Pick<CanvasRenderingContext2D, 'beginPath' | 'moveTo' | 'lineTo' | 'closePath' | 'fill'>,
+  points: Array<{ x: number; y: number }>
+): void => {
+  if (points.length < 3) return;
+  context.beginPath();
+  context.moveTo(points[0].x, points[0].y);
+  for (const point of points.slice(1)) context.lineTo(point.x, point.y);
+  context.closePath();
+  context.fill();
+};
+
+const rgbaFromHex = (hex: string, alpha: number): RgbaColor => {
+  const parsed = parseCssHexColor(hex);
+  return parsed ? { ...parsed, a: alpha } : { r: 0.4, g: 0.4, b: 0.4, a: alpha };
+};
+
+const project2DWorldToClient = (
+  point: { x: number; y: number },
+  bounds: Babylon2DWorldBounds,
+  viewportSize: GraphViewportSize | null
+): GraphClientPoint => {
+  const width = Math.max(1, viewportSize?.width ?? 1);
+  const height = Math.max(1, viewportSize?.height ?? 1);
+  return {
+    x: ((point.x - bounds.left) / Math.max(1e-9, bounds.right - bounds.left)) * width,
+    y: ((bounds.top - point.y) / Math.max(1e-9, bounds.top - bounds.bottom)) * height
+  };
+};
+
+const createStandardCoordinateScreenMetrics = (
+  bounds: Babylon2DWorldBounds,
+  viewportSize: GraphViewportSize | null,
+  visualScale: number
+): StandardCoordinateScreenMetrics => {
+  const width = Math.max(1, viewportSize?.width ?? 1);
+  const height = Math.max(1, viewportSize?.height ?? 1);
+  const pixelsPerX = width / Math.max(1e-9, bounds.right - bounds.left);
+  const pixelsPerY = height / Math.max(1e-9, bounds.top - bounds.bottom);
+  const origin = project2DWorldToClient({ x: 0, y: 0 }, bounds, viewportSize);
+  const strokeWorld = Math.max(
+    0.006,
+    STANDARD_COORDINATE_UI.axisStrokeWidthPx * visualScale * Math.min(1 / pixelsPerX, 1 / pixelsPerY)
+  );
+  return {
+    width,
+    height,
+    origin,
+    visualScale,
+    strokeWorld,
+    clientToWorld(point: GraphClientPoint, z: number): BabylonVector3Like {
+      return unproject2DClientToWorld(point, bounds, viewportSize, z);
+    }
+  };
+};
+
+const boundsZoomScale = (
+  baselineBounds: Babylon2DWorldBounds,
+  currentBounds: Babylon2DWorldBounds
+): number => {
+  const baselineWidth = Math.max(1e-9, baselineBounds.right - baselineBounds.left);
+  const baselineHeight = Math.max(1e-9, baselineBounds.top - baselineBounds.bottom);
+  const currentWidth = Math.max(1e-9, currentBounds.right - currentBounds.left);
+  const currentHeight = Math.max(1e-9, currentBounds.top - currentBounds.bottom);
+  return Math.min(baselineWidth / currentWidth, baselineHeight / currentHeight);
+};
+
+const clampVisualZoomScale = (value: number): number => (
+  Number.isFinite(value)
+    ? Math.min(BABYLON_MAX_VISUAL_ZOOM_SCALE, Math.max(BABYLON_MIN_VISUAL_ZOOM_SCALE, value))
+    : 1
+);
+
+const scaleCssFont = (font: string, visualScale: number): string => (
+  font.replace(/(\d+(?:\.\d+)?)px/g, (_match, value: string) => `${formatCssNumber(Number(value) * visualScale)}px`)
+);
+
+const estimateStandardCoordinateLabelPixelSize = (text: string, visualScale: number): { width: number; height: number } => ({
+  width: Math.max(6 * visualScale, visualTextLength(text) * 7 * visualScale),
+  height: STANDARD_COORDINATE_UI.tickLabelLineHeightPx * visualScale
+});
+
+const sanitizeLabelName = (text: string): string => (
+  text.trim().replace(/[^a-zA-Z0-9_-]+/g, '_') || 'label'
+);
+
+const formatCssNumber = (value: number): string => (
+  Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '0'
+);
+
+const unproject2DClientToWorld = (
+  point: GraphClientPoint,
+  bounds: Babylon2DWorldBounds,
+  viewportSize: GraphViewportSize | null,
+  z = 0
+): BabylonVector3Like => {
+  const width = Math.max(1, viewportSize?.width ?? 1);
+  const height = Math.max(1, viewportSize?.height ?? 1);
+  return {
+    x: bounds.left + (point.x / width) * (bounds.right - bounds.left),
+    y: bounds.top - (point.y / height) * (bounds.top - bounds.bottom),
+    z
+  };
+};
 
 const readPointArray = (value: unknown): BabylonVector3Like[] | null => {
   if (!Array.isArray(value)) return null;
@@ -1251,6 +2002,10 @@ const clampNumber = (value: number, min: number, max: number): number => (
 
 const resolveRenderMode = (value: unknown, fallback: BabylonRenderMode): BabylonRenderMode => (
   value === '2d' || value === '3d' ? value : fallback
+);
+
+const readBoolean = (value: unknown): boolean | null => (
+  typeof value === 'boolean' ? value : null
 );
 
 const read2DWorldBounds = (value: unknown): Babylon2DWorldBounds | null => {

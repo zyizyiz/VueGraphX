@@ -9,8 +9,10 @@ class FakeVector3 {
 class FakeMesh implements BabylonMeshLike {
   public name = '';
   public metadata?: Record<string, unknown>;
+  public isPickable?: boolean;
   public position?: FakeVector3;
   public rotation?: FakeVector3;
+  public scaling?: FakeVector3;
   public material?: unknown;
   public options?: Record<string, unknown>;
   public dispose = vi.fn();
@@ -97,16 +99,41 @@ class FakeMaterial {
   public useAlphaFromDiffuseTexture?: boolean;
   public backFaceCulling?: boolean;
   public disableLighting?: boolean;
+  public disableDepthWrite?: boolean;
   public alpha?: number;
   public dispose = vi.fn();
   public constructor(public name: string, public scene: unknown) {}
 }
 
+class FakeCanvasContext {
+  public strokeStyle?: string;
+  public fillStyle?: string;
+  public lineWidth?: number;
+  public lineCap?: CanvasLineCap;
+  public font?: string;
+  public textBaseline?: CanvasTextBaseline;
+  public textAlign?: CanvasTextAlign;
+  public save = vi.fn();
+  public restore = vi.fn();
+  public setTransform = vi.fn();
+  public clearRect = vi.fn();
+  public beginPath = vi.fn();
+  public moveTo = vi.fn();
+  public lineTo = vi.fn();
+  public closePath = vi.fn();
+  public stroke = vi.fn();
+  public fill = vi.fn();
+  public fillText = vi.fn();
+}
+
 class FakeDynamicTexture {
   public static instances: FakeDynamicTexture[] = [];
   public hasAlpha?: boolean;
+  public context = new FakeCanvasContext();
   public drawText = vi.fn();
+  public update = vi.fn();
   public dispose = vi.fn();
+  public getContext = vi.fn(() => this.context as unknown as CanvasRenderingContext2D);
 
   public constructor(
     public name: string,
@@ -127,6 +154,12 @@ const FakeMeshBuilder = {
     FakeMeshBuilder.meshes.set(name, FakeMeshBuilder.lastMesh);
     return FakeMeshBuilder.lastMesh;
   }),
+  CreateDisc: vi.fn((name: string, options: Record<string, unknown>, _scene: unknown) => {
+    FakeMeshBuilder.lastMesh = new FakeMesh();
+    FakeMeshBuilder.lastMesh.options = options;
+    FakeMeshBuilder.meshes.set(name, FakeMeshBuilder.lastMesh);
+    return FakeMeshBuilder.lastMesh;
+  }),
   CreatePlane: vi.fn((name: string, options: Record<string, unknown>, _scene: unknown) => {
     FakeMeshBuilder.lastMesh = new FakeMesh();
     FakeMeshBuilder.lastMesh.options = options;
@@ -140,6 +173,12 @@ const FakeMeshBuilder = {
     return FakeMeshBuilder.lastMesh;
   }),
   CreateCylinder: vi.fn((name: string, options: Record<string, unknown>, _scene: unknown) => {
+    FakeMeshBuilder.lastMesh = new FakeMesh();
+    FakeMeshBuilder.lastMesh.options = options;
+    FakeMeshBuilder.meshes.set(name, FakeMeshBuilder.lastMesh);
+    return FakeMeshBuilder.lastMesh;
+  }),
+  CreateTube: vi.fn((name: string, options: Record<string, unknown>, _scene: unknown) => {
     FakeMeshBuilder.lastMesh = new FakeMesh();
     FakeMeshBuilder.lastMesh.options = options;
     FakeMeshBuilder.meshes.set(name, FakeMeshBuilder.lastMesh);
@@ -164,9 +203,11 @@ const clearMeshBuilderCalls = () => {
   FakeMeshBuilder.lastMesh = null;
   FakeMeshBuilder.meshes.clear();
   FakeMeshBuilder.CreateBox.mockClear();
+  FakeMeshBuilder.CreateDisc.mockClear();
   FakeMeshBuilder.CreatePlane.mockClear();
   FakeMeshBuilder.CreateSphere.mockClear();
   FakeMeshBuilder.CreateCylinder.mockClear();
+  FakeMeshBuilder.CreateTube.mockClear();
   FakeDynamicTexture.instances = [];
 };
 
@@ -274,11 +315,62 @@ describe('BabylonRuntime', () => {
       objectId: 'cube',
       componentId: 'projection'
     });
-    expect(runtime.unproject({ x: 10, y: 20 })).toEqual({ dimension: '2d', x: 10, y: 20 });
+    expect(runtime.project({ dimension: '2d', x: 0, y: 0 })).toEqual({ x: 160, y: 120 });
+    expect(runtime.unproject({ x: 160, y: 120 })).toEqual({ dimension: '2d', x: 0, y: 0 });
     expect(runtime.pick({ x: 10, y: 20 })?.worldPoint).toEqual({ dimension: '2d', x: 1, y: 2 });
 
     runtime.resize({ width: 480, height: 240 });
     expect(FakeCamera.last).toMatchObject({ orthoLeft: -8, orthoRight: 8, orthoTop: 4, orthoBottom: -4 });
+
+    runtime.destroy();
+  });
+
+  it('keeps 2D helper coordinate axes behind projected content and foreground labels', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), {
+      renderMode: '2d',
+      attachCameraControl: false
+    });
+    const host = document.createElement('div');
+
+    runtime.mount(host, {
+      size: { width: 320, height: 240 },
+      attributes: { renderMode: '2d', worldBounds: { left: -6, right: 6, top: 4, bottom: -4 } }
+    });
+    const gridZ = FakeMeshBuilder.meshes.get('vuegraphx-coordinate-layer')?.position?.z;
+    expect(gridZ).toBeGreaterThan(0);
+    clearMeshBuilderCalls();
+
+    const handleFor = (objectId: string): GraphRenderHandle => ({
+      id: `babylon:${objectId}`,
+      objectId,
+      backendId: 'babylon',
+      layerId: 'content' as const,
+      target: { scope: 'object' as const, objectId, backendId: 'babylon', layerId: 'content' as const }
+    });
+
+    runtime.createObject({
+      id: 'f',
+      kind: 'shape',
+      type: 'function',
+      payload: { geometry: { kind: 'polyline', points: [{ x: -1, y: 1 }, { x: 1, y: 1 }] } }
+    }, handleFor('f'));
+    runtime.createObject({
+      id: 'A',
+      kind: 'shape',
+      type: 'point',
+      payload: { point: { x: 0, y: 0 } }
+    }, handleFor('A'));
+    runtime.createObject({
+      id: 'label',
+      kind: 'overlay',
+      type: 'text',
+      payload: { point: { x: 0, y: 0 }, text: 'front label' }
+    }, handleFor('label'));
+
+    const functionPath = FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.path as FakeVector3[] | undefined;
+    expect(functionPath?.[0]?.z).toBeLessThan(gridZ ?? 0);
+    expect(FakeMeshBuilder.meshes.get('babylon:A')?.position?.z).toBeLessThan(functionPath?.[0]?.z ?? 0);
+    expect(host.querySelector('[data-vuegraphx-object-id="label"]')).not.toBeNull();
 
     runtime.destroy();
   });
@@ -301,6 +393,80 @@ describe('BabylonRuntime', () => {
       orthoTop: 10,
       orthoBottom: -10
     });
+    const coordinateLayer = FakeMeshBuilder.meshes.get('vuegraphx-coordinate-layer');
+    expect(coordinateLayer?.options).toMatchObject({ width: 1, height: 1, sideOrientation: 2 });
+    expect(coordinateLayer?.isPickable).toBe(false);
+    expect(coordinateLayer?.position?.z).toBeGreaterThan(0);
+    expect(coordinateLayer?.scaling?.x).toBeCloseTo(26.666666666666668);
+    expect(coordinateLayer?.scaling?.y).toBeCloseTo(20);
+    expect(coordinateLayer?.material).toMatchObject({ disableDepthWrite: true });
+    const coordinateMetadata = coordinateLayer?.metadata?.vuegraphxCoordinateLayer as { labels?: Array<{ text?: string; left?: number; top?: number; axis?: string }> } | undefined;
+    const coordinateLabels = coordinateMetadata?.labels ?? [];
+    expect(coordinateLabels.length).toBeGreaterThan(0);
+    const hasLabelAt = (text: string, left: number, top: number, axis: string) => coordinateLabels.some((label) => {
+      return label?.text === text
+        && Math.abs((label.left ?? Number.NaN) - left) < 1e-6
+        && Math.abs((label.top ?? Number.NaN) - top) < 1e-6
+        && label.axis === axis;
+    });
+    expect(hasLabelAt('2', 230, 150, 'x')).toBe(true);
+    expect(hasLabelAt('2', 190, 111, 'y')).toBe(true);
+    expect(hasLabelAt('x', 394, 150, 'plain')).toBe(true);
+    expect(hasLabelAt('y', 190, 0, 'plain')).toBe(true);
+    expect(hasLabelAt('O', 188, 150, 'plain')).toBe(true);
+    expect(FakeDynamicTexture.instances[0]?.context.fill).toHaveBeenCalled();
+    expect(FakeMeshBuilder.meshes.has('vuegraphx-axis-x-arrow-1')).toBe(false);
+    expect(FakeMeshBuilder.meshes.has('vuegraphx-axis-y-arrow-1')).toBe(false);
+    expect(runtime.project({ dimension: '2d', x: 10, y: 0 })).toEqual({ x: expect.closeTo(350), y: 150 });
+    expect(runtime.unproject({ x: 350, y: 150 })).toEqual({ dimension: '2d', x: expect.closeTo(10), y: 0 });
+
+    runtime.destroy();
+  });
+
+  it('scales Babylon 2D helper and DOM object label styling with viewport zoom', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), {
+      renderMode: '2d',
+      attachCameraControl: false
+    });
+    const host = document.createElement('div');
+
+    runtime.mount(host, {
+      size: { width: 400, height: 300 },
+      attributes: { renderMode: '2d', worldBounds: { left: -10, right: 10, top: 10, bottom: -10 } }
+    });
+    runtime.createObject({
+      id: 'text-zoom',
+      kind: 'overlay',
+      type: 'text',
+      payload: { point: { x: 0, y: 0 }, text: 'zoom label' }
+    }, {
+      id: 'babylon:text-zoom',
+      objectId: 'text-zoom',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'text-zoom', backendId: 'babylon', layerId: 'content' }
+    });
+
+    expect((host.querySelector('[data-vuegraphx-object-id="text-zoom"]') as HTMLElement | null)?.getAttribute('style')).toContain('14px');
+
+    const initialTextureCount = FakeDynamicTexture.instances.length;
+    const initialCoordinateLayer = FakeMeshBuilder.meshes.get('vuegraphx-coordinate-layer');
+    const initialTexture = FakeDynamicTexture.instances[0];
+    runtime.setWorldBounds({ left: -5, right: 5, top: 5, bottom: -5 });
+
+    expect(FakeDynamicTexture.instances).toHaveLength(initialTextureCount);
+    expect(FakeMeshBuilder.meshes.get('vuegraphx-coordinate-layer')).toBe(initialCoordinateLayer);
+    expect(initialTexture?.update).toHaveBeenCalledTimes(2);
+    expect(initialTexture?.update).toHaveBeenLastCalledWith(true);
+    expect(initialTexture?.context.font).toContain('24px');
+    const coordinateMetadata = initialCoordinateLayer?.metadata?.vuegraphxCoordinateLayer as { labels?: Array<{ text?: string; left?: number; top?: number; visualScale?: number }> } | undefined;
+    const coordinateLabels = coordinateMetadata?.labels ?? [];
+    const xAxisLabel = coordinateLabels.find((label) => label.text === 'x' && label.visualScale === 2);
+    const yAxisLabel = coordinateLabels.find((label) => label.text === 'y' && label.visualScale === 2);
+    expect(xAxisLabel).toMatchObject({ left: 388, top: 150, visualScale: 2 });
+    expect(yAxisLabel).toMatchObject({ left: 180, top: 0, visualScale: 2 });
+    expect(initialCoordinateLayer?.position?.z).toBeGreaterThan(0);
+    expect((host.querySelector('[data-vuegraphx-object-id="text-zoom"]') as HTMLElement | null)?.getAttribute('style')).toContain('28px');
 
     runtime.destroy();
   });
@@ -352,10 +518,12 @@ describe('BabylonRuntime', () => {
     }, handleFor('label'));
 
     expect(FakeMeshBuilder.CreateSphere).toHaveBeenCalledTimes(1);
-    expect(FakeMeshBuilder.CreateBox).toHaveBeenCalledTimes(4);
+    expect(FakeMeshBuilder.CreateTube).toHaveBeenCalledTimes(2);
+    expect(FakeMeshBuilder.CreateBox).not.toHaveBeenCalled();
     expect(FakeMeshBuilder.CreatePlane).toHaveBeenCalledTimes(2);
     expect(FakeDynamicTexture.instances).toHaveLength(2);
     expect(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.metadata?.vuegraphx).toMatchObject({ objectId: 'f', componentId: 'curve' });
+    expect(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options).toMatchObject({ radius: expect.any(Number), tessellation: 8 });
     expect(FakeMeshBuilder.meshes.get('babylon:poly:segment-1')?.material).toMatchObject({ alpha: expect.any(Number) });
     expect(FakeMeshBuilder.meshes.get('babylon:m')?.metadata?.vuegraphx).toMatchObject({ objectId: 'm', componentId: 'measurement' });
     expect(FakeMeshBuilder.meshes.get('babylon:label')?.metadata?.vuegraphx).toMatchObject({ objectId: 'label', componentId: 'label' });
@@ -395,6 +563,35 @@ describe('BabylonRuntime', () => {
     runtime.destroy();
   });
 
+  it('uses selected metadata to create explicit Babylon highlight materials', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon());
+    const host = document.createElement('div');
+    runtime.mount(host, { size: { width: 320, height: 240 } });
+    clearMeshBuilderCalls();
+
+    runtime.createObject({
+      id: 'A',
+      kind: 'shape',
+      type: 'point',
+      payload: { point: { x: 1, y: 2 } },
+      meta: { selected: true },
+      renderHints: { strokeColor: '#0ea5e9' }
+    }, {
+      id: 'babylon:A',
+      objectId: 'A',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'A', backendId: 'babylon', layerId: 'content' }
+    });
+
+    expect(FakeMeshBuilder.meshes.get('babylon:A')?.material).toMatchObject({
+      diffuseColor: { r: expect.closeTo(0.98), g: expect.closeTo(0.45), b: expect.closeTo(0.09) },
+      alpha: 1
+    });
+
+    runtime.destroy();
+  });
+
   it('renders hyperbola branches as separate proxy curves without a bridge segment', () => {
     const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
     const host = document.createElement('div');
@@ -421,11 +618,11 @@ describe('BabylonRuntime', () => {
       target: { scope: 'object', objectId: 'hyp', backendId: 'babylon', layerId: 'content' }
     });
 
-    const segmentWidths = [...FakeMeshBuilder.meshes]
+    const branchTubes = [...FakeMeshBuilder.meshes]
       .filter(([name]) => name.startsWith('babylon:hyp:segment-'))
-      .map(([, mesh]) => Number(mesh.options?.width ?? 0));
-    expect(segmentWidths).toHaveLength(94);
-    expect(Math.max(...segmentWidths)).toBeLessThan(1);
+      .map(([, mesh]) => mesh.options?.path);
+    expect(branchTubes).toHaveLength(2);
+    expect(branchTubes.every((path) => Array.isArray(path) && path.length === 48)).toBe(true);
 
     runtime.destroy();
   });
@@ -464,7 +661,7 @@ describe('BabylonRuntime', () => {
     expect(FakeMeshBuilder.CreateBox).not.toHaveBeenCalled();
     const label = host.querySelector('[data-vuegraphx-babylon-label-layer] [data-vuegraphx-object-id="text-1"]') as HTMLElement | null;
     expect(label?.textContent).toBe('Babylon文字OK');
-    expect(label?.style.left).toBe('25%');
+    expect(label?.style.left).toBe('31.25%');
     expect(label?.style.top).toBe('35%');
 
     runtime.destroy();

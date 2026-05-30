@@ -32,6 +32,37 @@ describe('JsxGraphRuntime', () => {
     expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.any(Object));
   });
 
+  it('uses explicit selected attributes instead of global JSXGraph hover highlighting', () => {
+    const create = vi.fn((type: string) => ({ id: `${type}-1` }));
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      ...createPointNode(),
+      meta: { selected: true },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 2, radius: 3 }
+    }, {
+      id: 'jsxgraph:A',
+      objectId: 'A',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'A', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.objectContaining({
+      highlight: false,
+      strokeColor: '#f97316',
+      fillColor: '#f97316',
+      strokeWidth: 4,
+      size: 5
+    }));
+  });
+
   it('renders equation and solid curriculum objects as native JSXGraph curves', () => {
     const create = vi.fn((type: string) => ({ id: `${type}-${create.mock.calls.length}` }));
     const runtime = createJsxGraphRuntime({} as any, {

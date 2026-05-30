@@ -6,6 +6,10 @@ import {
   GraphSceneStore,
   GRAPH_RELATION_SNAPSHOT_VERSION,
   SUPPORTED_GRAPH_SCENE_OBJECT_IR_TYPES,
+  GRAPH_ACTIVE_MATH_INTERACTION_CAPABILITY_IDS,
+  GRAPH_MATH_INTERACTION_CAPABILITY_PATHS,
+  createGraphBackendInteractionCapability,
+  createGraphBackendMathInteractionCapabilities,
   createGraphRelationInvalidationPlan,
   createGraphRelationSnapshot,
   createGraphCapabilitiesForObject,
@@ -18,6 +22,7 @@ import {
   mergeGraphObjectPatch,
   resolveGraphDragOperation,
   unsupportedGraphSceneObjectIrDiagnostic,
+  validateGraphBackendMathInteractionCapabilities,
   validateGraphRelationSnapshot,
   type GraphBackendHost,
   type GraphObjectNode,
@@ -118,6 +123,108 @@ const readTestHitGroups = (node: GraphObjectNode): string[] => {
 };
 
 describe('renderer-neutral core runtime contracts', () => {
+  it('defines the active math interaction contract without replacing legacy backend booleans', () => {
+    expect(GRAPH_MATH_INTERACTION_CAPABILITY_PATHS).toEqual([
+      'viewport.zoom',
+      'viewport.gestureZoom',
+      'viewport.pan',
+      'object.pick',
+      'object.select',
+      'object.highlight',
+      'project',
+      'unproject',
+      'diagnostics'
+    ]);
+    expect(GRAPH_ACTIVE_MATH_INTERACTION_CAPABILITY_IDS).toEqual([
+      'math.viewport.select',
+      'math.viewport.move',
+      'math.viewport.resize',
+      'math.viewport.pan',
+      'math.viewport.zoom',
+      'math.object.select'
+    ]);
+
+    const legacyOnlyCapabilities = {
+      pick: true,
+      project: true,
+      unproject: true,
+      drag: true,
+      layers: true,
+      dimensions: ['2d'] as const
+    };
+    expect(legacyOnlyCapabilities.pick).toBe(true);
+    expect(validateGraphBackendMathInteractionCapabilities('legacy-backend', legacyOnlyCapabilities)).toEqual([
+      expect.objectContaining({
+        code: 'backend.math-interactions.missing',
+        severity: 'error',
+        target: { scope: 'backend-layer', backendId: 'legacy-backend' }
+      })
+    ]);
+  });
+
+  it('validates explicit supported, partial, and unsupported math backend interaction statuses', () => {
+    const supportedInteractions = Object.fromEntries(
+      GRAPH_MATH_INTERACTION_CAPABILITY_PATHS.map((path) => [path, createGraphBackendInteractionCapability('supported')])
+    );
+    const capabilities = {
+      pick: true,
+      project: true,
+      unproject: true,
+      drag: true,
+      layers: true,
+      dimensions: ['2d'] as const,
+      mathInteractions: createGraphBackendMathInteractionCapabilities({
+        ...supportedInteractions,
+        'viewport.gestureZoom': createGraphBackendInteractionCapability('partial-support', {
+          reason: 'Native pinch degrades to modifier-wheel on this host.'
+        }),
+        'object.highlight': createGraphBackendInteractionCapability('unsupported', {
+          reason: 'Selected styling is not implemented.'
+        })
+      })
+    };
+
+    expect(capabilities.mathInteractions.viewport.zoom.status).toBe('supported');
+    expect(validateGraphBackendMathInteractionCapabilities('diagnostic-backend', capabilities)).toEqual([
+      expect.objectContaining({
+        code: 'backend.math-interaction.partial-support',
+        severity: 'warning',
+        message: 'Native pinch degrades to modifier-wheel on this host.'
+      }),
+      expect.objectContaining({
+        code: 'backend.math-interaction.unsupported',
+        severity: 'error',
+        message: 'Selected styling is not implemented.'
+      })
+    ]);
+  });
+
+  it('treats omitted math interaction paths as unsupported instead of silently supported', () => {
+    const capabilities = {
+      pick: true,
+      project: true,
+      unproject: true,
+      drag: true,
+      layers: true,
+      dimensions: ['2d'] as const,
+      mathInteractions: createGraphBackendMathInteractionCapabilities({
+        'viewport.zoom': createGraphBackendInteractionCapability('supported')
+      })
+    };
+
+    expect(capabilities.mathInteractions.viewport.zoom.status).toBe('supported');
+    expect(capabilities.mathInteractions.viewport.gestureZoom.status).toBe('unsupported');
+    expect(validateGraphBackendMathInteractionCapabilities('undeclared-backend', capabilities)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'backend.math-interaction.unsupported',
+          severity: 'error',
+          message: 'Math interaction capability viewport.gestureZoom is undeclared.'
+        })
+      ])
+    );
+  });
+
   it('defines renderer-neutral scene object IR for M1 graph object families', () => {
     expect(SUPPORTED_GRAPH_SCENE_OBJECT_IR_TYPES).toEqual([
       'point',

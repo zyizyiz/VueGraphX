@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GraphInteractionRouter, createParityFixtureNode, curriculumParityRows } from '@vuegraphx/core';
+import {
+  GRAPH_MATH_INTERACTION_CAPABILITY_PATHS,
+  GraphInteractionRouter,
+  createParityFixtureNode,
+  curriculumParityRows,
+  validateGraphBackendMathInteractionCapabilities
+} from '@vuegraphx/core';
 import type {
   GraphClientPoint,
   GraphObjectNode,
@@ -31,7 +37,7 @@ type CanvasDrawOp =
   | { name: 'arc'; x: number; y: number; radius: number; fillStyle: string; strokeStyle: string }
   | { name: 'stroke'; strokeStyle: string; lineWidth: number; lineToCount: number }
   | { name: 'fill'; fillStyle: string }
-  | { name: 'fillText' | 'strokeText'; text: string; x: number; y: number; fillStyle?: string; strokeStyle?: string }
+  | { name: 'fillText' | 'strokeText'; text: string; x: number; y: number; font: string; fillStyle?: string; strokeStyle?: string }
   | { name: string; [key: string]: unknown };
 
 const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; ops: CanvasDrawOp[] } => {
@@ -91,10 +97,10 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
       ops.push({ name: 'fill', fillStyle: String(this.fillStyle) });
     },
     fillText(text: string, x: number, y: number) {
-      ops.push({ name: 'fillText', text, x, y, fillStyle: String(this.fillStyle) });
+      ops.push({ name: 'fillText', text, x, y, font: String(this.font), fillStyle: String(this.fillStyle) });
     },
     strokeText(text: string, x: number, y: number) {
-      ops.push({ name: 'strokeText', text, x, y, strokeStyle: String(this.strokeStyle) });
+      ops.push({ name: 'strokeText', text, x, y, font: String(this.font), strokeStyle: String(this.strokeStyle) });
     },
     clearRect() {
       ops.push({ name: 'clearRect' });
@@ -319,6 +325,35 @@ describe('shared backend contract adapters', () => {
     }
   });
 
+  it('declares explicit active math interaction statuses for Canvas2D, JSXGraph, and Babylon', () => {
+    const { backends } = createBackendContractMatrix();
+    const activeBackends = backends.filter((backend) => ['canvas2d', 'jsxgraph', 'babylon'].includes(backend.id));
+
+    expect(activeBackends.map((backend) => backend.id)).toEqual(['canvas2d', 'jsxgraph', 'babylon']);
+    for (const backend of activeBackends) {
+      const interactions = backend.capabilities.mathInteractions;
+      expect(interactions, backend.id).toBeDefined();
+      const statuses = GRAPH_MATH_INTERACTION_CAPABILITY_PATHS.map((path) => {
+        if (path === 'viewport.zoom') return interactions?.viewport.zoom.status;
+        if (path === 'viewport.gestureZoom') return interactions?.viewport.gestureZoom.status;
+        if (path === 'viewport.pan') return interactions?.viewport.pan.status;
+        if (path === 'object.pick') return interactions?.object.pick.status;
+        if (path === 'object.select') return interactions?.object.select.status;
+        if (path === 'object.highlight') return interactions?.object.highlight.status;
+        if (path === 'project') return interactions?.project.status;
+        if (path === 'unproject') return interactions?.unproject.status;
+        return interactions?.diagnostics.status;
+      });
+      expect(statuses).toHaveLength(9);
+      expect(statuses.every((status) => ['supported', 'partial-support', 'unsupported'].includes(String(status)))).toBe(true);
+      expect(validateGraphBackendMathInteractionCapabilities(backend.id, backend.capabilities).map((diagnostic) => diagnostic.code)).not.toContain(
+        'backend.math-interaction.missing'
+      );
+    }
+
+    expect(backends.find((backend) => backend.id === 'babylon')?.capabilities.mathInteractions?.viewport.gestureZoom.status).toBe('partial-support');
+  });
+
   it('runs create/update/pick/remove lifecycle for memory and Canvas2D backends from the same core node', () => {
     const host = document.createElement('div');
     const backends = [createMemoryGraphBackend({ id: 'memory-contract' }), createCanvas2DGraphBackend({ id: 'canvas-contract' })];
@@ -456,6 +491,77 @@ describe('shared backend contract adapters', () => {
     expect(backend.project({ dimension: '2d', x: 0, y: 0 })).toEqual({ x: 100, y: 100 });
     expect(backend.unproject({ x: 100, y: 100 })).toEqual({ dimension: '2d', x: 0, y: 0 });
     expect(backend.pick({ x: 100, y: 100 })?.target.objectId).toBe('A');
+  });
+
+  it('can preserve unit aspect and draw standard coordinate labels on rectangular Canvas2D viewports', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-aspect',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      preserveAspectRatio: true,
+      showAxes: true
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 400, height: 200 } });
+
+    expect(backend.project({ dimension: '2d', x: 10, y: 0 })).toEqual({ x: 300, y: 100 });
+    expect(backend.unproject({ x: 300, y: 100 })).toEqual({ dimension: '2d', x: 10, y: 0 });
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'fillText', text: '5', x: 250, y: 100, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
+      expect.objectContaining({ name: 'fillText', text: '-5', x: 150, y: 100, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
+      expect.objectContaining({ name: 'fillText', text: '5', x: 190, y: 41, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
+      expect.objectContaining({ name: 'fillText', text: 'O', x: 188, y: 100, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
+      expect.objectContaining({ name: 'fillText', text: 'x', x: 394, y: 100, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
+      expect.objectContaining({ name: 'fillText', text: 'y', x: 190, y: 0, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
+      expect.objectContaining({ name: 'moveTo', x: 0.6, y: 100 }),
+      expect.objectContaining({ name: 'lineTo', x: 394, y: 100 }),
+      expect.objectContaining({ name: 'moveTo', x: 200, y: 200 }),
+      expect.objectContaining({ name: 'lineTo', x: 200, y: 6 })
+    ]));
+    expect(ops.filter((op) => op.name === 'moveTo' && op.x === 210 && op.y === 100)).toEqual([]);
+
+    backend.destroy();
+  });
+
+  it('scales Canvas2D coordinate labels, strokes, and points with viewport zoom', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-visual-zoom',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      preserveAspectRatio: true,
+      showAxes: true
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 400, height: 200 } });
+    expect(backend.create({
+      ...pointNode,
+      payload: { point: { x: 0, y: 0 } },
+      renderHints: { radius: 4, strokeWidth: 2 }
+    }).ok).toBe(true);
+
+    ops.splice(0);
+    backend.setWorldBounds({ left: -5, top: 5, right: 5, bottom: -5 });
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'moveTo', x: 1.2, y: 100 }),
+      expect.objectContaining({ name: 'lineTo', x: 388, y: 100 }),
+      expect.objectContaining({ name: 'lineTo', x: 200, y: 12 }),
+      expect.objectContaining({ name: 'fillText', text: 'x', x: 388, y: 100, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
+      expect.objectContaining({ name: 'fillText', text: 'y', x: 180, y: 0, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
+      expect.objectContaining({ name: 'arc', radius: 12 }),
+      expect.objectContaining({ name: 'arc', radius: 8 })
+    ]));
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'stroke', strokeStyle: '#666666', lineWidth: 2.4 })
+    ]));
+
+    backend.destroy();
   });
 
   it('reports Canvas2D partial support for nodes without drawable geometry instead of accepting silent no-ops', () => {
@@ -606,6 +712,33 @@ describe('shared backend contract adapters', () => {
       expect.objectContaining({ name: 'fillText', text: 'distance: 4' })
     ]));
 
+    backend.destroy();
+  });
+
+  it('renders selected Canvas2D objects with explicit highlight styling', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-selected',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      ...pointNode,
+      meta: { selected: true },
+      renderHints: { strokeColor: '#0ea5e9' }
+    }).ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'fill', fillStyle: '#f97316' }),
+      expect.objectContaining({ name: 'arc', strokeStyle: '#f97316' })
+    ]));
     backend.destroy();
   });
 
