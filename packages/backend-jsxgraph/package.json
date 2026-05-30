@@ -11,6 +11,7 @@
   "dependencies": {
     "@vuegraphx/core": "1.2.3",
     "@vuegraphx/math": "1.2.3",
+    "katex": "^0.16.33",
     "mathjs": "^15.1.1"
   },
   "peerDependencies": {

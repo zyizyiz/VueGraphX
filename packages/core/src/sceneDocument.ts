@@ -19,6 +19,7 @@ import {
   isSupportedGraphSceneObjectIrType,
   unsupportedGraphSceneObjectIrDiagnostic
 } from './sceneObjectIr';
+import { inferGraphTextFormat, type GraphTextRenderFormat } from './textRendering';
 
 export const GRAPH_RUNTIME_SCENE_VERSION = 2;
 
@@ -206,7 +207,7 @@ const readLegacySceneObjectIrInput = (node: GraphObjectNode): { objectType: stri
         objectType: 'text',
         content: payload.text,
         anchor: toCoordinateSource(point),
-        format: 'plain'
+        format: readLegacyTextFormat(payload.format, payload.text)
       })
     } : null;
   }
@@ -387,6 +388,14 @@ const readNumberRecord = (value: unknown): Record<string, number> | undefined =>
     ? Object.fromEntries(entries) as Record<string, number>
     : undefined;
 };
+
+const TEXT_RENDER_FORMATS = new Set<string>(['plain', 'latex', 'markdown']);
+
+const readLegacyTextFormat = (value: unknown, text: string): GraphTextRenderFormat => (
+  typeof value === 'string' && TEXT_RENDER_FORMATS.has(value)
+    ? value as GraphTextRenderFormat
+    : inferGraphTextFormat(text)
+);
 
 const toWorldPoint2D = (point: { x: number; y: number }): { dimension: '2d'; x: number; y: number } => ({
   dimension: '2d',

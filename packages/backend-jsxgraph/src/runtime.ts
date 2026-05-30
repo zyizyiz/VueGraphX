@@ -1,7 +1,10 @@
 import * as math from 'mathjs';
+import katex from 'katex';
 import { sampleImplicitEquationSegments } from '@vuegraphx/math';
 import {
   mergeGraphObjectPatch,
+  resolveGraphTextAnchor,
+  resolveGraphTextRenderDescriptor,
   type GraphBackendContext,
   type GraphBackendMountOptions,
   type GraphClientPoint,
@@ -10,6 +13,7 @@ import {
   type GraphPickOptions,
   type GraphPickResult,
   type GraphRenderHandle,
+  type GraphTextRenderDescriptor,
   type GraphViewportRef,
   type GraphViewportSize,
   type GraphWorldPoint
@@ -284,8 +288,16 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
       }
     }
 
-    if (node.type === 'text' && isPoint2D(payload?.point) && typeof payload?.text === 'string') {
-      return normalizeElements(board.create('text', [payload.point.x, payload.point.y, payload.text], attrs));
+    if (node.type === 'text') {
+      const descriptor = resolveGraphTextRenderDescriptor(node);
+      const anchor = resolveGraphTextAnchor(node);
+      if (descriptor && anchor?.dimension === '2d') {
+        const renderedText = renderTextForJsxGraph(descriptor);
+        return normalizeElements(board.create('text', [anchor.x, anchor.y, renderedText.text], {
+          ...attrs,
+          ...renderedText.attributes
+        }));
+      }
     }
 
     const payloadPoint = readPayloadPoint2D(payload);
@@ -391,6 +403,29 @@ const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext):
     fixed: asRecord(node.meta)?.locked === true
   };
 };
+
+const renderTextForJsxGraph = (
+  descriptor: GraphTextRenderDescriptor
+): { text: string; attributes: Record<string, unknown> } => {
+  if (descriptor.format !== 'latex') return { text: descriptor.text, attributes: {} };
+  return {
+    text: renderLatexMathMl(descriptor),
+    attributes: {
+      display: 'html',
+      parse: false
+    }
+  };
+};
+
+const renderLatexMathMl = (descriptor: GraphTextRenderDescriptor): string => (
+  katex.renderToString(descriptor.latex ?? descriptor.text, {
+    displayMode: descriptor.displayMode ?? false,
+    output: 'mathml',
+    throwOnError: false,
+    strict: 'ignore',
+    trust: false
+  })
+);
 
 const normalizeElements = (value: JsxGraphElement | JsxGraphElement[] | null | undefined): JsxGraphElement[] => {
   if (!value) return [];

@@ -137,4 +137,42 @@ describe('JsxGraphRuntime', () => {
     expect((curves[1][1] as [number[], number[]])[0]).toHaveLength(96);
     expect((curves[2][1] as [number[], number[]])[0]).toHaveLength(96);
   });
+
+  it('renders LaTeX text as HTML MathML for JSXGraph text elements', () => {
+    const create = vi.fn((type: string) => ({ id: `${type}-${create.mock.calls.length}` }));
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      id: 'formula',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        point: { x: 1, y: 2 },
+        text: '$\\sqrt{x}$',
+        format: 'latex'
+      },
+      layerId: 'overlay'
+    }, {
+      id: 'jsxgraph:formula',
+      objectId: 'formula',
+      backendId: 'jsxgraph',
+      layerId: 'overlay',
+      target: { scope: 'object', objectId: 'formula', backendId: 'jsxgraph', layerId: 'overlay' }
+    });
+
+    expect(create).toHaveBeenCalledWith('text', [
+      1,
+      2,
+      expect.stringContaining('<math')
+    ], expect.objectContaining({
+      display: 'html',
+      parse: false
+    }));
+  });
 });

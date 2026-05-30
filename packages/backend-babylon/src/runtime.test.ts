@@ -145,6 +145,20 @@ class FakeDynamicTexture {
   }
 }
 
+class FakeTexture {
+  public static instances: FakeTexture[] = [];
+  public dispose = vi.fn();
+
+  public constructor(
+    public url: string | null,
+    public scene?: unknown,
+    public noMipmapOrOptions?: unknown,
+    public invertY?: boolean
+  ) {
+    FakeTexture.instances.push(this);
+  }
+}
+
 const FakeMeshBuilder = {
   lastMesh: null as FakeMesh | null,
   meshes: new Map<string, FakeMesh>(),
@@ -194,6 +208,7 @@ const createFakeBabylon = (): BabylonNamespaceLike => ({
   Color4: FakeColor4,
   StandardMaterial: FakeMaterial,
   DynamicTexture: FakeDynamicTexture,
+  Texture: FakeTexture,
   ArcRotateCamera: FakeCamera as unknown as BabylonNamespaceLike['ArcRotateCamera'],
   HemisphericLight: FakeLight as unknown as BabylonNamespaceLike['HemisphericLight'],
   MeshBuilder: FakeMeshBuilder
@@ -209,6 +224,7 @@ const clearMeshBuilderCalls = () => {
   FakeMeshBuilder.CreateCylinder.mockClear();
   FakeMeshBuilder.CreateTube.mockClear();
   FakeDynamicTexture.instances = [];
+  FakeTexture.instances = [];
 };
 
 beforeEach(() => {
@@ -665,6 +681,113 @@ describe('BabylonRuntime', () => {
     expect(label?.style.top).toBe('35%');
 
     runtime.destroy();
+  });
+
+  it('renders 2D Babylon LaTeX text as DOM MathML labels', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
+    const host = document.createElement('div');
+    runtime.mount(host, {
+      size: { width: 400, height: 300 },
+      attributes: { renderMode: '2d', worldBounds: { left: -10, right: 10, top: 10, bottom: -10 } }
+    });
+    clearMeshBuilderCalls();
+
+    runtime.createObject({
+      id: 'formula',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        content: '$\\sqrt{x}$',
+        anchor: { coordinates: { dimension: '2d', x: 0, y: 0 } },
+        format: 'latex'
+      },
+      renderHints: { strokeColor: '#2563eb' }
+    }, {
+      id: 'babylon:formula',
+      objectId: 'formula',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'formula', backendId: 'babylon', layerId: 'content' }
+    });
+
+    expect(FakeMeshBuilder.CreatePlane).not.toHaveBeenCalled();
+    const label = host.querySelector('[data-vuegraphx-babylon-label-layer] [data-vuegraphx-object-id="formula"]') as HTMLElement | null;
+    expect(label?.innerHTML).toContain('<math');
+    expect(label?.textContent).toContain('x');
+    expect(label?.style.left).toBe('50%');
+    expect(label?.style.top).toBe('50%');
+
+    runtime.destroy();
+  });
+
+  it('renders 3D Babylon LaTeX text as an SVG texture instead of raw TeX text', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon());
+    const host = document.createElement('div');
+    runtime.mount(host, { size: { width: 400, height: 300 } });
+    clearMeshBuilderCalls();
+
+    runtime.createObject({
+      id: 'formula-3d',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        content: '$\\sqrt{x}$',
+        anchor: { coordinates: { dimension: '3d', x: 1, y: 2, z: 3 } },
+        format: 'latex'
+      },
+      renderHints: { strokeColor: '#2563eb' }
+    }, {
+      id: 'babylon:formula-3d',
+      objectId: 'formula-3d',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'formula-3d', backendId: 'babylon', layerId: 'content' }
+    });
+
+    expect(FakeTexture.instances).toHaveLength(1);
+    expect(decodeURIComponent(FakeTexture.instances[0]!.url ?? '')).toContain('<math');
+    expect(FakeDynamicTexture.instances).toHaveLength(0);
+    expect(FakeMeshBuilder.meshes.get('babylon:formula-3d')?.material).toMatchObject({
+      diffuseTexture: FakeTexture.instances[0],
+      useAlphaFromDiffuseTexture: true,
+      backFaceCulling: false,
+      disableLighting: true
+    });
+
+    runtime.destroy();
+  });
+
+  it('reports Babylon partial support for 3D LaTeX text when texture support is unavailable', () => {
+    const { Texture: _Texture, ...withoutTexture } = createFakeBabylon();
+    const runtime = createBabylonRuntime(withoutTexture as BabylonNamespaceLike);
+    const backend = createBabylonGraphBackend({ id: 'babylon', runtime });
+    const host = document.createElement('div');
+    backend.mount({ resource: host }, { size: { width: 400, height: 300 } });
+
+    const node = {
+      id: 'formula-3d',
+      kind: 'overlay' as const,
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        content: '$\\sqrt{x}$',
+        anchor: { coordinates: { dimension: '3d' as const, x: 1, y: 2, z: 3 } },
+        format: 'latex'
+      },
+      layerId: 'content' as const
+    };
+
+    expect(backend.create(node)).toMatchObject({
+      ok: false,
+      diagnostics: [{
+        code: 'backend.partial-support',
+        target: { objectId: 'formula-3d', backendId: 'babylon' }
+      }]
+    });
+
+    backend.destroy();
   });
 
   it('accepts multiline equations and surface wireframes through the backend contract', () => {

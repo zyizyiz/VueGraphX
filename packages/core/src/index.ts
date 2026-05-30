@@ -12,3 +12,4 @@ export * from './dragOperations';
 export * from './renderRuntime';
 export * from './parityMatrix';
 export * from './standardCoordinateStyle';
+export * from './textRendering';

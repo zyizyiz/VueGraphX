@@ -210,6 +210,20 @@ describe('renderer-free command compiler', () => {
     });
   });
 
+  it('marks delimited Text command content as LaTeX for backend renderers', () => {
+    const program = compileGraphCommands([
+      'A = Point(0, 0)',
+      'formula = Text(A, "$\\frac{a}{b}$")'
+    ]);
+
+    expect(program.diagnostics).toEqual([]);
+    expect(program.nodes.find((node) => node.id === 'formula')?.payload).toEqual({
+      point: { x: 0, y: 0 },
+      text: '$\\frac{a}{b}$',
+      format: 'latex'
+    });
+  });
+
   it('compiles conic and measurement commands while tracking symbol dependencies', () => {
     const program = compileGraphCommands([
       'A = Point(0, 0)',

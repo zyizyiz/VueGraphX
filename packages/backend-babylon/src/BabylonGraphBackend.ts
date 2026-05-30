@@ -34,6 +34,7 @@ export interface BabylonRuntimePickResult {
 
 export interface BabylonRuntimePort {
   mount(host: HTMLElement, options?: GraphBackendMountOptions): void;
+  getSupportStatus?(node: GraphObjectNode, context?: GraphBackendContext): BabylonBackendSupportStatus | null;
   createObject(node: GraphObjectNode, handle: GraphRenderHandle, context?: GraphBackendContext): void;
   updateObject(handle: GraphRenderHandle, patch: GraphObjectPatch, context?: GraphBackendContext): void;
   createSolid?(node: GraphObjectNode, handle: GraphRenderHandle, context?: GraphBackendContext): void;
@@ -54,7 +55,7 @@ export interface BabylonGraphBackendOptions {
   capabilities?: Partial<GraphBackendCapabilities>;
 }
 
-type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
+export type BabylonBackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
 
 const BABYLON_SUPPORTED_TYPES = new Set([
   'point',
@@ -85,7 +86,7 @@ const BABYLON_SUPPORTED_TYPES = new Set([
   'solid'
 ]);
 
-const getBabylonSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
+const getBabylonSupportStatus = (node: GraphObjectNode): BabylonBackendSupportStatus => {
   if (node.type === 'implicit') return hasRenderableProxyGeometry(node) ? 'success' : 'unsupported';
   if (node.type === 'solid') return 'success';
   if (!BABYLON_SUPPORTED_TYPES.has(node.type)) return 'unsupported';
@@ -95,7 +96,7 @@ const getBabylonSupportStatus = (node: GraphObjectNode): BackendSupportStatus =>
 const createBackendSupportDiagnosticResult = (
   backendId: string,
   node: GraphObjectNode,
-  status: Exclude<BackendSupportStatus, 'success'>
+  status: Exclude<BabylonBackendSupportStatus, 'success'>
 ): GraphOperationResult<GraphRenderHandle> => ({
   ok: false,
   diagnostics: [{
@@ -163,7 +164,10 @@ export class BabylonGraphBackend implements GraphRenderBackend {
   }
 
   public create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphOperationResult<GraphRenderHandle> {
-    const status = getBabylonSupportStatus(node);
+    const status = combineBabylonSupportStatus(
+      getBabylonSupportStatus(node),
+      this.runtime?.getSupportStatus?.(node, context) ?? 'success'
+    );
     if (status !== 'success') {
       return createBackendSupportDiagnosticResult(this.id, node, status);
     }
@@ -255,6 +259,15 @@ const resolveHostElement = (host: GraphBackendHost): HTMLElement | null => {
 };
 
 export const createBabylonGraphBackend = (options?: BabylonGraphBackendOptions): BabylonGraphBackend => new BabylonGraphBackend(options);
+
+const combineBabylonSupportStatus = (
+  staticStatus: BabylonBackendSupportStatus,
+  runtimeStatus: BabylonBackendSupportStatus
+): BabylonBackendSupportStatus => {
+  if (staticStatus === 'unsupported' || runtimeStatus === 'unsupported') return 'unsupported';
+  if (staticStatus === 'partial-support' || runtimeStatus === 'partial-support') return 'partial-support';
+  return 'success';
+};
 
 const hasRenderableProxyGeometry = (node: GraphObjectNode): boolean => {
   const payload = asRecord(node.payload);

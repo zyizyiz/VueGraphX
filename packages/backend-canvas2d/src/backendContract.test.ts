@@ -722,7 +722,7 @@ describe('shared backend contract adapters', () => {
       canvas: document.createElement('canvas'),
       context,
       pixelRatio: 1,
-      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      worldBounds: { left: -10, top: 10, bottom: -10, right: 10 },
       showAxes: false
     });
 
@@ -739,6 +739,102 @@ describe('shared backend contract adapters', () => {
       expect.objectContaining({ name: 'fill', fillStyle: '#f97316' }),
       expect.objectContaining({ name: 'arc', strokeStyle: '#f97316' })
     ]));
+
+    backend.destroy();
+  });
+
+  it('renders LaTeX text through the Canvas2D DOM label layer', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const canvas = document.createElement('canvas');
+    const host = document.createElement('div');
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-latex',
+      canvas,
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      showAxes: false
+    });
+
+    backend.mount(host, { size: { width: 400, height: 300 } });
+    const result = backend.create({
+      id: 'formula',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        content: '$\\frac{a}{b}$',
+        anchor: { coordinates: { dimension: '2d', x: 0, y: 0 } },
+        format: 'latex'
+      },
+      renderHints: { strokeColor: '#0f172a' },
+      layerId: 'overlay'
+    });
+
+    expect(result.ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    const label = host.querySelector('[data-vuegraphx-canvas2d-label-layer] [data-vuegraphx-object-id="formula"]') as HTMLElement | null;
+    expect(label?.innerHTML).toContain('<math');
+    expect(label?.textContent).toContain('a');
+    expect(label?.textContent).toContain('b');
+    expect(label?.style.left).toBe('50%');
+    expect(label?.style.top).toBe('50%');
+    expect(ops.some((op) => (op.name === 'fillText' || op.name === 'strokeText') && String(op.text).includes('\\frac'))).toBe(false);
+
+    const unsafe = backend.create({
+      id: 'unsafe-formula',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        content: '$<img src=x onerror=alert(1)>$',
+        anchor: { coordinates: { dimension: '2d', x: 1, y: 1 } },
+        format: 'latex'
+      },
+      layerId: 'overlay'
+    });
+    expect(unsafe.ok).toBe(true);
+    backend.flush();
+    const unsafeLabel = host.querySelector('[data-vuegraphx-object-id="unsafe-formula"]') as HTMLElement | null;
+    expect(unsafeLabel?.querySelector('img')).toBeNull();
+    expect(unsafeLabel?.querySelector('[onerror]')).toBeNull();
+
+    backend.destroy();
+  });
+
+  it('reports Canvas2D partial support for LaTeX text when no DOM label layer can be installed', () => {
+    const { context } = createRecordingCanvasContext();
+    const canvas = document.createElement('canvas');
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-latex-no-layer',
+      canvas,
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      showAxes: false
+    });
+
+    backend.mount(canvas, { size: { width: 400, height: 300 } });
+    const node: GraphObjectNode = {
+      id: 'formula',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        content: '$\\frac{a}{b}$',
+        anchor: { coordinates: { dimension: '2d', x: 0, y: 0 } },
+        format: 'latex'
+      },
+      layerId: 'overlay'
+    };
+
+    expect(backend.create(node)).toEqual({
+      ok: false,
+      diagnostics: [createBackendContractDiagnostic(backend, { id: 'formula', node, expectations: backendContractFixtures[0].expectations }, 'partial-support')]
+    });
+
     backend.destroy();
   });
 

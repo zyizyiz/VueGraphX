@@ -1,3 +1,9 @@
+import katex from 'katex';
+import {
+  resolveGraphTextAnchor,
+  resolveGraphTextRenderDescriptor,
+  type GraphTextRenderDescriptor
+} from '@vuegraphx/core';
 import type {
   GraphBackendContext,
   GraphBackendHost,
@@ -64,6 +70,11 @@ interface CanvasDrawablePayload {
   value?: number;
 }
 
+interface CanvasTextLayout {
+  descriptor: GraphTextRenderDescriptor;
+  point: { x: number; y: number };
+}
+
 type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
 
 const CANVAS2D_SUPPORTED_TYPES = new Set([
@@ -98,7 +109,7 @@ const CANVAS2D_PARTIAL_TYPES = new Set<string>();
 const CANVAS2D_MIN_VISUAL_ZOOM_SCALE = 0.25;
 const CANVAS2D_MAX_VISUAL_ZOOM_SCALE = 8;
 
-const getCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
+const getBaseCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
   if (node.type === 'implicit') {
     return isDrawableCanvas2DNode(node) ? 'success' : 'unsupported';
   }
@@ -109,9 +120,27 @@ const getCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus =
   return 'unsupported';
 };
 
+const getCanvas2DSupportStatus = (
+  node: GraphObjectNode,
+  options: { canRenderLatexDom: boolean }
+): BackendSupportStatus => {
+  const status = getBaseCanvas2DSupportStatus(node);
+  if (status !== 'success') return status;
+  return requiresCanvasDomTextRendering(node) && !options.canRenderLatexDom
+    ? 'partial-support'
+    : status;
+};
+
+const requiresCanvasDomTextRendering = (node: GraphObjectNode): boolean => {
+  if (!(node.type === 'text' || node.type === 'measurement')) return false;
+  const layout = readCanvasTextLayout(node);
+  return layout?.descriptor.format === 'latex';
+};
+
 const isDrawableCanvas2DNode = (node: GraphObjectNode): boolean => {
   const payload = node.payload as CanvasDrawablePayload | undefined;
   if (!payload) return false;
+  if (node.type === 'text') return readCanvasTextLayout(node) !== null;
   if (isCanvasPoint(payload.point)) return true;
   if (node.type === 'measurement') {
     if (isCanvasPoint(payload.point)) return true;
@@ -149,6 +178,14 @@ const isCanvasPoint = (value: unknown): value is { x: number; y: number } => {
   return isFiniteNumber(record.x) && isFiniteNumber(record.y);
 };
 
+const readCanvasTextLayout = (node: GraphObjectNode): CanvasTextLayout | null => {
+  const descriptor = resolveGraphTextRenderDescriptor(node);
+  const anchor = resolveGraphTextAnchor(node);
+  return descriptor && anchor?.dimension === '2d'
+    ? { descriptor, point: { x: anchor.x, y: anchor.y } }
+    : null;
+};
+
 const createBackendSupportDiagnosticResult = (
   backendId: string,
   node: GraphObjectNode,
@@ -171,6 +208,7 @@ const createBackendSupportDiagnosticResult = (
 export class Canvas2DGraphBackend extends MemoryGraphBackend {
   private canvas: HTMLCanvasElement | null;
   private context: CanvasRenderingContext2D | null = null;
+  private labelLayer: HTMLDivElement | null = null;
   private readonly providedContext: CanvasRenderingContext2D | null;
   private pixelRatio: number;
   private worldBounds: CanvasWorldBounds | null;
@@ -208,6 +246,8 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     } else if (hostElement && !this.canvas.parentElement && hostElement !== this.canvas) {
       hostElement.appendChild(this.canvas);
     }
+    const labelHost = hostElement && hostElement !== this.canvas ? hostElement : this.canvas.parentElement;
+    if (labelHost) this.installLabelLayer(labelHost);
     this.context = this.providedContext ?? getCanvasContext(this.canvas);
     const result = super.mount(host, options);
     if (options.size) this.resize(options.size);
@@ -215,7 +255,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
   }
 
   public override create(node: GraphObjectNode, context: GraphBackendContext = {}): GraphOperationResult<GraphRenderHandle> {
-    const status = getCanvas2DSupportStatus(node);
+    const status = getCanvas2DSupportStatus(node, { canRenderLatexDom: !!this.labelLayer });
     if (status !== 'success') {
       return createBackendSupportDiagnosticResult(this.id, node, status);
     }
@@ -267,6 +307,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const width = this.canvas.width / this.pixelRatio;
     const height = this.canvas.height / this.pixelRatio;
     this.context.clearRect(0, 0, width, height);
+    this.labelLayer?.replaceChildren();
     this.drawAxes(width, height);
     for (const node of this.listNodes()) {
       this.drawNode(node);
@@ -301,9 +342,11 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
 
   public override destroy(): void {
     super.destroy();
+    this.labelLayer?.remove();
     this.canvas?.remove();
     this.canvas = null;
     this.context = null;
+    this.labelLayer = null;
   }
 
   private drawNode(node: GraphObjectNode): void {
@@ -331,7 +374,20 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (selected) this.context.shadowColor = readString(node.renderHints?.selectionShadowColor, 'rgba(249, 115, 22, 0.35)');
     if (selected) this.context.shadowBlur = readNumber(node.renderHints?.selectionShadowBlur, 10) * visualScale;
 
+    if (node.type === 'text') {
+      const layout = readCanvasTextLayout(node);
+      if (layout) this.drawText(layout, node);
+      this.context.restore();
+      return;
+    }
+
     if (node.type === 'measurement') {
+      const layout = readCanvasTextLayout(node);
+      if (layout?.descriptor.format === 'latex') {
+        this.drawText(layout, node);
+        this.context.restore();
+        return;
+      }
       if (payload.measurementKind === 'angle' && payload.points && payload.points.length >= 3) {
         this.drawAngle(payload.points);
         this.drawMeasurement(payload);
@@ -556,6 +612,24 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.context.fill();
   }
 
+  private installLabelLayer(host: HTMLElement): void {
+    if (typeof document === 'undefined') return;
+    if (globalThis.getComputedStyle?.(host).position === 'static') {
+      host.style.position = 'relative';
+    }
+    this.labelLayer?.remove();
+    this.labelLayer = document.createElement('div');
+    this.labelLayer.setAttribute('data-vuegraphx-canvas2d-label-layer', 'true');
+    Object.assign(this.labelLayer.style, {
+      position: 'absolute',
+      inset: '0',
+      pointerEvents: 'none',
+      zIndex: '2',
+      overflow: 'hidden'
+    });
+    host.appendChild(this.labelLayer);
+  }
+
   private drawPointPath(points: Array<{ x: number; y: number }>, close = false, fill = false): void {
     if (!this.context || points.length === 0) return;
     const first = this.projectPoint(points[0]);
@@ -620,6 +694,44 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.context.beginPath();
     this.context.arc(vertexScreen.x, vertexScreen.y, radius, firstAngle, thirdAngle);
     this.context.stroke();
+  }
+
+  private drawText(layout: CanvasTextLayout, node: GraphObjectNode): void {
+    if (!this.context) return;
+    if (layout.descriptor.format === 'latex') {
+      if (this.labelLayer && this.canvas) this.drawDomTextLabel(layout, node);
+      return;
+    }
+
+    const point = this.projectPoint(layout.point);
+    this.context.font = readString(node.renderHints?.font, '14px sans-serif');
+    this.context.fillText(layout.descriptor.latex ?? layout.descriptor.text, point.x, point.y);
+  }
+
+  private drawDomTextLabel(layout: CanvasTextLayout, node: GraphObjectNode): void {
+    if (!this.labelLayer || !this.canvas) return;
+    const point = this.projectPoint(layout.point);
+    const width = this.canvas.width / this.pixelRatio;
+    const height = this.canvas.height / this.pixelRatio;
+    const label = document.createElement('div');
+    label.setAttribute('data-vuegraphx-object-id', node.id);
+    label.innerHTML = renderLatexMathMl(layout.descriptor);
+    Object.assign(label.style, {
+      position: 'absolute',
+      left: `${(point.x / Math.max(1, width)) * 100}%`,
+      top: `${(point.y / Math.max(1, height)) * 100}%`,
+      transform: 'translate(0, -100%)',
+      color: readString(node.renderHints?.strokeColor, '#334155'),
+      background: 'rgba(255, 255, 255, 0.88)',
+      borderRadius: '4px',
+      padding: '1px 4px',
+      font: readString(node.renderHints?.font, '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif'),
+      whiteSpace: 'nowrap',
+      textShadow: '0 1px 0 rgba(255, 255, 255, 0.92)',
+      boxShadow: '0 0 0 1px rgba(148, 163, 184, 0.18)',
+      pointerEvents: 'none'
+    });
+    this.labelLayer.appendChild(label);
   }
 
   private drawMeasurement(payload: CanvasDrawablePayload): void {
@@ -813,6 +925,15 @@ const isSelectedNode = (node: GraphObjectNode): boolean => (
   node.meta?.selected === true || node.renderHints?.selected === true
 );
 const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '';
+const renderLatexMathMl = (descriptor: GraphTextRenderDescriptor): string => (
+  katex.renderToString(descriptor.latex ?? descriptor.text, {
+    displayMode: descriptor.displayMode ?? false,
+    output: 'mathml',
+    throwOnError: false,
+    strict: 'ignore',
+    trust: false
+  })
+);
 const rotateAroundOrigin = (point: { x: number; y: number }, radians: number, center: { x: number; y: number }): { x: number; y: number } => {
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);

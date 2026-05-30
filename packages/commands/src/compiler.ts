@@ -1,6 +1,7 @@
 import {
   createGraphCapabilitiesForObject,
   createGraphObjectNode,
+  inferGraphTextFormat,
   okResult,
   type GraphObjectNode,
   type GraphOperationDiagnostic,
@@ -932,9 +933,11 @@ const buildTextNode = (
   const textArg = firstPoint ? args[1] : args[2];
   const text = stripQuotes(textArg ?? '');
   if (!text) return invalidArgument('Text value must be non-empty.');
+  const format = inferGraphTextFormat(text);
   return okResult(createBaseNode(id, 'text', {
     point: point.point,
-    text
+    text,
+    ...(format === 'latex' ? { format } : {})
   }, dependencyIds([point]), layerId));
 };
 

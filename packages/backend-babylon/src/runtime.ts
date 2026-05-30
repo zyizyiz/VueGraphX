@@ -1,3 +1,4 @@
+import katex from 'katex';
 import type {
   GraphBackendContext,
   GraphBackendMountOptions,
@@ -6,6 +7,7 @@ import type {
   GraphObjectPatch,
   GraphPickOptions,
   GraphRenderHandle,
+  GraphTextRenderDescriptor,
   GraphViewportRef,
   GraphViewportSize,
   GraphWorldPoint
@@ -15,9 +17,14 @@ import {
   STANDARD_COORDINATE_UI,
   formatStandardCoordinateLabel,
   isStandardZeroCoordinate,
-  mergeGraphObjectPatch
+  mergeGraphObjectPatch,
+  resolveGraphTextRenderDescriptor
 } from '@vuegraphx/core';
-import type { BabylonRuntimePickResult, BabylonRuntimePort } from './BabylonGraphBackend';
+import type {
+  BabylonBackendSupportStatus,
+  BabylonRuntimePickResult,
+  BabylonRuntimePort
+} from './BabylonGraphBackend';
 
 export interface BabylonVector3Like {
   x: number;
@@ -106,6 +113,10 @@ export interface BabylonDynamicTextureLike {
   dispose?(): void;
 }
 
+export interface BabylonTextureLike {
+  dispose?(): void;
+}
+
 export interface BabylonNamespaceLike {
   Engine: new (canvas: HTMLCanvasElement, antialias?: boolean, options?: Record<string, unknown>) => BabylonEngineLike;
   Scene: new (engine: BabylonEngineLike) => BabylonSceneLike;
@@ -119,6 +130,12 @@ export interface BabylonNamespaceLike {
     scene?: BabylonSceneLike,
     generateMipMaps?: boolean
   ) => BabylonDynamicTextureLike;
+  Texture?: new (
+    url: string,
+    scene?: BabylonSceneLike,
+    noMipmapOrOptions?: unknown,
+    invertY?: boolean
+  ) => BabylonTextureLike;
   ArcRotateCamera?: new (name: string, alpha: number, beta: number, radius: number, target: BabylonVector3Like, scene: BabylonSceneLike) => BabylonCameraLike;
   HemisphericLight?: new (name: string, direction: BabylonVector3Like, scene: BabylonSceneLike) => unknown;
   MeshBuilder: {
@@ -271,6 +288,21 @@ export class BabylonRuntime implements BabylonRuntimePort {
     this.installGridAndAxes();
     this.renderLoop = () => this.scene?.render();
     this.engine.runRenderLoop(this.renderLoop);
+  }
+
+  public getSupportStatus(node: GraphObjectNode): BabylonBackendSupportStatus | null {
+    if (!(node.type === 'text' || node.type === 'measurement')) return null;
+
+    const descriptor = resolveGraphTextRenderDescriptor(node);
+    if (this.renderMode === '2d') {
+      return descriptor?.format === 'latex' && !this.labelLayer ? 'partial-support' : 'success';
+    }
+
+    if (descriptor?.format === 'latex') {
+      return this.canRenderLatexTextPlane() ? 'success' : 'partial-support';
+    }
+
+    return this.canRenderPlainTextPlane() ? 'success' : 'partial-support';
   }
 
   public createObject(node: GraphObjectNode, handle: GraphRenderHandle, _context: GraphBackendContext = {}): void {
@@ -585,6 +617,14 @@ export class BabylonRuntime implements BabylonRuntimePort {
     return node.type === 'solid' && this.renderMode === '3d' && !isSurfaceSolidNode(node);
   }
 
+  private canRenderPlainTextPlane(): boolean {
+    return !!(this.BABYLON.DynamicTexture && this.BABYLON.MeshBuilder.CreatePlane);
+  }
+
+  private canRenderLatexTextPlane(): boolean {
+    return !!(this.BABYLON.Texture && this.BABYLON.MeshBuilder.CreatePlane && this.BABYLON.StandardMaterial);
+  }
+
   private createMeshesForProxyObject(node: GraphObjectNode, handle: GraphRenderHandle, scene: BabylonSceneLike): BabylonMeshLike[] {
     const payload = asRecord(node.payload);
     const geometry = asRecord(payload?.geometry);
@@ -666,9 +706,15 @@ export class BabylonRuntime implements BabylonRuntimePort {
     color: RgbaColor,
     metadata: Record<string, unknown>
   ): BabylonMeshLike | null {
-    if (!this.BABYLON.DynamicTexture || !this.BABYLON.MeshBuilder.CreatePlane) return null;
+    if (!this.BABYLON.MeshBuilder.CreatePlane) return null;
 
-    const text = readTextForNode(node);
+    const descriptor = resolveGraphTextRenderDescriptor(node);
+    if (descriptor?.format === 'latex') {
+      return this.createLatexTextPlane(descriptor, node, handle, scene, color, metadata);
+    }
+
+    if (!this.BABYLON.DynamicTexture) return null;
+    const text = descriptor?.text ?? readTextForNode(node);
     const textureSize = textTextureSizeForText(text);
     const visualSize = textPlaneSizeForText(text);
     const texture = new this.BABYLON.DynamicTexture(
@@ -704,6 +750,44 @@ export class BabylonRuntime implements BabylonRuntimePort {
       position.x + visualSize.width / 2,
       position.y + visualSize.height / 2,
       position.z
+    );
+    mesh.material = this.createTextMaterial(`${handle.id}:text-material`, scene, texture, color);
+    return mesh;
+  }
+
+  private createLatexTextPlane(
+    descriptor: GraphTextRenderDescriptor,
+    node: GraphObjectNode,
+    handle: GraphRenderHandle,
+    scene: BabylonSceneLike,
+    color: RgbaColor,
+    metadata: Record<string, unknown>
+  ): BabylonMeshLike | null {
+    if (!this.BABYLON.Texture || !this.BABYLON.MeshBuilder.CreatePlane) return null;
+
+    const source = descriptor.latex ?? descriptor.text;
+    const textureSize = textTextureSizeForText(source);
+    const visualSize = textPlaneSizeForText(source);
+    const svg = createLatexTextureSvg(descriptor, textureSize, color);
+    const texture = new this.BABYLON.Texture(
+      `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+      scene,
+      true,
+      true
+    );
+
+    const mesh = this.BABYLON.MeshBuilder.CreatePlane(handle.id, {
+      width: visualSize.width,
+      height: visualSize.height,
+      sideOrientation: BABYLON_DOUBLE_SIDE
+    }, scene);
+    const anchor = readObjectAnchor(node);
+    mesh.name = handle.id;
+    mesh.metadata = metadata;
+    mesh.position = new this.BABYLON.Vector3(
+      anchor.x + visualSize.width / 2,
+      anchor.y + visualSize.height / 2,
+      anchor.z + 0.08
     );
     mesh.material = this.createTextMaterial(`${handle.id}:text-material`, scene, texture, color);
     return mesh;
@@ -751,7 +835,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
     const selected = isSelectedNode(node);
     const visualScale = this.get2DVisualZoomScale();
     const label = document.createElement('div');
-    label.textContent = readTextForNode(node);
+    applyTextToDomLabel(label, node);
     label.setAttribute('data-vuegraphx-object-id', handle.objectId);
     label.setAttribute('data-vuegraphx-component-id', proxyComponentForNode(node));
     const position = projectWorldPointToLayerPercent(anchor, this.getVisible2DWorldBounds());
@@ -1274,7 +1358,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
   private createTextMaterial(
     name: string,
     scene: BabylonSceneLike,
-    texture: BabylonDynamicTextureLike,
+    texture: BabylonDynamicTextureLike | BabylonTextureLike,
     color: RgbaColor
   ): unknown {
     if (!this.BABYLON.StandardMaterial) return undefined;
@@ -1398,6 +1482,9 @@ const proxyComponentForNode = (node: GraphObjectNode): string => {
 };
 
 const readTextForNode = (node: GraphObjectNode): string => {
+  const descriptor = resolveGraphTextRenderDescriptor(node);
+  if (descriptor) return descriptor.latex ?? descriptor.text;
+
   const payload = asRecord(node.payload);
   const direct = firstNonEmptyString(payload?.text, payload?.content, payload?.label, payload?.name);
   if (direct) return direct;
@@ -1409,6 +1496,55 @@ const readTextForNode = (node: GraphObjectNode): string => {
     if (expression) return `${measurementKind}: ${expression}`;
   }
   return node.id;
+};
+
+const applyTextToDomLabel = (label: HTMLElement, node: GraphObjectNode): void => {
+  const descriptor = resolveGraphTextRenderDescriptor(node);
+  if (!descriptor) {
+    label.textContent = node.id;
+    return;
+  }
+  if (descriptor.format === 'latex') {
+    label.innerHTML = renderLatexMathMl(descriptor);
+    return;
+  }
+  label.textContent = descriptor.text;
+};
+
+const renderLatexMathMl = (descriptor: GraphTextRenderDescriptor): string => (
+  katex.renderToString(descriptor.latex ?? descriptor.text, {
+    displayMode: descriptor.displayMode ?? false,
+    output: 'mathml',
+    throwOnError: false,
+    strict: 'ignore',
+    trust: false
+  })
+);
+
+const renderLatexHtmlAndMathMl = (descriptor: GraphTextRenderDescriptor): string => (
+  katex.renderToString(descriptor.latex ?? descriptor.text, {
+    displayMode: descriptor.displayMode ?? false,
+    output: 'htmlAndMathml',
+    throwOnError: false,
+    strict: 'ignore',
+    trust: false
+  })
+);
+
+const createLatexTextureSvg = (
+  descriptor: GraphTextRenderDescriptor,
+  size: { width: number; height: number },
+  color: RgbaColor
+): string => {
+  const fontSize = Math.round(BABYLON_TEXT_TEXTURE_HEIGHT * 0.42);
+  const padding = BABYLON_TEXT_TEXTURE_PADDING;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}" viewBox="0 0 ${size.width} ${size.height}">
+<foreignObject x="0" y="0" width="100%" height="100%">
+<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:flex-start;padding:${padding}px;background:rgba(255,255,255,0.92);color:${rgbaToCss(color)};font:${fontSize}px Arial, sans-serif;overflow:hidden;">
+${renderLatexHtmlAndMathMl(descriptor)}
+</div>
+</foreignObject>
+</svg>`;
 };
 
 const textTextureSizeForText = (text: string): { width: number; height: number } => ({

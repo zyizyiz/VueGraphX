@@ -19,7 +19,10 @@ import {
   createGraphViewportCoordinateModel,
   executeGraphCapability,
   hasRendererFrameworkLeak,
+  inferGraphTextFormat,
   mergeGraphObjectPatch,
+  normalizeGraphLatexSource,
+  resolveGraphTextRenderDescriptor,
   resolveGraphDragOperation,
   unsupportedGraphSceneObjectIrDiagnostic,
   validateGraphBackendMathInteractionCapabilities,
@@ -223,6 +226,60 @@ describe('renderer-neutral core runtime contracts', () => {
         })
       ])
     );
+  });
+
+  it('normalizes renderer-neutral LaTeX text descriptors for backend adapters', () => {
+    const node = createGraphSceneObjectIrNode({
+      id: 'latex-label',
+      objectType: 'text',
+      payload: {
+        objectType: 'text',
+        content: '$$\\frac{a}{b}$$',
+        anchor: { coordinates: { dimension: '2d', x: 1, y: 2 } },
+        format: 'latex'
+      }
+    });
+
+    expect(node.ok).toBe(true);
+    expect(resolveGraphTextRenderDescriptor(node.value!)).toEqual({
+      text: '$$\\frac{a}{b}$$',
+      format: 'latex',
+      latex: '\\frac{a}{b}',
+      displayMode: true
+    });
+    expect(normalizeGraphLatexSource('\\(x^2\\)')).toEqual({ latex: 'x^2', displayMode: false });
+    expect(inferGraphTextFormat('$x^2$')).toBe('latex');
+    expect(inferGraphTextFormat('plain text')).toBe('plain');
+
+    const store = new GraphSceneStore('latex-export');
+    store.addObject(createGraphObjectNode({
+      id: 'formula-command',
+      kind: 'overlay',
+      type: 'text',
+      payload: { point: { x: 0, y: 0 }, text: '$x^2$', format: 'latex' },
+      layerId: 'overlay'
+    }));
+    const exported = store.toJSON();
+    expect(exported.value?.objects[0]?.payload).toMatchObject({
+      objectType: 'text',
+      content: '$x^2$',
+      format: 'latex'
+    });
+
+    const legacyStore = new GraphSceneStore('legacy-text-format-export');
+    const legacyResult = legacyStore.addObject(createGraphObjectNode({
+      id: 'legacy-label',
+      kind: 'overlay',
+      type: 'text',
+      payload: { point: { x: 0, y: 0 }, text: 'plain label', format: 'html' },
+      layerId: 'overlay'
+    }));
+    expect(legacyResult.ok).toBe(true);
+    expect(legacyStore.toJSON().value?.objects[0]?.payload).toMatchObject({
+      objectType: 'text',
+      content: 'plain label',
+      format: 'plain'
+    });
   });
 
   it('defines renderer-neutral scene object IR for M1 graph object families', () => {
