@@ -1,4 +1,5 @@
 import katex from 'katex';
+import katexCss from 'katex/dist/katex.min.css?raw';
 import type {
   GraphBackendContext,
   GraphBackendMountOptions,
@@ -114,6 +115,7 @@ export interface BabylonDynamicTextureLike {
 }
 
 export interface BabylonTextureLike {
+  hasAlpha?: boolean;
   dispose?(): void;
 }
 
@@ -225,6 +227,8 @@ const BABYLON_TEXT_TEXTURE_HEIGHT = 128;
 const BABYLON_TEXT_TEXTURE_PADDING = 20;
 const BABYLON_MIN_VISUAL_ZOOM_SCALE = 0.25;
 const BABYLON_MAX_VISUAL_ZOOM_SCALE = 8;
+const KATEX_STYLE_ELEMENT_ID = 'vuegraphx-katex-style';
+const KATEX_LAYOUT_CSS = katexCss.replace(/@font-face\{[^}]*\}/g, '');
 const DEFAULT_BABYLON_2D_WORLD_BOUNDS: Babylon2DWorldBounds = {
   left: -BABYLON_WORLD_HALF_EXTENT,
   right: BABYLON_WORLD_HALF_EXTENT,
@@ -775,6 +779,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
       true,
       true
     );
+    texture.hasAlpha = true;
 
     const mesh = this.BABYLON.MeshBuilder.CreatePlane(handle.id, {
       width: visualSize.width,
@@ -824,6 +829,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
       overflow: 'hidden'
     });
     host.appendChild(this.labelLayer);
+    ensureKatexStyles(host.ownerDocument);
   }
 
   private createLabelsForObject(node: GraphObjectNode, handle: GraphRenderHandle): HTMLElement[] {
@@ -832,28 +838,31 @@ export class BabylonRuntime implements BabylonRuntimePort {
     if (!this.labelLayer || typeof document === 'undefined') return [];
     const anchor = readObjectAnchor(node);
     const color = readNodeColor(node, colorForNodeType(node.type));
-    const selected = isSelectedNode(node);
-    const visualScale = this.get2DVisualZoomScale();
+    const visualScale = this.get2DTextVisualZoomScale();
     const label = document.createElement('div');
     applyTextToDomLabel(label, node);
     label.setAttribute('data-vuegraphx-object-id', handle.objectId);
     label.setAttribute('data-vuegraphx-component-id', proxyComponentForNode(node));
-    const position = projectWorldPointToLayerPercent(anchor, this.getVisible2DWorldBounds());
+    const position = project2DWorldToClient(anchor, this.getVisible2DWorldBounds(), this.viewportSize ?? readCanvasViewportSize(this.canvas));
     Object.assign(label.style, {
       position: 'absolute',
-      left: `${position.left}%`,
-      top: `${position.top}%`,
-      transform: 'translate(0, -100%)',
+      left: '0',
+      top: '0',
+      transform: createDomLabelTransform(position, visualScale),
+      transformOrigin: '0 0',
       color: rgbaToCss(color),
-      background: 'rgba(255, 255, 255, 0.88)',
-      borderRadius: `${formatCssNumber(4 * visualScale)}px`,
-      padding: `${formatCssNumber(1 * visualScale)}px ${formatCssNumber(4 * visualScale)}px`,
-      font: scaleCssFont('600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif', visualScale),
+      background: 'transparent',
+      border: '0',
+      borderRadius: '0',
+      padding: '0',
+      font: '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif',
       whiteSpace: 'nowrap',
-      textShadow: `0 ${formatCssNumber(1 * visualScale)}px 0 rgba(255, 255, 255, 0.92)`,
-      boxShadow: selected
-        ? `0 0 0 ${formatCssNumber(2 * visualScale)}px rgba(249, 115, 22, 0.55)`
-        : `0 0 0 ${formatCssNumber(1 * visualScale)}px rgba(148, 163, 184, 0.18)`
+      opacity: '1',
+      textShadow: 'none',
+      boxShadow: 'none',
+      contain: 'layout paint style',
+      willChange: 'transform',
+      outline: 'none'
     });
     this.labelLayer.appendChild(label);
     return [label];
@@ -1256,11 +1265,20 @@ export class BabylonRuntime implements BabylonRuntimePort {
   }
 
   private get2DVisualZoomScale(): number {
+    return clampVisualZoomScale(this.getRaw2DVisualZoomScale());
+  }
+
+  private get2DTextVisualZoomScale(): number {
+    // Semantic labels must keep following viewport zoom past helper-UI limits.
+    return normalizeVisualZoomScale(this.getRaw2DVisualZoomScale());
+  }
+
+  private getRaw2DVisualZoomScale(): number {
     if (this.renderMode !== '2d') return 1;
     const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
     const currentBounds = this.getVisible2DWorldBounds();
     const baselineBounds = fitBoundsToViewportAspect(this.visualBaselineWorldBounds, viewportSize);
-    return clampVisualZoomScale(boundsZoomScale(baselineBounds, currentBounds));
+    return boundsZoomScale(baselineBounds, currentBounds);
   }
 
   private refresh2DHelperArtifacts(): void {
@@ -1505,21 +1523,11 @@ const applyTextToDomLabel = (label: HTMLElement, node: GraphObjectNode): void =>
     return;
   }
   if (descriptor.format === 'latex') {
-    label.innerHTML = renderLatexMathMl(descriptor);
+    label.innerHTML = renderLatexHtmlAndMathMl(descriptor);
     return;
   }
   label.textContent = descriptor.text;
 };
-
-const renderLatexMathMl = (descriptor: GraphTextRenderDescriptor): string => (
-  katex.renderToString(descriptor.latex ?? descriptor.text, {
-    displayMode: descriptor.displayMode ?? false,
-    output: 'mathml',
-    throwOnError: false,
-    strict: 'ignore',
-    trust: false
-  })
-);
 
 const renderLatexHtmlAndMathMl = (descriptor: GraphTextRenderDescriptor): string => (
   katex.renderToString(descriptor.latex ?? descriptor.text, {
@@ -1540,12 +1548,23 @@ const createLatexTextureSvg = (
   const padding = BABYLON_TEXT_TEXTURE_PADDING;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}" viewBox="0 0 ${size.width} ${size.height}">
 <foreignObject x="0" y="0" width="100%" height="100%">
-<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:flex-start;padding:${padding}px;background:rgba(255,255,255,0.92);color:${rgbaToCss(color)};font:${fontSize}px Arial, sans-serif;overflow:hidden;">
+<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:flex-start;padding:${padding}px;background:transparent;border:0;box-shadow:none;color:${rgbaToCss(color)};font:${fontSize}px Arial, sans-serif;overflow:hidden;">
+<style><![CDATA[${escapeCdata(KATEX_LAYOUT_CSS)}]]></style>
 ${renderLatexHtmlAndMathMl(descriptor)}
 </div>
 </foreignObject>
 </svg>`;
 };
+
+const ensureKatexStyles = (doc: Document | null): void => {
+  if (!doc?.head || doc.getElementById(KATEX_STYLE_ELEMENT_ID)) return;
+  const style = doc.createElement('style');
+  style.id = KATEX_STYLE_ELEMENT_ID;
+  style.textContent = KATEX_LAYOUT_CSS;
+  doc.head.appendChild(style);
+};
+
+const escapeCdata = (value: string): string => value.replaceAll(']]>', ']]]]><![CDATA[>');
 
 const textTextureSizeForText = (text: string): { width: number; height: number } => ({
   width: clampNumber(
@@ -1559,14 +1578,6 @@ const textTextureSizeForText = (text: string): { width: number; height: number }
 const textPlaneSizeForText = (text: string): { width: number; height: number } => ({
   width: clampNumber(visualTextLength(text) * 0.32 + 0.52, 1.05, 8),
   height: BABYLON_TEXT_PLANE_HEIGHT
-});
-
-const projectWorldPointToLayerPercent = (
-  point: BabylonVector3Like,
-  bounds: Babylon2DWorldBounds
-): { left: number; top: number } => ({
-  left: ((point.x - bounds.left) / (bounds.right - bounds.left)) * 100,
-  top: ((bounds.top - point.y) / (bounds.top - bounds.bottom)) * 100
 });
 
 const readCanvasViewportSize = (canvas: HTMLCanvasElement | null): GraphViewportSize | null => {
@@ -1962,8 +1973,16 @@ const clampVisualZoomScale = (value: number): number => (
     : 1
 );
 
+const normalizeVisualZoomScale = (value: number): number => (
+  Number.isFinite(value) && value > 0 ? value : 1
+);
+
 const scaleCssFont = (font: string, visualScale: number): string => (
   font.replace(/(\d+(?:\.\d+)?)px/g, (_match, value: string) => `${formatCssNumber(Number(value) * visualScale)}px`)
+);
+
+const createDomLabelTransform = (point: { x: number; y: number }, visualScale: number): string => (
+  `translate3d(${formatCssNumber(point.x)}px, ${formatCssNumber(point.y)}px, 0) scale(${formatCssNumber(visualScale)})`
 );
 
 const estimateStandardCoordinateLabelPixelSize = (text: string, visualScale: number): { width: number; height: number } => ({

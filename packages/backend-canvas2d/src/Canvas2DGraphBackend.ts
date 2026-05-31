@@ -1,4 +1,5 @@
 import katex from 'katex';
+import katexCss from 'katex/dist/katex.min.css?raw';
 import {
   resolveGraphTextAnchor,
   resolveGraphTextRenderDescriptor,
@@ -108,6 +109,8 @@ const CANVAS2D_SUPPORTED_TYPES = new Set([
 const CANVAS2D_PARTIAL_TYPES = new Set<string>();
 const CANVAS2D_MIN_VISUAL_ZOOM_SCALE = 0.25;
 const CANVAS2D_MAX_VISUAL_ZOOM_SCALE = 8;
+const KATEX_STYLE_ELEMENT_ID = 'vuegraphx-katex-style';
+const KATEX_LAYOUT_CSS = katexCss.replace(/@font-face\{[^}]*\}/g, '');
 
 const getBaseCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
   if (node.type === 'implicit') {
@@ -406,16 +409,6 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
         this.context.fillText(payload.text, point.x, point.y);
       } else {
         const radius = readNumber(node.renderHints?.radius, 4) * visualScale;
-        this.context.save();
-        this.context.beginPath();
-        this.context.fillStyle = 'rgba(255, 255, 255, 0.96)';
-        this.context.strokeStyle = 'rgba(255, 255, 255, 0.96)';
-        this.context.lineWidth = Math.max(strokeWidth + 2 * visualScale, 4 * visualScale);
-        this.context.arc(point.x, point.y, radius + 2 * visualScale, 0, Math.PI * 2);
-        this.context.fill();
-        this.context.stroke();
-        this.context.restore();
-
         this.context.beginPath();
         this.context.fillStyle = strokeColor;
         this.context.strokeStyle = strokeColor;
@@ -628,6 +621,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
       overflow: 'hidden'
     });
     host.appendChild(this.labelLayer);
+    ensureKatexStyles(host.ownerDocument);
   }
 
   private drawPointPath(points: Array<{ x: number; y: number }>, close = false, fill = false): void {
@@ -635,7 +629,6 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const first = this.projectPoint(points[0]);
     const strokeStyle = this.context.strokeStyle;
     const lineWidth = this.context.lineWidth;
-    const visualScale = this.getVisualZoomScale();
     const drawPath = () => {
       this.context!.beginPath();
       this.context!.moveTo(first.x, first.y);
@@ -645,15 +638,6 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
       }
       if (close) this.context!.closePath();
     };
-
-    if (!fill) {
-      this.context.save();
-      this.context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      this.context.lineWidth = Math.max(Number(lineWidth) + 3 * visualScale, 5 * visualScale);
-      drawPath();
-      this.context.stroke();
-      this.context.restore();
-    }
 
     this.context.strokeStyle = strokeStyle;
     this.context.lineWidth = lineWidth;
@@ -704,31 +688,41 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     }
 
     const point = this.projectPoint(layout.point);
-    this.context.font = readString(node.renderHints?.font, '14px sans-serif');
-    this.context.fillText(layout.descriptor.latex ?? layout.descriptor.text, point.x, point.y);
+    const visualScale = this.getTextVisualZoomScale();
+    const text = layout.descriptor.latex ?? layout.descriptor.text;
+    this.drawScaledTextAt(text, point, {
+      font: readString(node.renderHints?.font, '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif'),
+      visualScale,
+      fillStyle: readString(node.renderHints?.textColor, readString(node.renderHints?.strokeColor, '#0f172a')),
+      alpha: readNumber(node.renderHints?.textOpacity, 1)
+    });
   }
 
   private drawDomTextLabel(layout: CanvasTextLayout, node: GraphObjectNode): void {
     if (!this.labelLayer || !this.canvas) return;
     const point = this.projectPoint(layout.point);
-    const width = this.canvas.width / this.pixelRatio;
-    const height = this.canvas.height / this.pixelRatio;
     const label = document.createElement('div');
+    const visualScale = this.getTextVisualZoomScale();
     label.setAttribute('data-vuegraphx-object-id', node.id);
-    label.innerHTML = renderLatexMathMl(layout.descriptor);
+    label.innerHTML = renderLatexHtmlAndMathMl(layout.descriptor);
     Object.assign(label.style, {
       position: 'absolute',
-      left: `${(point.x / Math.max(1, width)) * 100}%`,
-      top: `${(point.y / Math.max(1, height)) * 100}%`,
-      transform: 'translate(0, -100%)',
-      color: readString(node.renderHints?.strokeColor, '#334155'),
-      background: 'rgba(255, 255, 255, 0.88)',
-      borderRadius: '4px',
-      padding: '1px 4px',
+      left: '0',
+      top: '0',
+      transform: createDomLabelTransform(point, visualScale),
+      transformOrigin: '0 0',
+      color: readString(node.renderHints?.strokeColor, '#0f172a'),
+      background: 'transparent',
+      border: '0',
+      borderRadius: '0',
+      padding: '0',
       font: readString(node.renderHints?.font, '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif'),
       whiteSpace: 'nowrap',
-      textShadow: '0 1px 0 rgba(255, 255, 255, 0.92)',
-      boxShadow: '0 0 0 1px rgba(148, 163, 184, 0.18)',
+      opacity: '1',
+      textShadow: 'none',
+      boxShadow: 'none',
+      contain: 'layout paint style',
+      willChange: 'transform',
       pointerEvents: 'none'
     });
     this.labelLayer.appendChild(label);
@@ -738,14 +732,36 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (!this.context || !payload.point) return;
     const point = this.projectPoint(payload.point);
     const label = payload.text ?? `${payload.measurementKind ?? 'measure'}: ${formatNumber(payload.value)}`;
-    const visualScale = this.getVisualZoomScale();
+    const visualScale = this.getTextVisualZoomScale();
+    this.drawScaledTextAt(label, { x: point.x + 8, y: point.y - 8 }, {
+      font: '12px sans-serif',
+      visualScale,
+      fillStyle: '#334155'
+    });
+  }
+
+  private drawScaledTextAt(
+    text: string,
+    point: { x: number; y: number },
+    options: {
+      font: string;
+      visualScale: number;
+      fillStyle: string;
+      alpha?: number;
+      textAlign?: CanvasTextAlign;
+      textBaseline?: CanvasTextBaseline;
+    }
+  ): void {
+    if (!this.context) return;
     this.context.save();
-    this.context.font = scaleCssFont('12px sans-serif', visualScale);
-    this.context.lineWidth = 3 * visualScale;
-    this.context.strokeStyle = 'rgba(255, 255, 255, 0.92)';
-    this.context.strokeText(label, point.x + 8 * visualScale, point.y - 8 * visualScale);
-    this.context.fillStyle = '#334155';
-    this.context.fillText(label, point.x + 8 * visualScale, point.y - 8 * visualScale);
+    this.context.translate(point.x, point.y);
+    this.context.scale(options.visualScale, options.visualScale);
+    this.context.font = options.font;
+    this.context.textAlign = options.textAlign ?? 'left';
+    this.context.textBaseline = options.textBaseline ?? 'top';
+    this.context.fillStyle = options.fillStyle;
+    this.context.globalAlpha = options.alpha ?? 1;
+    this.context.fillText(text, 0, 0);
     this.context.restore();
   }
 
@@ -856,6 +872,15 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
   }
 
   private getVisualZoomScale(): number {
+    return clampVisualZoomScale(this.getRawVisualZoomScale());
+  }
+
+  private getTextVisualZoomScale(): number {
+    // Semantic labels must keep following viewport zoom past helper-UI limits.
+    return normalizeVisualZoomScale(this.getRawVisualZoomScale());
+  }
+
+  private getRawVisualZoomScale(): number {
     if (!this.worldBounds || !this.visualBaselineWorldBounds || !this.canvas) return 1;
     const width = this.canvas.width / this.pixelRatio;
     const height = this.canvas.height / this.pixelRatio;
@@ -869,7 +894,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
       currentScale.x / Math.max(1e-9, baselineScale.x),
       currentScale.y / Math.max(1e-9, baselineScale.y)
     );
-    return clampVisualZoomScale(scale);
+    return scale;
   }
 
   private getVisibleWorldBoundsForSize(width: number, height: number): CanvasWorldBounds | null {
@@ -908,6 +933,9 @@ const clampVisualZoomScale = (value: number): number => (
     ? Math.min(CANVAS2D_MAX_VISUAL_ZOOM_SCALE, Math.max(CANVAS2D_MIN_VISUAL_ZOOM_SCALE, value))
     : 1
 );
+const normalizeVisualZoomScale = (value: number): number => (
+  Number.isFinite(value) && value > 0 ? value : 1
+);
 const pixelsPerWorldUnit = (
   bounds: CanvasWorldBounds,
   viewport: { width: number; height: number }
@@ -921,19 +949,29 @@ const scaleCssFont = (font: string, visualScale: number): string => (
 const formatCssNumber = (value: number): string => (
   Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '0'
 );
+const createDomLabelTransform = (point: { x: number; y: number }, visualScale: number): string => (
+  `translate3d(${formatCssNumber(point.x)}px, ${formatCssNumber(point.y)}px, 0) scale(${formatCssNumber(visualScale)})`
+);
 const isSelectedNode = (node: GraphObjectNode): boolean => (
   node.meta?.selected === true || node.renderHints?.selected === true
 );
 const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '';
-const renderLatexMathMl = (descriptor: GraphTextRenderDescriptor): string => (
+const renderLatexHtmlAndMathMl = (descriptor: GraphTextRenderDescriptor): string => (
   katex.renderToString(descriptor.latex ?? descriptor.text, {
     displayMode: descriptor.displayMode ?? false,
-    output: 'mathml',
+    output: 'htmlAndMathml',
     throwOnError: false,
     strict: 'ignore',
     trust: false
   })
 );
+const ensureKatexStyles = (doc: Document | null): void => {
+  if (!doc?.head || doc.getElementById(KATEX_STYLE_ELEMENT_ID)) return;
+  const style = doc.createElement('style');
+  style.id = KATEX_STYLE_ELEMENT_ID;
+  style.textContent = KATEX_LAYOUT_CSS;
+  doc.head.appendChild(style);
+};
 const rotateAroundOrigin = (point: { x: number; y: number }, radians: number, center: { x: number; y: number }): { x: number; y: number } => {
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);

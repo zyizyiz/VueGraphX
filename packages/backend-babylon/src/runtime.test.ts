@@ -147,6 +147,7 @@ class FakeDynamicTexture {
 
 class FakeTexture {
   public static instances: FakeTexture[] = [];
+  public hasAlpha?: boolean;
   public dispose = vi.fn();
 
   public constructor(
@@ -454,7 +455,7 @@ describe('BabylonRuntime', () => {
       id: 'text-zoom',
       kind: 'overlay',
       type: 'text',
-      payload: { point: { x: 0, y: 0 }, text: 'zoom label' }
+      payload: { point: { x: 1, y: 2 }, text: 'zoom label' }
     }, {
       id: 'babylon:text-zoom',
       objectId: 'text-zoom',
@@ -464,6 +465,7 @@ describe('BabylonRuntime', () => {
     });
 
     expect((host.querySelector('[data-vuegraphx-object-id="text-zoom"]') as HTMLElement | null)?.getAttribute('style')).toContain('14px');
+    expect((host.querySelector('[data-vuegraphx-object-id="text-zoom"]') as HTMLElement | null)?.style.transform).toBe('translate3d(215px, 120px, 0) scale(1)');
 
     const initialTextureCount = FakeDynamicTexture.instances.length;
     const initialCoordinateLayer = FakeMeshBuilder.meshes.get('vuegraphx-coordinate-layer');
@@ -482,7 +484,18 @@ describe('BabylonRuntime', () => {
     expect(xAxisLabel).toMatchObject({ left: 388, top: 150, visualScale: 2 });
     expect(yAxisLabel).toMatchObject({ left: 180, top: 0, visualScale: 2 });
     expect(initialCoordinateLayer?.position?.z).toBeGreaterThan(0);
-    expect((host.querySelector('[data-vuegraphx-object-id="text-zoom"]') as HTMLElement | null)?.getAttribute('style')).toContain('28px');
+    const zoomedLabel = host.querySelector('[data-vuegraphx-object-id="text-zoom"]') as HTMLElement | null;
+    expect(zoomedLabel?.getAttribute('style')).toContain('14px');
+    expect(zoomedLabel?.style.left).toBe('0px');
+    expect(zoomedLabel?.style.top).toBe('0px');
+    expect(zoomedLabel?.style.transform).toBe('translate3d(230px, 90px, 0) scale(2)');
+    expect(zoomedLabel?.style.transformOrigin).toBe('0 0');
+
+    runtime.setWorldBounds({ left: -1, right: 1, top: 1, bottom: -1 });
+    const deeplyZoomedLabel = host.querySelector('[data-vuegraphx-object-id="text-zoom"]') as HTMLElement | null;
+    expect(deeplyZoomedLabel?.style.transform).toBe('translate3d(350px, -150px, 0) scale(10)');
+    const deeplyZoomedMetadata = initialCoordinateLayer?.metadata?.vuegraphxCoordinateLayer as { labels?: Array<{ text?: string; visualScale?: number }> } | undefined;
+    expect(deeplyZoomedMetadata?.labels?.some((label) => label.text === 'x' && label.visualScale === 8)).toBe(true);
 
     runtime.destroy();
   });
@@ -677,13 +690,15 @@ describe('BabylonRuntime', () => {
     expect(FakeMeshBuilder.CreateBox).not.toHaveBeenCalled();
     const label = host.querySelector('[data-vuegraphx-babylon-label-layer] [data-vuegraphx-object-id="text-1"]') as HTMLElement | null;
     expect(label?.textContent).toBe('Babylon文字OK');
-    expect(label?.style.left).toBe('31.25%');
-    expect(label?.style.top).toBe('35%');
+    expect(label?.style.left).toBe('0px');
+    expect(label?.style.top).toBe('0px');
+    expect(label?.style.transform).toBe('translate3d(125px, 105px, 0) scale(1)');
+    expect(label?.style.transformOrigin).toBe('0 0');
 
     runtime.destroy();
   });
 
-  it('renders 2D Babylon LaTeX text as DOM MathML labels', () => {
+  it('renders 2D Babylon LaTeX text as transparent KaTeX DOM labels', () => {
     const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
     const host = document.createElement('div');
     runtime.mount(host, {
@@ -699,7 +714,7 @@ describe('BabylonRuntime', () => {
       payload: {
         objectType: 'text',
         content: '$\\sqrt{x}$',
-        anchor: { coordinates: { dimension: '2d', x: 0, y: 0 } },
+        anchor: { coordinates: { dimension: '2d', x: 1, y: 2 } },
         format: 'latex'
       },
       renderHints: { strokeColor: '#2563eb' }
@@ -713,10 +728,27 @@ describe('BabylonRuntime', () => {
 
     expect(FakeMeshBuilder.CreatePlane).not.toHaveBeenCalled();
     const label = host.querySelector('[data-vuegraphx-babylon-label-layer] [data-vuegraphx-object-id="formula"]') as HTMLElement | null;
+    expect(label?.innerHTML).toContain('class="katex"');
+    expect(label?.innerHTML).toContain('class="katex-html"');
     expect(label?.innerHTML).toContain('<math');
     expect(label?.textContent).toContain('x');
-    expect(label?.style.left).toBe('50%');
-    expect(label?.style.top).toBe('50%');
+    expect(label?.style.left).toBe('0px');
+    expect(label?.style.top).toBe('0px');
+    expect(label?.style.transform).toBe('translate3d(215px, 120px, 0) scale(1)');
+    expect(label?.style.transformOrigin).toBe('0 0');
+    expect(label?.style.background).toBe('transparent');
+    expect(label?.style.boxShadow).toBe('none');
+    expect(label?.style.textShadow).toBe('none');
+    expect(label?.style.border).toBe('0px');
+    expect(label?.style.contain).toBe('layout paint style');
+    runtime.setWorldBounds({ left: -5, right: 5, top: 5, bottom: -5 });
+    const zoomedLabel = host.querySelector('[data-vuegraphx-babylon-label-layer] [data-vuegraphx-object-id="formula"]') as HTMLElement | null;
+    expect(zoomedLabel?.style.transform).toBe('translate3d(230px, 90px, 0) scale(2)');
+    expect(zoomedLabel?.style.font).toContain('14px');
+    runtime.setWorldBounds({ left: -1, right: 1, top: 1, bottom: -1 });
+    const deeplyZoomedLabel = host.querySelector('[data-vuegraphx-babylon-label-layer] [data-vuegraphx-object-id="formula"]') as HTMLElement | null;
+    expect(deeplyZoomedLabel?.style.transform).toBe('translate3d(350px, -150px, 0) scale(10)');
+    expect(deeplyZoomedLabel?.style.font).toContain('14px');
 
     runtime.destroy();
   });
@@ -747,7 +779,13 @@ describe('BabylonRuntime', () => {
     });
 
     expect(FakeTexture.instances).toHaveLength(1);
-    expect(decodeURIComponent(FakeTexture.instances[0]!.url ?? '')).toContain('<math');
+    const textureSvg = decodeURIComponent(FakeTexture.instances[0]!.url ?? '');
+    expect(textureSvg).toContain('class="katex"');
+    expect(textureSvg).toContain('class="katex-html"');
+    expect(textureSvg).toContain('<math');
+    expect(textureSvg).toContain('background:transparent');
+    expect(textureSvg).not.toContain('background:rgba(255,255,255');
+    expect(FakeTexture.instances[0]!.hasAlpha).toBe(true);
     expect(FakeDynamicTexture.instances).toHaveLength(0);
     expect(FakeMeshBuilder.meshes.get('babylon:formula-3d')?.material).toMatchObject({
       diffuseTexture: FakeTexture.instances[0],

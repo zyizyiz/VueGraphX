@@ -38,11 +38,12 @@ type CanvasDrawOp =
   | { name: 'stroke'; strokeStyle: string; lineWidth: number; lineToCount: number }
   | { name: 'fill'; fillStyle: string }
   | { name: 'fillText' | 'strokeText'; text: string; x: number; y: number; font: string; fillStyle?: string; strokeStyle?: string }
+  | { name: 'translate' | 'scale'; x: number; y: number }
   | { name: string; [key: string]: unknown };
 
 const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; ops: CanvasDrawOp[] } => {
   const ops: CanvasDrawOp[] = [];
-  const stack: Array<Pick<CanvasRenderingContext2D, 'strokeStyle' | 'fillStyle' | 'lineWidth' | 'font' | 'globalAlpha'>> = [];
+  const stack: Array<Pick<CanvasRenderingContext2D, 'strokeStyle' | 'fillStyle' | 'lineWidth' | 'font' | 'globalAlpha' | 'textAlign' | 'textBaseline'>> = [];
   let lineToCount = 0;
   const context: any = {
     strokeStyle: '#000000',
@@ -52,13 +53,17 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
     lineJoin: 'miter',
     font: '10px sans-serif',
     globalAlpha: 1,
+    textAlign: 'start',
+    textBaseline: 'alphabetic',
     save() {
       stack.push({
         strokeStyle: this.strokeStyle,
         fillStyle: this.fillStyle,
         lineWidth: this.lineWidth,
         font: this.font,
-        globalAlpha: this.globalAlpha
+        globalAlpha: this.globalAlpha,
+        textAlign: this.textAlign,
+        textBaseline: this.textBaseline
       });
     },
     restore() {
@@ -69,6 +74,8 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
       this.lineWidth = entry.lineWidth;
       this.font = entry.font;
       this.globalAlpha = entry.globalAlpha;
+      this.textAlign = entry.textAlign;
+      this.textBaseline = entry.textBaseline;
     },
     beginPath() {
       lineToCount = 0;
@@ -104,6 +111,12 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
     },
     clearRect() {
       ops.push({ name: 'clearRect' });
+    },
+    translate(x: number, y: number) {
+      ops.push({ name: 'translate', x, y });
+    },
+    scale(x: number, y: number) {
+      ops.push({ name: 'scale', x, y });
     },
     setTransform() {},
     setLineDash() {}
@@ -554,12 +567,13 @@ describe('shared backend contract adapters', () => {
       expect.objectContaining({ name: 'lineTo', x: 200, y: 12 }),
       expect.objectContaining({ name: 'fillText', text: 'x', x: 388, y: 100, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
       expect.objectContaining({ name: 'fillText', text: 'y', x: 180, y: 0, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
-      expect.objectContaining({ name: 'arc', radius: 12 }),
       expect.objectContaining({ name: 'arc', radius: 8 })
     ]));
     expect(ops).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'stroke', strokeStyle: '#666666', lineWidth: 2.4 })
     ]));
+    expect(ops.some((op) => op.name === 'arc' && op.radius === 12)).toBe(false);
+    expect(ops.some((op) => op.name === 'fill' && op.fillStyle === 'rgba(255, 255, 255, 0.96)')).toBe(false);
 
     backend.destroy();
   });
@@ -711,6 +725,10 @@ describe('shared backend contract adapters', () => {
       expect.objectContaining({ name: 'fill', fillStyle: '#10b981' }),
       expect.objectContaining({ name: 'fillText', text: 'distance: 4' })
     ]));
+    expect(ops.some((op) => op.name === 'stroke' && op.strokeStyle === 'rgba(255, 255, 255, 0.9)')).toBe(false);
+    expect(ops.some((op) => op.name === 'fill' && op.fillStyle === 'rgba(255, 255, 255, 0.96)')).toBe(false);
+    expect(ops.some((op) => op.name === 'stroke' && op.strokeStyle === 'rgba(255, 255, 255, 0.96)')).toBe(false);
+    expect(ops.some((op) => op.name === 'strokeText' && op.text === 'distance: 4')).toBe(false);
 
     backend.destroy();
   });
@@ -743,6 +761,100 @@ describe('shared backend contract adapters', () => {
     backend.destroy();
   });
 
+  it('renders plain Canvas2D text with opaque text color instead of translucent fill color', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-text-readable',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 400, height: 300 } });
+    const result = backend.create({
+      id: 'plain-label',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        point: { x: -6, y: 4 },
+        text: 'x²-4=0 的两个实根：-2, 2'
+      },
+      renderHints: {
+        strokeColor: '#f59e0b',
+        fillColor: '#f59e0b26'
+      },
+      layerId: 'overlay'
+    });
+
+    expect(result.ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'fillText',
+        text: 'x²-4=0 的两个实根：-2, 2',
+        fillStyle: '#f59e0b',
+        font: expect.stringContaining('14px')
+      })
+    ]));
+    expect(ops.some((op) => op.name === 'fillText' && op.text === 'x²-4=0 的两个实根：-2, 2' && op.fillStyle === '#f59e0b26')).toBe(false);
+    expect(ops.some((op) => op.name === 'strokeText' && op.text === 'x²-4=0 的两个实根：-2, 2')).toBe(false);
+
+    backend.destroy();
+  });
+
+  it('draws plain Canvas2D text from a stable transformed screen anchor under zoom', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const canvas = document.createElement('canvas');
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-plain-zoom',
+      canvas,
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 400, height: 300 } });
+    const result = backend.create({
+      id: 'plain-zoom-label',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        point: { x: 1, y: 2 },
+        text: 'zoom label'
+      },
+      renderHints: { strokeColor: '#0f172a' },
+      layerId: 'overlay'
+    });
+
+    expect(result.ok).toBe(true);
+    ops.splice(0);
+    backend.setWorldBounds({ left: -5, top: 5, right: 5, bottom: -5 });
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'translate', x: 240, y: 90 }),
+      expect.objectContaining({ name: 'scale', x: 2, y: 2 }),
+      expect.objectContaining({ name: 'fillText', text: 'zoom label', x: 0, y: 0, font: expect.stringContaining('14px') })
+    ]));
+    expect(ops.some((op) => op.name === 'fillText' && op.text === 'zoom label' && String(op.font).includes('28px'))).toBe(false);
+
+    ops.splice(0);
+    backend.setWorldBounds({ left: -1, top: 1, right: 1, bottom: -1 });
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'translate', x: 400, y: -150 }),
+      expect.objectContaining({ name: 'scale', x: 10, y: 10 }),
+      expect.objectContaining({ name: 'fillText', text: 'zoom label', x: 0, y: 0, font: expect.stringContaining('14px') })
+    ]));
+
+    backend.destroy();
+  });
+
   it('renders LaTeX text through the Canvas2D DOM label layer', () => {
     const { context, ops } = createRecordingCanvasContext();
     const canvas = document.createElement('canvas');
@@ -764,7 +876,7 @@ describe('shared backend contract adapters', () => {
       payload: {
         objectType: 'text',
         content: '$\\frac{a}{b}$',
-        anchor: { coordinates: { dimension: '2d', x: 0, y: 0 } },
+        anchor: { coordinates: { dimension: '2d', x: 1, y: 2 } },
         format: 'latex'
       },
       renderHints: { strokeColor: '#0f172a' },
@@ -776,12 +888,33 @@ describe('shared backend contract adapters', () => {
     backend.flush();
 
     const label = host.querySelector('[data-vuegraphx-canvas2d-label-layer] [data-vuegraphx-object-id="formula"]') as HTMLElement | null;
+    expect(label?.innerHTML).toContain('class="katex"');
+    expect(label?.innerHTML).toContain('class="katex-html"');
     expect(label?.innerHTML).toContain('<math');
     expect(label?.textContent).toContain('a');
     expect(label?.textContent).toContain('b');
-    expect(label?.style.left).toBe('50%');
-    expect(label?.style.top).toBe('50%');
+    expect(label?.style.left).toBe('0px');
+    expect(label?.style.top).toBe('0px');
+    expect(label?.style.transform).toBe('translate3d(220px, 120px, 0) scale(1)');
+    expect(label?.style.transformOrigin).toBe('0 0');
+    expect(label?.style.background).toBe('transparent');
+    expect(label?.style.boxShadow).toBe('none');
+    expect(label?.style.textShadow).toBe('none');
+    expect(label?.style.contain).toBe('layout paint style');
+    expect(label?.style.font).toContain('14px');
     expect(ops.some((op) => (op.name === 'fillText' || op.name === 'strokeText') && String(op.text).includes('\\frac'))).toBe(false);
+
+    backend.setWorldBounds({ left: -5, top: 5, right: 5, bottom: -5 });
+    const zoomedLabel = host.querySelector('[data-vuegraphx-canvas2d-label-layer] [data-vuegraphx-object-id="formula"]') as HTMLElement | null;
+    expect(zoomedLabel?.style.left).toBe('0px');
+    expect(zoomedLabel?.style.top).toBe('0px');
+    expect(zoomedLabel?.style.font).toContain('14px');
+    expect(zoomedLabel?.style.transform).toBe('translate3d(240px, 90px, 0) scale(2)');
+
+    backend.setWorldBounds({ left: -1, top: 1, right: 1, bottom: -1 });
+    const deeplyZoomedLabel = host.querySelector('[data-vuegraphx-canvas2d-label-layer] [data-vuegraphx-object-id="formula"]') as HTMLElement | null;
+    expect(deeplyZoomedLabel?.style.font).toContain('14px');
+    expect(deeplyZoomedLabel?.style.transform).toBe('translate3d(400px, -150px, 0) scale(10)');
 
     const unsafe = backend.create({
       id: 'unsafe-formula',
@@ -988,7 +1121,10 @@ describe('shared backend contract adapters', () => {
     expect(created[4].args).toEqual([[2, 0], [0, 0], [0, 2]]);
     expect(created[5].args).toEqual([[0, 0], [2, 0], [0, 2]]);
     expect(created[6].args).toEqual([[0, 0], [2, 0]]);
-    expect(created[7].args).toEqual([1, 1, 'A']);
+    expect(created[7].args.slice(0, 2)).toEqual([1, 1]);
+    expect(typeof created[7].args[2]).toBe('function');
+    expect((created[7].args[2] as () => string)()).toContain('A');
+    expect(created[7].attributes).toMatchObject({ anchorX: 'left', anchorY: 'top', display: 'html' });
     expect(backend.pick({ x: 1, y: 0 }, { tolerancePx: 0.1 })?.target.objectId).toBe('l');
     expect(backend.pick({ x: 0.7, y: 0 }, { tolerancePx: 0.1 })?.target.objectId).toBe('angle');
     backend.update(circle, { payload: { geometry: { kind: 'circle', center: { x: 1, y: 1 }, radius: 3 } } });

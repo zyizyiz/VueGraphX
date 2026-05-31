@@ -266,6 +266,29 @@ describe('buildPlaygroundCanvasScene', () => {
     }
   });
 
+  it('routes the real-expression parity label through LaTeX rendering with readable styling', () => {
+    const demo = getParityDemoCommands().find((entry) => entry.rowIds.includes('number.real-expression'));
+    expect(demo).toBeDefined();
+    if (!demo) throw new Error('number.real-expression demo is missing');
+
+    const labelCommand = demo.commands.find((command) => command.id.endsWith(':text-value'));
+    expect(labelCommand?.expression).toContain('$\\sqrt{2}+\\pi\\approx');
+    expect(labelCommand?.expression).toContain('\\text{实数轴/近似值}');
+    expect(labelCommand?.options).toMatchObject({ strokeColor: '#0f172a' });
+
+    const result = buildPlaygroundCanvasScene(demo.commands);
+    expect(result.diagnostics).toEqual([]);
+
+    const labels = result.nodes.filter((node) => node.type === 'text');
+    expect(labels).toHaveLength(1);
+    expect(labels[0].payload).toMatchObject({
+      point: { x: -6.4, y: 3.2 },
+      text: '$\\sqrt{2}+\\pi\\approx 4.556\\quad \\text{实数轴/近似值}$',
+      format: 'latex'
+    });
+    expect(labels[0].renderHints).toMatchObject({ strokeColor: '#0f172a' });
+  });
+
   it('creates backend handles for every curriculum parity node on all selectable first-release backends', () => {
     const demoCommands = getParityDemoCommands();
     const builders = {
@@ -283,7 +306,11 @@ describe('buildPlaygroundCanvasScene', () => {
       for (const backend of parityRendererBackends) {
         const result = builders[backend.id](demo.commands);
         expect(result.diagnostics, `${backend.id}:${demo.demoId}`).toEqual([]);
-        const runtime = new GraphSceneRuntime({ backend: backendFactories[backend.id]() });
+        const graphBackend = backendFactories[backend.id]();
+        if (backend.id === 'canvas2d') {
+          graphBackend.mount(document.createElement('div'), { size: { width: 400, height: 300 } });
+        }
+        const runtime = new GraphSceneRuntime({ backend: graphBackend });
         for (const node of result.nodes) {
           const added = runtime.addObject(node);
           expect(added.ok, `${backend.id}:${demo.demoId}:${node.id}`).toBe(true);

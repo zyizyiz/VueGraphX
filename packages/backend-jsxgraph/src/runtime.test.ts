@@ -64,7 +64,7 @@ describe('JsxGraphRuntime', () => {
   });
 
   it('renders equation and solid curriculum objects as native JSXGraph curves', () => {
-    const create = vi.fn((type: string) => ({ id: `${type}-${create.mock.calls.length}` }));
+    const create = vi.fn((type: string, _args?: unknown[], _attributes?: Record<string, unknown>) => ({ id: `${type}-${create.mock.calls.length}` }));
     const runtime = createJsxGraphRuntime({} as any, {
       board: {
         create,
@@ -138,13 +138,19 @@ describe('JsxGraphRuntime', () => {
     expect((curves[2][1] as [number[], number[]])[0]).toHaveLength(96);
   });
 
-  it('renders LaTeX text as HTML MathML for JSXGraph text elements', () => {
-    const create = vi.fn((type: string) => ({ id: `${type}-${create.mock.calls.length}` }));
+  it('renders LaTeX text as scaled KaTeX HTML for JSXGraph text elements', () => {
+    const create = vi.fn((type: string, _args?: unknown[], _attributes?: Record<string, unknown>) => ({ id: `${type}-${create.mock.calls.length}` }));
+    let boundingBox: [number, number, number, number] = [-10, 10, 10, -10];
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientWidth', { value: 400 });
+    Object.defineProperty(container, 'clientHeight', { value: 400 });
     const runtime = createJsxGraphRuntime({} as any, {
       board: {
         create,
         removeObject: vi.fn(),
-        update: vi.fn()
+        update: vi.fn(),
+        getBoundingBox: () => boundingBox,
+        containerObj: container
       }
     });
 
@@ -166,13 +172,124 @@ describe('JsxGraphRuntime', () => {
       target: { scope: 'object', objectId: 'formula', backendId: 'jsxgraph', layerId: 'overlay' }
     });
 
+    const args = create.mock.calls[0]?.[1] as unknown[] | undefined;
+    const textArg = args?.[2] as (() => string) | undefined;
+    expect(typeof textArg).toBe('function');
+    const rendered = textArg?.() ?? '';
+    expect(rendered).toContain('class="katex"');
+    expect(rendered).toContain('class="katex-html"');
+    expect(rendered).toContain('<math');
+    expect(rendered).toContain('font-size:14px');
+
+    boundingBox = [-5, 5, 5, -5];
+    expect(textArg?.()).toContain('font-size:28px');
+
+    boundingBox = [-1, 1, 1, -1];
+    expect(textArg?.()).toContain('font-size:140px');
+
     expect(create).toHaveBeenCalledWith('text', [
       1,
       2,
-      expect.stringContaining('<math')
+      expect.any(Function)
     ], expect.objectContaining({
+      anchorX: 'left',
+      anchorY: 'top',
       display: 'html',
-      parse: false
+      parse: false,
+      needsRegularUpdate: true
     }));
+  });
+
+  it('renders plain text as scaled escaped HTML for JSXGraph text elements', () => {
+    const create = vi.fn((type: string, _args?: unknown[], _attributes?: Record<string, unknown>) => ({ id: `${type}-${create.mock.calls.length}` }));
+    let boundingBox: [number, number, number, number] = [-10, 10, 10, -10];
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientWidth', { value: 400 });
+    Object.defineProperty(container, 'clientHeight', { value: 400 });
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn(),
+        getBoundingBox: () => boundingBox,
+        containerObj: container
+      }
+    });
+
+    runtime.createObject({
+      id: 'plain',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        point: { x: 1, y: 2 },
+        text: 'A < B'
+      },
+      layerId: 'overlay'
+    }, {
+      id: 'jsxgraph:plain',
+      objectId: 'plain',
+      backendId: 'jsxgraph',
+      layerId: 'overlay',
+      target: { scope: 'object', objectId: 'plain', backendId: 'jsxgraph', layerId: 'overlay' }
+    });
+
+    const args = create.mock.calls[0]?.[1] as unknown[] | undefined;
+    const textArg = args?.[2] as (() => string) | undefined;
+    expect(textArg?.()).toContain('class="vuegraphx-jsxgraph-text"');
+    expect(textArg?.()).toContain('A &lt; B');
+    expect(textArg?.()).toContain('font-size:14px');
+
+    boundingBox = [-1, 1, 1, -1];
+    expect(textArg?.()).toContain('font-size:140px');
+    expect(create).toHaveBeenCalledWith('text', [
+      1,
+      2,
+      expect.any(Function)
+    ], expect.objectContaining({
+      anchorX: 'left',
+      anchorY: 'top',
+      display: 'html',
+      parse: false,
+      needsRegularUpdate: true
+    }));
+  });
+
+  it('uses the initial board bounds as text scale baseline even if zoomed before first text render', () => {
+    const create = vi.fn((type: string, _args?: unknown[], _attributes?: Record<string, unknown>) => ({ id: `${type}-${create.mock.calls.length}` }));
+    let boundingBox: [number, number, number, number] = [-10, 10, 10, -10];
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientWidth', { value: 400 });
+    Object.defineProperty(container, 'clientHeight', { value: 400 });
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn(),
+        getBoundingBox: () => boundingBox,
+        containerObj: container
+      }
+    });
+
+    boundingBox = [-5, 5, 5, -5];
+    runtime.createObject({
+      id: 'late-text',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        point: { x: 1, y: 2 },
+        text: 'created after zoom'
+      },
+      layerId: 'overlay'
+    }, {
+      id: 'jsxgraph:late-text',
+      objectId: 'late-text',
+      backendId: 'jsxgraph',
+      layerId: 'overlay',
+      target: { scope: 'object', objectId: 'late-text', backendId: 'jsxgraph', layerId: 'overlay' }
+    });
+
+    const args = create.mock.calls[0]?.[1] as unknown[] | undefined;
+    const textArg = args?.[2] as (() => string) | undefined;
+    expect(textArg?.()).toContain('font-size:28px');
   });
 });

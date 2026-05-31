@@ -1,5 +1,6 @@
 import * as math from 'mathjs';
 import katex from 'katex';
+import katexCss from 'katex/dist/katex.min.css?raw';
 import { sampleImplicitEquationSegments } from '@vuegraphx/math';
 import {
   mergeGraphObjectPatch,
@@ -76,17 +77,22 @@ interface Point2D {
 }
 
 const DEFAULT_BOUNDS: [number, number, number, number] = [-10, 10, 10, -10];
+const JSXGRAPH_TEXT_BASE_FONT_SIZE = 14;
+const KATEX_STYLE_ELEMENT_ID = 'vuegraphx-katex-style';
+const KATEX_LAYOUT_CSS = katexCss.replace(/@font-face\{[^}]*\}/g, '');
 
 export class JsxGraphRuntime implements JsxGraphRuntimePort {
   private board: JsxGraphBoardLike | null;
   private ownsBoard = false;
   private readonly objects = new Map<string, StoredJsxGraphObject>();
+  private readonly visualBaselines = new WeakMap<JsxGraphBoardLike, { width: number; height: number }>();
 
   public constructor(
     private readonly JXG: JsxGraphNamespaceLike,
     private readonly options: JsxGraphRuntimeOptions = {}
   ) {
     this.board = options.board ?? null;
+    if (this.board) this.captureVisualBaseline(this.board);
   }
 
   public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): void {
@@ -102,6 +108,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
       })
       ?? null;
     if (!this.board) throw new Error('JSXGraph runtime requires a board or a JXG.JSXGraph.initBoard implementation.');
+    this.captureVisualBaseline(this.board);
     this.ownsBoard = true;
   }
 
@@ -292,7 +299,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
       const descriptor = resolveGraphTextRenderDescriptor(node);
       const anchor = resolveGraphTextAnchor(node);
       if (descriptor && anchor?.dimension === '2d') {
-        const renderedText = renderTextForJsxGraph(descriptor);
+        const renderedText = renderTextForJsxGraph(descriptor, board, () => this.getTextVisualZoomScale(board));
         return normalizeElements(board.create('text', [anchor.x, anchor.y, renderedText.text], {
           ...attrs,
           ...renderedText.attributes
@@ -371,6 +378,28 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     const scale = Math.min(xScale, yScale);
     return Number.isFinite(scale) && scale > 0 ? tolerancePx / scale : tolerancePx;
   }
+
+  private getTextVisualZoomScale(board: JsxGraphBoardLike): number {
+    // Semantic labels must keep following viewport zoom past helper-UI limits.
+    return normalizeVisualZoomScale(this.getRawVisualZoomScale(board));
+  }
+
+  private captureVisualBaseline(board: JsxGraphBoardLike): void {
+    if (this.visualBaselines.has(board)) return;
+    const span = readBoardWorldSpan(board);
+    if (span) this.visualBaselines.set(board, span);
+  }
+
+  private getRawVisualZoomScale(board: JsxGraphBoardLike): number {
+    const span = readBoardWorldSpan(board);
+    if (!span) return 1;
+    this.captureVisualBaseline(board);
+    const baseline = this.visualBaselines.get(board) ?? span;
+    return Math.min(
+      baseline.width / Math.max(1e-9, span.width),
+      baseline.height / Math.max(1e-9, span.height)
+    );
+  }
 }
 
 export const createJsxGraphRuntime = (
@@ -405,26 +434,82 @@ const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext):
 };
 
 const renderTextForJsxGraph = (
-  descriptor: GraphTextRenderDescriptor
-): { text: string; attributes: Record<string, unknown> } => {
-  if (descriptor.format !== 'latex') return { text: descriptor.text, attributes: {} };
+  descriptor: GraphTextRenderDescriptor,
+  board: JsxGraphBoardLike,
+  readVisualScale: () => number
+): { text: string | (() => string); attributes: Record<string, unknown> } => {
+  if (descriptor.format === 'latex') ensureKatexStyles(resolveBoardDocument(board));
+  const html = descriptor.format === 'latex'
+    ? renderLatexHtmlAndMathMl(descriptor)
+    : escapeHtml(descriptor.text);
   return {
-    text: renderLatexMathMl(descriptor),
+    text: () => wrapTextHtmlForJsxGraph(html, readVisualScale(), descriptor.format === 'latex' ? 'latex' : 'plain'),
     attributes: {
+      anchorX: 'left',
+      anchorY: 'top',
       display: 'html',
-      parse: false
+      parse: false,
+      needsRegularUpdate: true,
+      cssStyle: 'background: transparent; border: 0; box-shadow: none;'
     }
   };
 };
 
-const renderLatexMathMl = (descriptor: GraphTextRenderDescriptor): string => (
+const renderLatexHtmlAndMathMl = (descriptor: GraphTextRenderDescriptor): string => (
   katex.renderToString(descriptor.latex ?? descriptor.text, {
     displayMode: descriptor.displayMode ?? false,
-    output: 'mathml',
+    output: 'htmlAndMathml',
     throwOnError: false,
     strict: 'ignore',
     trust: false
   })
+);
+
+const wrapTextHtmlForJsxGraph = (html: string, visualScale: number, format: 'latex' | 'plain'): string => {
+  const fontSize = formatCssNumber(JSXGRAPH_TEXT_BASE_FONT_SIZE * normalizeVisualZoomScale(visualScale));
+  const className = format === 'latex' ? 'vuegraphx-jsxgraph-latex' : 'vuegraphx-jsxgraph-text';
+  return `<span class="${className}" style="display:inline-block;font-size:${fontSize}px;line-height:1.2;color:inherit;background:transparent;border:0;box-shadow:none;">${html}</span>`;
+};
+
+const ensureKatexStyles = (doc: Document | null): void => {
+  if (!doc?.head || doc.getElementById(KATEX_STYLE_ELEMENT_ID)) return;
+  const style = doc.createElement('style');
+  style.id = KATEX_STYLE_ELEMENT_ID;
+  style.textContent = KATEX_LAYOUT_CSS;
+  doc.head.appendChild(style);
+};
+
+const resolveBoardDocument = (board: JsxGraphBoardLike): Document | null => (
+  board.containerObj?.ownerDocument ?? (typeof document === 'undefined' ? null : document)
+);
+
+const readBoardWorldSpan = (board: JsxGraphBoardLike): { width: number; height: number } | null => {
+  if (!board.getBoundingBox) return null;
+  const [left, top, right, bottom] = board.getBoundingBox();
+  const width = Math.abs(right - left);
+  const height = Math.abs(top - bottom);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  return {
+    width,
+    height
+  };
+};
+
+const normalizeVisualZoomScale = (value: number): number => (
+  Number.isFinite(value) && value > 0 ? value : 1
+);
+
+const formatCssNumber = (value: number): string => (
+  Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '0'
+);
+
+const escapeHtml = (value: string): string => (
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 );
 
 const normalizeElements = (value: JsxGraphElement | JsxGraphElement[] | null | undefined): JsxGraphElement[] => {

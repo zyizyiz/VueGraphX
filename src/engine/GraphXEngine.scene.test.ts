@@ -410,7 +410,9 @@ describe('GraphXEngine scene document support', () => {
     expect(created[5].args).toEqual([[2, 0], [0, 2]]);
     expect(created[7].args).toHaveLength(4);
     expect(created[9].args).toEqual([[1, 1], Math.SQRT2]);
-    expect(created[13].args).toEqual([0, 0, 'origin']);
+    expect(created[13].args.slice(0, 2)).toEqual([0, 0]);
+    expect(typeof created[13].args[2]).toBe('function');
+    expect((created[13].args[2] as () => string)()).toContain('origin');
     expect((engine as any).renderer.render).not.toHaveBeenCalled();
     expect(engine.exportRuntimeScene().scene?.objects.map((node) => node.type)).toEqual([
       'point',

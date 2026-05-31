@@ -131,7 +131,9 @@ const commandsForParityRow = (rowId: string, index: number): readonly ParityDemo
     color,
     ...(options ? { options } : {})
   });
-  const text = (suffix: string, label: string, x = -6, y = 4): ParityDemoCommand => cmd(`text-${suffix}`, `Text(${x}, ${y}, "${label}")`);
+  const text = (suffix: string, label: string, x = -6, y = 4, options?: Record<string, unknown>): ParityDemoCommand => (
+    cmd(`text-${suffix}`, `Text(${x}, ${y}, "${label}")`, options)
+  );
 
   switch (rowId) {
     case 'number.real-expression':
@@ -141,7 +143,7 @@ const commandsForParityRow = (rowId: string, index: number): readonly ParityDemo
         cmd('B', 'B = Point(3.14, 0)'),
         cmd('axis', 'axis = Segment(O, B)'),
         cmd('unit', 'u = Segment(O, A)'),
-        text('value', '√2 + π ≈ 4.556，实数轴/近似值', -6, 2)
+        text('value', '$\\sqrt{2}+\\pi\\approx 4.556\\quad \\text{实数轴/近似值}$', -6.4, 3.2, { strokeColor: '#0f172a' })
       ];
     case 'algebra.linear-quadratic-equations':
       return [
