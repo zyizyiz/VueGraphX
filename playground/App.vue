@@ -326,11 +326,11 @@
               isCoreRendererActive ? 'core-interaction-surface' : ''
             ]"
             ref="graphContainerRef"
-            @wheel="handleCoreRendererWheel"
-            @pointerdown="handleCoreRendererPointerDown"
-            @pointermove="handleCoreRendererPointerMove"
-            @pointerup="handleCoreRendererPointerUp"
-            @pointercancel="handleCoreRendererPointerUp"
+            @wheel.capture="handleCoreRendererWheel"
+            @pointerdown.capture="handleCoreRendererPointerDown"
+            @pointermove.capture="handleCoreRendererPointerMove"
+            @pointerup.capture="handleCoreRendererPointerUp"
+            @pointercancel.capture="handleCoreRendererPointerUp"
           ></div>
           <!-- 顶层 2D 层：仅在 dual-layer 模式下显示 -->
           <div
@@ -418,6 +418,7 @@ import RelationPanel from './components/RelationPanel.vue';
 import { registerDualLayerBottomShapes, registerDualLayerTopShapes, registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 import {
+  classifyCoreRendererWheelGesture,
   panFittedBoundsByPointerDelta,
   panFittedBoundsByWheelDelta,
   zoomFittedBoundsAroundClientPoint
@@ -650,15 +651,33 @@ const selectCoreObject = (objectId: string, pick?: GraphPickResult) => {
   pushCoreInteractionDiagnostic(`selected ${objectId}${pick?.backendId ? ` via ${pick.backendId}` : ''}`);
 };
 
+const clearCoreSelection = (reason = 'selection cleared') => {
+  const runtime = isBabylonRendererActive.value ? babylonRuntimeRef.value : canvasRuntimeRef.value;
+  if (!runtime) return;
+  let cleared = false;
+  for (const node of runtime.scene.listObjects()) {
+    if (node.meta?.selected === true) {
+      runtime.updateObject(node.id, { meta: { ...(node.meta ?? {}), selected: false } });
+      cleared = true;
+    }
+  }
+  if (coreSelectedObjectId.value || cleared) {
+    coreSelectedObjectId.value = '';
+    pushCoreInteractionDiagnostic(reason);
+  }
+};
+
 const handleCoreRendererWheel = (event: WheelEvent) => {
   if (!isCoreRendererActive.value) return;
   if (isBabylonRendererActive.value && getBabylonRenderModeForCurrentMode() === '3d') return;
 
   const point = getCoreLocalPoint(event);
   if (!point) return;
+  const gesture = classifyCoreRendererWheelGesture(event);
+  if (gesture === 'ignore') return;
   event.preventDefault();
 
-  if (event.ctrlKey || event.metaKey || event.deltaMode !== 0) {
+  if (gesture === 'zoom') {
     const scale = event.deltaY < 0 ? 0.88 : 1.14;
     setCoreViewportBounds(
       zoomFittedBoundsAroundClientPoint(coreViewportBounds.value, point, getGraphViewportSize(), scale),
@@ -699,6 +718,9 @@ const handleCoreRendererPointerDown = (event: PointerEvent) => {
     selectCoreObject(routed.pick.target.objectId, routed.pick);
     return;
   }
+
+  clearCoreSelection('selection cleared via background');
+  if (isBabylonRendererActive.value && getBabylonRenderModeForCurrentMode() === '3d') return;
 
   corePanSession = {
     pointerId: event.pointerId,

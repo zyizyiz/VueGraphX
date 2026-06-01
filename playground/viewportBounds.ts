@@ -6,8 +6,26 @@ interface ViewportSize {
   height: number;
 }
 
+export type CoreWheelGestureKind = 'zoom' | 'pan' | 'ignore';
+
 const safeViewportWidth = (viewport: ViewportSize) => Math.max(1, viewport.width);
 const safeViewportHeight = (viewport: ViewportSize) => Math.max(1, viewport.height);
+
+export const classifyCoreRendererWheelGesture = (
+  event: Pick<WheelEvent, 'ctrlKey' | 'metaKey' | 'deltaMode' | 'deltaX' | 'deltaY'>
+): CoreWheelGestureKind => {
+  if (event.ctrlKey || event.metaKey || event.deltaMode !== 0) return 'zoom';
+
+  const absX = Math.abs(event.deltaX);
+  const absY = Math.abs(event.deltaY);
+  if (absX < 1 && absY < 1) return 'ignore';
+
+  // Large vertical-only wheel steps are the common mouse-wheel zoom shape.
+  // Smaller pixel-mode deltas, including vertical-only trackpad scroll, stay as pan.
+  if (absX === 0) return absY >= 40 ? 'zoom' : 'pan';
+  if (absX < 1 && absY >= 1) return 'pan';
+  return absX > absY * 0.35 ? 'pan' : 'zoom';
+};
 
 export const fitBoundsToViewportAspect = (
   bounds: CanvasWorldBounds,

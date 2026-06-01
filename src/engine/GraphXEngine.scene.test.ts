@@ -342,6 +342,67 @@ describe('GraphXEngine scene document support', () => {
     });
   });
 
+  it('selects clicked JSXGraph backend command objects and syncs stroke-width-only selection state', () => {
+    const engine = createFakeEngine();
+    const created: Array<{ type: string; args: unknown[]; attrs: Record<string, unknown>; element: Record<string, unknown> }> = [];
+    const board = (engine as any).boardMgr.board;
+    board.containerObj = document.createElement('div');
+    board.create = vi.fn((type: string, args: unknown[], attrs: Record<string, unknown>) => {
+      const element: Record<string, unknown> = { id: `${type}-${created.length + 1}`, elType: type };
+      created.push({ type, args, attrs, element });
+      return element;
+    });
+    board.removeObject = vi.fn();
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    expect(created[0].element.__vuegraphxCoreObjectId).toBe('A');
+
+    board.getAllObjectsUnderMouse = vi.fn(() => [created[0].element]);
+    (engine as any).setupGlobalEvents();
+    const downCall = board.on.mock.calls.find((call: unknown[]) => call[0] === 'down');
+    const down = downCall?.[1] as ((event: unknown) => void) | undefined;
+    expect(typeof down).toBe('function');
+    if (!down) throw new Error('down handler was not registered');
+    down({});
+
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.meta?.selected).toBe(true);
+    expect(created[1]).toMatchObject({
+      type: 'point',
+      attrs: {
+        strokeColor: '#0ea5e9',
+        fillColor: '#0ea5e926',
+        strokeWidth: 4
+      }
+    });
+
+    board.getAllObjectsUnderMouse = vi.fn(() => []);
+    down({});
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.meta?.selected).toBe(false);
+    expect(created[2]).toMatchObject({
+      type: 'point',
+      attrs: {
+        strokeWidth: 2
+      }
+    });
+  });
+
+  it('keeps runtime object deselection scoped to the requested object', () => {
+    const engine = createFakeEngine();
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    engine.executeCommand('cmd_b', 'B = (3, 4)', '#10b981');
+
+    expect(engine.executeRuntimeCapability('math.object.select', { scope: 'object', objectId: 'A' }, true)).toBe(true);
+    expect(engine.executeRuntimeCapability('math.object.select', { scope: 'object', objectId: 'B' }, true)).toBe(true);
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.meta?.selected).toBe(true);
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'B')?.meta?.selected).toBe(true);
+
+    expect(engine.executeRuntimeCapability('math.object.select', { scope: 'object', objectId: 'A' }, false)).toBe(true);
+
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.meta?.selected).toBe(false);
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'B')?.meta?.selected).toBe(true);
+  });
+
   it('routes angle command DSL through the JSXGraph backend adapter', () => {
     const engine = createFakeEngine();
     const created: Array<{ type: string; args: unknown[] }> = [];

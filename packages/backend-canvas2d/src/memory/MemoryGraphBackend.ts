@@ -41,7 +41,7 @@ const DEFAULT_CAPABILITIES: GraphBackendCapabilities = {
     'viewport.pan': createGraphBackendInteractionCapability('supported', { mechanism: 'core-viewport-contract' }),
     'object.pick': createGraphBackendInteractionCapability('supported', { mechanism: 'backend-pick' }),
     'object.select': createGraphBackendInteractionCapability('supported', { mechanism: 'core-meta-selected' }),
-    'object.highlight': createGraphBackendInteractionCapability('supported', { mechanism: 'selected-render-hints' }),
+    'object.highlight': createGraphBackendInteractionCapability('supported', { mechanism: 'selected-stroke-width-scale' }),
     project: createGraphBackendInteractionCapability('supported', { mechanism: 'backend-project' }),
     unproject: createGraphBackendInteractionCapability('supported', { mechanism: 'backend-unproject' }),
     diagnostics: createGraphBackendInteractionCapability('supported', { mechanism: 'GraphOperationDiagnostic' })

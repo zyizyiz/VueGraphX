@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CanvasWorldBounds } from '@vuegraphx/backend-canvas2d';
 import {
+  classifyCoreRendererWheelGesture,
   fitBoundsToViewportAspect,
   panFittedBoundsByPointerDelta,
   panBoundsByPointerDelta,
@@ -18,6 +19,44 @@ const project = (world: { x: number; y: number }, worldBounds: CanvasWorldBounds
 });
 
 describe('playground viewport bounds helpers', () => {
+  it('classifies core renderer wheel gestures so mouse wheels zoom and trackpads pan', () => {
+    expect(classifyCoreRendererWheelGesture({
+      ctrlKey: false,
+      metaKey: false,
+      deltaMode: 0,
+      deltaX: 0,
+      deltaY: 120
+    })).toBe('zoom');
+    expect(classifyCoreRendererWheelGesture({
+      ctrlKey: true,
+      metaKey: false,
+      deltaMode: 0,
+      deltaX: 0,
+      deltaY: 2
+    })).toBe('zoom');
+    expect(classifyCoreRendererWheelGesture({
+      ctrlKey: false,
+      metaKey: false,
+      deltaMode: 0,
+      deltaX: 0,
+      deltaY: 8
+    })).toBe('pan');
+    expect(classifyCoreRendererWheelGesture({
+      ctrlKey: false,
+      metaKey: false,
+      deltaMode: 0,
+      deltaX: 40,
+      deltaY: 10
+    })).toBe('pan');
+    expect(classifyCoreRendererWheelGesture({
+      ctrlKey: false,
+      metaKey: false,
+      deltaMode: 0,
+      deltaX: 0.2,
+      deltaY: 0.2
+    })).toBe('ignore');
+  });
+
   it('expands the requested graph box to the viewport aspect like JSXGraph keepaspectratio', () => {
     expect(fitBoundsToViewportAspect(bounds, viewport)).toEqual({
       left: -20,

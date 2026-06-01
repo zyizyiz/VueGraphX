@@ -128,7 +128,7 @@ export class JsxGraphBackend implements GraphRenderBackend {
         'object.pick': createGraphBackendInteractionCapability('supported', { mechanism: 'runtime-pick' }),
         'object.select': createGraphBackendInteractionCapability('supported', { mechanism: 'core-meta-selected' }),
         'object.highlight': createGraphBackendInteractionCapability('supported', {
-          mechanism: 'explicit selected attributes; global JSXGraph hover highlight is not required'
+          mechanism: 'selected stroke width scale; global JSXGraph hover highlight is not required'
         }),
         project: createGraphBackendInteractionCapability('supported', { mechanism: 'JSXGraph Coords adapter' }),
         unproject: createGraphBackendInteractionCapability('supported', { mechanism: 'JSXGraph Coords adapter' }),

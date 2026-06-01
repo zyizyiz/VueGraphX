@@ -733,7 +733,7 @@ describe('shared backend contract adapters', () => {
     backend.destroy();
   });
 
-  it('renders selected Canvas2D objects with explicit highlight styling', () => {
+  it('renders selected Canvas2D objects by doubling stroke width without changing color', () => {
     const { context, ops } = createRecordingCanvasContext();
     const backend = createCanvas2DGraphBackend({
       id: 'canvas-selected',
@@ -748,14 +748,46 @@ describe('shared backend contract adapters', () => {
     expect(backend.create({
       ...pointNode,
       meta: { selected: true },
-      renderHints: { strokeColor: '#0ea5e9' }
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 3 }
     }).ok).toBe(true);
     ops.splice(0);
     backend.flush();
 
     expect(ops).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'fill', fillStyle: '#f97316' }),
-      expect.objectContaining({ name: 'arc', strokeStyle: '#f97316' })
+      expect.objectContaining({ name: 'fill', fillStyle: '#0ea5e9' }),
+      expect.objectContaining({ name: 'arc', strokeStyle: '#0ea5e9' }),
+      expect.objectContaining({ name: 'stroke', strokeStyle: '#0ea5e9', lineWidth: 6 })
+    ]));
+
+    backend.destroy();
+  });
+
+  it('keeps selected Canvas2D path highlights visible when stroke width is zero', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-selected-zero-stroke',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, bottom: -10, right: 10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      id: 'f',
+      kind: 'shape',
+      type: 'function',
+      payload: { geometry: { kind: 'polyline', points: [{ x: -1, y: 0 }, { x: 1, y: 0 }] } },
+      meta: { selected: true },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 0 },
+      layerId: 'content'
+    }).ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'stroke', strokeStyle: '#0ea5e9', lineWidth: 2 })
     ]));
 
     backend.destroy();

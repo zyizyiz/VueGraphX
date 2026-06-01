@@ -144,7 +144,7 @@ export class BabylonGraphBackend implements GraphRenderBackend {
         }),
         'object.pick': createGraphBackendInteractionCapability('supported', { mechanism: 'runtime scene.pick metadata' }),
         'object.select': createGraphBackendInteractionCapability('supported', { mechanism: 'core-meta-selected' }),
-        'object.highlight': createGraphBackendInteractionCapability('supported', { mechanism: 'selected material color/emissive boost' }),
+        'object.highlight': createGraphBackendInteractionCapability('supported', { mechanism: 'selected proxy thickness scale' }),
         project: createGraphBackendInteractionCapability('supported', { mechanism: 'runtime project adapter' }),
         unproject: createGraphBackendInteractionCapability('supported', { mechanism: 'runtime unproject adapter' }),
         diagnostics: createGraphBackendInteractionCapability('supported', { mechanism: 'GraphOperationDiagnostic' })

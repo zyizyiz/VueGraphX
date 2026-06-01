@@ -358,14 +358,10 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const payload = node.payload as CanvasDrawablePayload;
     const selected = isSelectedNode(node);
     const visualScale = this.getVisualZoomScale();
-    const strokeColor = selected
-      ? readString(node.renderHints?.selectionStrokeColor, '#f97316')
-      : readString(node.renderHints?.strokeColor, '#1f6feb');
-    const fillColor = selected
-      ? readString(node.renderHints?.selectionFillColor, 'rgba(249, 115, 22, 0.2)')
-      : readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
+    const strokeColor = readString(node.renderHints?.strokeColor, '#1f6feb');
+    const fillColor = readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
     const baseStrokeWidth = readNumber(node.renderHints?.strokeWidth, 2);
-    const strokeWidth = (selected ? Math.max(baseStrokeWidth + 2, 4) : baseStrokeWidth) * visualScale;
+    const strokeWidth = (selected ? resolveSelectedStrokeWidth(baseStrokeWidth) : baseStrokeWidth) * visualScale;
     this.context.save();
     this.context.strokeStyle = strokeColor;
     this.context.fillStyle = fillColor;
@@ -374,8 +370,6 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.context.lineJoin = 'round';
     const dash = readNumber(node.renderHints?.dash, 0);
     if (dash > 0) this.context.setLineDash([dash * 4 * visualScale, dash * 3 * visualScale]);
-    if (selected) this.context.shadowColor = readString(node.renderHints?.selectionShadowColor, 'rgba(249, 115, 22, 0.35)');
-    if (selected) this.context.shadowBlur = readNumber(node.renderHints?.selectionShadowBlur, 10) * visualScale;
 
     if (node.type === 'text') {
       const layout = readCanvasTextLayout(node);
@@ -955,6 +949,8 @@ const createDomLabelTransform = (point: { x: number; y: number }, visualScale: n
 const isSelectedNode = (node: GraphObjectNode): boolean => (
   node.meta?.selected === true || node.renderHints?.selected === true
 );
+
+const resolveSelectedStrokeWidth = (strokeWidth: number): number => Math.max(1, strokeWidth) * 2;
 const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '';
 const renderLatexHtmlAndMathMl = (descriptor: GraphTextRenderDescriptor): string => (
   katex.renderToString(descriptor.latex ?? descriptor.text, {

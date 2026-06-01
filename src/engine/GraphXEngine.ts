@@ -848,7 +848,11 @@ export class GraphXEngine {
 
     board.on('down', (e: any) => {
       const objs = board.getAllObjectsUnderMouse(e) || [];
-      this.isClickingObject = objs.filter((o: any) => o.elType !== 'image').length > 0;
+      const clickableObjects = objs.filter((o: any) => o.elType !== 'image');
+      this.isClickingObject = clickableObjects.length > 0;
+      const coreObjectId = this.getCoreObjectIdFromJsxGraphObjects(clickableObjects);
+      if (coreObjectId) this.setCommandCoreSelection(coreObjectId);
+      else if (!this.isClickingObject) this.setCommandCoreSelection(null);
       Array.from(this.shapeInstances.values()).forEach((instance) => {
         instance.onBoardDown?.(e, this.isClickingObject);
       });
@@ -1037,6 +1041,15 @@ export class GraphXEngine {
   ): boolean {
     const isSceneClearAll = target.scope === 'scene' && capabilityId === 'math.scene.clear-all';
     const isSceneClearSelection = target.scope === 'scene' && capabilityId === 'math.scene.clear-selection';
+    if (isSceneClearSelection) {
+      this.setCommandCoreSelection(null);
+      this.selectShape(null);
+      return true;
+    }
+    if (target.scope === 'object' && target.objectId && capabilityId === 'math.object.select') {
+      const selected = payload === false || (isRecord(payload) && payload.selected === false) ? false : true;
+      return this.setCommandCoreObjectSelected(target.objectId, selected);
+    }
     const commandId = target.objectId ? this.getCommandIdForCoreObject(target.objectId) : null;
     const result = executeGraphCapability({
       scene: this.runtimeSceneStore,
@@ -1049,11 +1062,6 @@ export class GraphXEngine {
     if (isSceneClearAll) {
       this.clearBoard();
       this.notifyCapabilityChange();
-      return true;
-    }
-
-    if (isSceneClearSelection) {
-      this.selectShape(null);
       return true;
     }
 
@@ -1736,6 +1744,67 @@ export class GraphXEngine {
     return null;
   }
 
+  private getCoreObjectIdFromJsxGraphObjects(objects: unknown[]): string | null {
+    for (const object of objects) {
+      const objectId = this.readCoreObjectIdFromJsxGraphObject(object);
+      if (objectId && this.runtimeSceneStore.getObject(objectId)) return objectId;
+    }
+    return null;
+  }
+
+  private readCoreObjectIdFromJsxGraphObject(object: unknown): string | null {
+    if (!isRecord(object)) return null;
+    const directId = object.__vuegraphxCoreObjectId ?? object.vuegraphxCoreObjectId;
+    if (typeof directId === 'string') return directId;
+    const metadata = isRecord(object.metadata) ? object.metadata : null;
+    const metadataId = metadata?.__vuegraphxCoreObjectId ?? metadata?.vuegraphxCoreObjectId;
+    return typeof metadataId === 'string' ? metadataId : null;
+  }
+
+  private setCommandCoreObjectSelected(objectId: string, selected: boolean): boolean {
+    const object = this.runtimeSceneStore.getObject(objectId);
+    if (!object) return false;
+    if (selected && this.selectedShapeId !== null) this.selectShape(null);
+    if ((object.meta?.selected === true) === selected) return true;
+
+    const result = this.runtimeSceneStore.updateObject(object.id, {
+      meta: {
+        ...(object.meta ?? {}),
+        selected
+      }
+    });
+    if (!result.ok || !result.value) return false;
+
+    const commandId = this.getCommandIdForCoreObject(object.id);
+    if (commandId) this.syncCoreCommandMutationToJsxGraph(commandId, result.value, 'math.object.select');
+    this.notifyCapabilityChange();
+    return true;
+  }
+
+  private setCommandCoreSelection(objectId: string | null): boolean {
+    if (objectId && !this.runtimeSceneStore.getObject(objectId)) return false;
+    if (this.selectedShapeId !== null) this.selectShape(null);
+
+    let changed = false;
+    for (const object of this.runtimeSceneStore.listObjects()) {
+      const selected = object.id === objectId;
+      if ((object.meta?.selected === true) === selected) continue;
+      const result = this.runtimeSceneStore.updateObject(object.id, {
+        meta: {
+          ...(object.meta ?? {}),
+          selected
+        }
+      });
+      if (!result.ok || !result.value) continue;
+      changed = true;
+      const commandId = this.getCommandIdForCoreObject(object.id);
+      if (commandId) this.syncCoreCommandMutationToJsxGraph(commandId, result.value, 'math.object.select');
+    }
+
+    if (changed) this.notifyCapabilityChange();
+    return true;
+  }
+
   private syncCoreCommandMutationToJsxGraph(commandId: string, object: GraphObjectNode, capabilityId: string): void {
     const command = this.sceneState.listCommands().find((entry) => entry.id === commandId);
     if (!command) return;
@@ -1856,6 +1925,7 @@ export class GraphXEngine {
     if (!commandId || event.elements.length === 0) return;
 
     const elements = event.elements as JXG.GeometryElement[];
+    elements.forEach((element) => this.tagJsxGraphElementWithCoreObject(element, event.node.id, commandId));
     this.entityMgr.registerCommandElements(commandId, elements);
     if (event.node.id && elements[0]) this.entityMgr.registerNamedElement(event.node.id, elements[0]);
 
@@ -1868,6 +1938,24 @@ export class GraphXEngine {
       element: elements[0]
     });
     if (target) this.registerRelationTarget(commandId, target);
+  }
+
+  private tagJsxGraphElementWithCoreObject(element: unknown, objectId: string, commandId: string, seen = new Set<unknown>()): void {
+    if (!isRecord(element) || seen.has(element)) return;
+    seen.add(element);
+    element.__vuegraphxCoreObjectId = objectId;
+    element.__vuegraphxOwnerCommandId = commandId;
+    const metadata = isRecord(element.metadata) ? element.metadata : {};
+    metadata.__vuegraphxCoreObjectId = objectId;
+    metadata.__vuegraphxOwnerCommandId = commandId;
+    element.metadata = metadata;
+
+    for (const key of ['borders', 'vertices', 'childElements', 'subelements']) {
+      const children = element[key];
+      if (Array.isArray(children)) {
+        children.forEach((child) => this.tagJsxGraphElementWithCoreObject(child, objectId, commandId, seen));
+      }
+    }
   }
 
   private getRelationTypeForCoreNode(node: GraphObjectNode): string | null {

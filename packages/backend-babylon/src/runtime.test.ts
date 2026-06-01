@@ -592,7 +592,7 @@ describe('BabylonRuntime', () => {
     runtime.destroy();
   });
 
-  it('uses selected metadata to create explicit Babylon highlight materials', () => {
+  it('keeps selected Babylon material color unchanged', () => {
     const runtime = createBabylonRuntime(createFakeBabylon());
     const host = document.createElement('div');
     runtime.mount(host, { size: { width: 320, height: 240 } });
@@ -614,9 +614,181 @@ describe('BabylonRuntime', () => {
     });
 
     expect(FakeMeshBuilder.meshes.get('babylon:A')?.material).toMatchObject({
-      diffuseColor: { r: expect.closeTo(0.98), g: expect.closeTo(0.45), b: expect.closeTo(0.09) },
-      alpha: 1
+      diffuseColor: { r: expect.closeTo(0.0549), g: expect.closeTo(0.647), b: expect.closeTo(0.914) },
+      alpha: expect.closeTo(1)
     });
+
+    runtime.destroy();
+  });
+
+  it('doubles selected Babylon proxy path thickness from the original stroke width', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon());
+    const host = document.createElement('div');
+    runtime.mount(host, { size: { width: 320, height: 240 } });
+    clearMeshBuilderCalls();
+
+    const createPathNode = (id: string, selected: boolean): void => {
+      runtime.createObject({
+        id,
+        kind: 'shape',
+        type: 'function',
+        payload: {
+          geometry: {
+            kind: 'polyline',
+            points: [{ x: -1, y: 0 }, { x: 1, y: 0 }]
+          }
+        },
+        meta: selected ? { selected: true } : undefined,
+        renderHints: { strokeColor: '#0ea5e9', strokeWidth: 3 }
+      }, {
+        id: `babylon:${id}`,
+        objectId: id,
+        backendId: 'babylon',
+        layerId: 'content',
+        target: { scope: 'object', objectId: id, backendId: 'babylon', layerId: 'content' }
+      });
+    };
+
+    createPathNode('normal-path', false);
+    createPathNode('selected-path', true);
+
+    const normalRadius = Number(FakeMeshBuilder.meshes.get('babylon:normal-path:segment-1')?.options?.radius);
+    const selectedRadius = Number(FakeMeshBuilder.meshes.get('babylon:selected-path:segment-1')?.options?.radius);
+
+    expect(normalRadius).toBeGreaterThan(0);
+    expect(selectedRadius).toBeCloseTo(normalRadius * 2);
+    expect(FakeMeshBuilder.meshes.get('babylon:selected-path:segment-1')?.material).toMatchObject({
+      diffuseColor: { r: expect.closeTo(0.0549), g: expect.closeTo(0.647), b: expect.closeTo(0.914) }
+    });
+
+    runtime.destroy();
+  });
+
+  it('keeps selected Babylon proxy paths visible when stroke width is zero', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon());
+    const host = document.createElement('div');
+    runtime.mount(host, { size: { width: 320, height: 240 } });
+    clearMeshBuilderCalls();
+
+    runtime.createObject({
+      id: 'selected-zero-path',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: -1, y: 0 }, { x: 1, y: 0 }]
+        }
+      },
+      meta: { selected: true },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 0 }
+    }, {
+      id: 'babylon:selected-zero-path',
+      objectId: 'selected-zero-path',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'selected-zero-path', backendId: 'babylon', layerId: 'content' }
+    });
+
+    expect(Number(FakeMeshBuilder.meshes.get('babylon:selected-zero-path:segment-1')?.options?.radius)).toBeGreaterThan(0);
+
+    runtime.destroy();
+  });
+
+  it('updates Babylon 2D proxy path thickness when an object becomes selected', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
+    const host = document.createElement('div');
+    runtime.mount(host, {
+      size: { width: 400, height: 300 },
+      attributes: { renderMode: '2d', worldBounds: { left: -10, right: 10, top: 10, bottom: -10 } }
+    });
+    clearMeshBuilderCalls();
+
+    const handle: GraphRenderHandle = {
+      id: 'babylon:f',
+      objectId: 'f',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'f', backendId: 'babylon', layerId: 'content' }
+    };
+    runtime.createObject({
+      id: 'f',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: -1, y: 0 }, { x: 1, y: 0 }]
+        }
+      },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 2 }
+    }, handle);
+    expect(runtime.pick({ x: 200, y: 150 }, { tolerancePx: 4 })).toMatchObject({
+      objectId: 'f',
+      meta: { pickMode: '2d-tolerance' }
+    });
+    const normalRadius = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.radius);
+
+    runtime.updateObject(handle, { meta: { selected: true } });
+    const selectedMesh = FakeMeshBuilder.meshes.get('babylon:f:segment-1');
+    const selectedRadius = Number(selectedMesh?.options?.radius);
+
+    expect(normalRadius).toBeGreaterThan(0);
+    expect(selectedRadius).toBeCloseTo(normalRadius * 2);
+    const selectedPath = selectedMesh?.options?.path as FakeVector3[] | undefined;
+    expect(selectedPath?.[0]?.z).toBeLessThan(0);
+
+    runtime.destroy();
+  });
+
+  it('keeps Babylon 2D proxy stroke world size anchored to the baseline while camera bounds zoom', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
+    const host = document.createElement('div');
+    runtime.mount(host, {
+      size: { width: 400, height: 300 },
+      attributes: { renderMode: '2d', worldBounds: { left: -10, right: 10, top: 10, bottom: -10 } }
+    });
+    clearMeshBuilderCalls();
+
+    const handle: GraphRenderHandle = {
+      id: 'babylon:f',
+      objectId: 'f',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'f', backendId: 'babylon', layerId: 'content' }
+    };
+    runtime.createObject({
+      id: 'f',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: -1, y: 0 }, { x: 1, y: 0 }]
+        }
+      },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 2 }
+    }, handle);
+
+    const baselineRadius = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.radius);
+    runtime.setWorldBounds({ left: -5, right: 5, top: 5, bottom: -5 });
+
+    expect(FakeCamera.last).toMatchObject({
+      orthoLeft: expect.closeTo(-6.666666666666667),
+      orthoRight: expect.closeTo(6.666666666666667),
+      orthoTop: 5,
+      orthoBottom: -5
+    });
+    expect(runtime.project({ dimension: '2d', x: 1, y: 0 })).toEqual({
+      x: expect.closeTo(230),
+      y: 150
+    });
+
+    runtime.updateObject(handle, { meta: { selected: true } });
+    const selectedAfterZoomRadius = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.radius);
+
+    expect(baselineRadius).toBeGreaterThan(0);
+    expect(selectedAfterZoomRadius).toBeCloseTo(baselineRadius * 2);
 
     runtime.destroy();
   });

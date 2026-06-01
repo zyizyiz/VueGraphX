@@ -32,7 +32,7 @@ describe('JsxGraphRuntime', () => {
     expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.any(Object));
   });
 
-  it('uses explicit selected attributes instead of global JSXGraph hover highlighting', () => {
+  it('renders selected JSXGraph objects by doubling stroke width without changing color', () => {
     const create = vi.fn((type: string) => ({ id: `${type}-1` }));
     const runtime = createJsxGraphRuntime({} as any, {
       board: {
@@ -45,7 +45,7 @@ describe('JsxGraphRuntime', () => {
     runtime.createObject({
       ...createPointNode(),
       meta: { selected: true },
-      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 2, radius: 3 }
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 3, radius: 3 }
     }, {
       id: 'jsxgraph:A',
       objectId: 'A',
@@ -56,10 +56,39 @@ describe('JsxGraphRuntime', () => {
 
     expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.objectContaining({
       highlight: false,
-      strokeColor: '#f97316',
-      fillColor: '#f97316',
-      strokeWidth: 4,
-      size: 5
+      strokeColor: '#0ea5e9',
+      fillColor: '#0ea5e9',
+      strokeWidth: 6,
+      size: 3
+    }));
+  });
+
+  it('keeps selected JSXGraph highlights visible when stroke width is zero', () => {
+    const create = vi.fn((type: string) => ({ id: `${type}-1` }));
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      ...createPointNode(),
+      meta: { selected: true },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 0, radius: 3 }
+    }, {
+      id: 'jsxgraph:A',
+      objectId: 'A',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'A', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.objectContaining({
+      highlight: false,
+      strokeColor: '#0ea5e9',
+      strokeWidth: 2
     }));
   });
 

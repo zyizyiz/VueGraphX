@@ -219,6 +219,7 @@ const BABYLON_2D_PATH_Z = 0;
 const BABYLON_2D_POINT_Z = -0.02;
 const BABYLON_2D_SELECTED_Z = -0.04;
 const BABYLON_2D_TEXT_Z = -0.06;
+const BABYLON_PROXY_BASE_STROKE_WIDTH = 2;
 const BABYLON_PROXY_THICKNESS = 0.055;
 const BABYLON_CAMERA_ORTHOGRAPHIC_MODE = 1;
 const BABYLON_DOUBLE_SIDE = 2;
@@ -349,6 +350,10 @@ export class BabylonRuntime implements BabylonRuntimePort {
   }
 
   public pick(point: GraphClientPoint, _options: GraphPickOptions = {}): BabylonRuntimePickResult | null {
+    if (this.renderMode === '2d') {
+      const tolerancePick = this.pick2DObjectWithTolerance(point, _options);
+      if (tolerancePick) return tolerancePick;
+    }
     const scene = this.scene;
     if (!scene) return null;
     const info = scene.pick(point.x, point.y);
@@ -634,6 +639,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
     const geometry = asRecord(payload?.geometry);
     const color = readNodeColor(node, colorForNodeType(node.type));
     const metadata = createObjectMetadata(handle, proxyComponentForNode(node));
+    const proxyThickness = this.resolveProxyThickness(node);
 
     if (node.type === 'text' || node.type === 'measurement') {
       if (this.renderMode === '2d') return [];
@@ -666,7 +672,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
         const tube = this.createPathTube({
           name: `${handle.id}:segment-${segmentIndex + 1}`,
           points: layeredPoints,
-          thickness: BABYLON_PROXY_THICKNESS,
+          thickness: proxyThickness,
           scene,
           color,
           metadata
@@ -682,7 +688,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
             name: `${handle.id}:segment-${segmentIndex}`,
             start: segment.start,
             end: segment.end,
-            thickness: BABYLON_PROXY_THICKNESS,
+            thickness: proxyThickness,
             scene,
             color,
             metadata
@@ -1281,6 +1287,24 @@ export class BabylonRuntime implements BabylonRuntimePort {
     return boundsZoomScale(baselineBounds, currentBounds);
   }
 
+  private get2DViewportSize(): GraphViewportSize {
+    return this.viewportSize ?? readCanvasViewportSize(this.canvas) ?? { width: 1, height: 1 };
+  }
+
+  private get2DWorldUnitsPerPixel(bounds: Babylon2DWorldBounds): number {
+    const viewportSize = this.get2DViewportSize();
+    return Math.max(
+      (bounds.right - bounds.left) / Math.max(1, viewportSize.width),
+      (bounds.top - bounds.bottom) / Math.max(1, viewportSize.height)
+    );
+  }
+
+  private get2DBaselineWorldUnitsPerPixel(): number {
+    return this.get2DWorldUnitsPerPixel(
+      fitBoundsToViewportAspect(this.visualBaselineWorldBounds, this.get2DViewportSize())
+    );
+  }
+
   private refresh2DHelperArtifacts(): void {
     if (this.renderMode === '2d' && this.scene) this.installGridAndAxes();
   }
@@ -1306,6 +1330,48 @@ export class BabylonRuntime implements BabylonRuntimePort {
   private layerPathPoints(points: BabylonVector3Like[], node: GraphObjectNode): BabylonVector3Like[] {
     const z = isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z;
     return points.map((point) => this.layerPoint(point, z));
+  }
+
+  private pick2DObjectWithTolerance(point: GraphClientPoint, options: GraphPickOptions = {}): BabylonRuntimePickResult | null {
+    const world = this.unproject(point);
+    if (!world || world.dimension !== '2d') return null;
+    const bounds = this.getVisible2DWorldBounds();
+    const worldUnitsPerPixel = this.get2DWorldUnitsPerPixel(bounds);
+    const toleranceWorld = (options.tolerancePx ?? 12) * worldUnitsPerPixel;
+
+    for (const stored of [...this.objects.values()].reverse()) {
+      if (stored.node.renderHints?.visible === false) continue;
+      if (options.layerOrder && !options.layerOrder.includes(stored.handle.layerId)) continue;
+      const distance = distanceTo2DNode(stored.node, { x: world.x, y: world.y });
+      if (distance !== null && distance <= toleranceWorld + this.readNodeStrokeWorld(stored.node)) {
+        return {
+          objectId: stored.handle.objectId,
+          componentId: proxyComponentForNode(stored.node),
+          worldPoint: world,
+          distancePx: distance / Math.max(1e-9, worldUnitsPerPixel),
+          meta: { pickMode: '2d-tolerance' }
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private readNodeStrokeWorld(node: GraphObjectNode): number {
+    return this.resolveProxyThickness(node);
+  }
+
+  private resolveProxyThickness(node: GraphObjectNode): number {
+    const renderHints = asRecord(node.renderHints);
+    const strokeWidth = Math.max(
+      1,
+      readFiniteNumber(renderHints?.strokeWidth) ?? BABYLON_PROXY_BASE_STROKE_WIDTH
+    );
+    const visualStrokeWidth = isSelectedNode(node) ? strokeWidth * 2 : strokeWidth;
+    if (this.renderMode === '2d') {
+      return Math.max(0.001, visualStrokeWidth * this.get2DBaselineWorldUnitsPerPixel());
+    }
+    return BABYLON_PROXY_THICKNESS * (visualStrokeWidth / BABYLON_PROXY_BASE_STROKE_WIDTH);
   }
 
   private createLineBox(options: {
@@ -1855,6 +1921,46 @@ const createPointSegments = (
   return segments;
 };
 
+const distanceTo2DNode = (node: GraphObjectNode, point: { x: number; y: number }): number | null => {
+  const payload = asRecord(node.payload);
+  const geometry = asRecord(payload?.geometry);
+
+  if (node.type === 'point' || payload?.point || payload?.position) {
+    const anchor = readObjectAnchor(node);
+    return Math.hypot(point.x - anchor.x, point.y - anchor.y);
+  }
+
+  const pathSegments = readRenderablePathSegments(payload, geometry);
+  if (pathSegments.length > 0) {
+    let minDistance = Number.POSITIVE_INFINITY;
+    for (const segmentPoints of pathSegments) {
+      const points = node.type === 'polygon' || geometry?.kind === 'polygon'
+        ? closePointPath(segmentPoints)
+        : segmentPoints;
+      for (let index = 1; index < points.length; index += 1) {
+        minDistance = Math.min(minDistance, distanceTo2DSegment(point, points[index - 1], points[index]));
+      }
+    }
+    return Number.isFinite(minDistance) ? minDistance : null;
+  }
+
+  const anchor = readObjectAnchor(node);
+  return Math.hypot(point.x - anchor.x, point.y - anchor.y);
+};
+
+const distanceTo2DSegment = (
+  point: { x: number; y: number },
+  start: BabylonVector3Like,
+  end: BabylonVector3Like
+): number => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-12) return Math.hypot(point.x - start.x, point.y - start.y);
+  const t = clampNumber(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared, 0, 1);
+  return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
+};
+
 const colorForNodeType = (type: string): RgbaColor => {
   if (type === 'measurement' || type === 'text') return { r: 0.2, g: 0.25, b: 0.33, a: 0.92 };
   if (type === 'point') return { r: 0.86, g: 0.21, b: 0.27, a: 0.95 };
@@ -1864,7 +1970,6 @@ const colorForNodeType = (type: string): RgbaColor => {
 };
 
 const readNodeColor = (node: GraphObjectNode, fallback: RgbaColor): RgbaColor => {
-  if (isSelectedNode(node)) return { r: 0.98, g: 0.45, b: 0.09, a: 1 };
   const renderHints = asRecord(node.renderHints);
   const fromStroke = typeof renderHints?.strokeColor === 'string' ? parseCssHexColor(renderHints.strokeColor) : null;
   const fromFill = typeof renderHints?.fillColor === 'string' ? parseCssHexColor(renderHints.fillColor) : null;
