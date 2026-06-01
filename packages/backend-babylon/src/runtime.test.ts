@@ -384,9 +384,10 @@ describe('BabylonRuntime', () => {
       payload: { point: { x: 0, y: 0 }, text: 'front label' }
     }, handleFor('label'));
 
-    const functionPath = FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.path as FakeVector3[] | undefined;
-    expect(functionPath?.[0]?.z).toBeLessThan(gridZ ?? 0);
-    expect(FakeMeshBuilder.meshes.get('babylon:A')?.position?.z).toBeLessThan(functionPath?.[0]?.z ?? 0);
+    const functionPath = FakeMeshBuilder.meshes.get('babylon:f:segment-1');
+    expect(Number(functionPath?.options?.height)).toBeGreaterThan(0);
+    expect(functionPath?.position?.z).toBeLessThan(gridZ ?? 0);
+    expect(FakeMeshBuilder.meshes.get('babylon:A')?.position?.z).toBeLessThan(functionPath?.position?.z ?? 0);
     expect(host.querySelector('[data-vuegraphx-object-id="label"]')).not.toBeNull();
 
     runtime.destroy();
@@ -727,16 +728,21 @@ describe('BabylonRuntime', () => {
       objectId: 'f',
       meta: { pickMode: '2d-tolerance' }
     });
-    const normalRadius = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.radius);
+    const normalThickness = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.height);
 
     runtime.updateObject(handle, { meta: { selected: true } });
     const selectedMesh = FakeMeshBuilder.meshes.get('babylon:f:segment-1');
-    const selectedRadius = Number(selectedMesh?.options?.radius);
+    const selectedCap = FakeMeshBuilder.meshes.get('babylon:f:cap-1-1');
+    const selectedThickness = Number(selectedMesh?.options?.height);
 
-    expect(normalRadius).toBeGreaterThan(0);
-    expect(selectedRadius).toBeCloseTo(normalRadius * 2);
-    const selectedPath = selectedMesh?.options?.path as FakeVector3[] | undefined;
-    expect(selectedPath?.[0]?.z).toBeLessThan(0);
+    expect(normalThickness).toBeGreaterThan(0);
+    expect(selectedThickness).toBeCloseTo(normalThickness * 2);
+    expect(selectedMesh?.position?.z).toBeLessThan(0);
+    expect(selectedCap?.position?.z).toBeLessThan(selectedMesh?.position?.z ?? 0);
+    expect(selectedMesh?.material).toMatchObject({
+      disableLighting: true,
+      specularColor: { r: 0, g: 0, b: 0 }
+    });
 
     runtime.destroy();
   });
@@ -770,7 +776,7 @@ describe('BabylonRuntime', () => {
       renderHints: { strokeColor: '#0ea5e9', strokeWidth: 2 }
     }, handle);
 
-    const baselineRadius = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.radius);
+    const baselineThickness = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.height);
     runtime.setWorldBounds({ left: -5, right: 5, top: 5, bottom: -5 });
 
     expect(FakeCamera.last).toMatchObject({
@@ -785,10 +791,10 @@ describe('BabylonRuntime', () => {
     });
 
     runtime.updateObject(handle, { meta: { selected: true } });
-    const selectedAfterZoomRadius = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.radius);
+    const selectedAfterZoomThickness = Number(FakeMeshBuilder.meshes.get('babylon:f:segment-1')?.options?.height);
 
-    expect(baselineRadius).toBeGreaterThan(0);
-    expect(selectedAfterZoomRadius).toBeCloseTo(baselineRadius * 2);
+    expect(baselineThickness).toBeGreaterThan(0);
+    expect(selectedAfterZoomThickness).toBeCloseTo(baselineThickness * 2);
 
     runtime.destroy();
   });
@@ -819,11 +825,10 @@ describe('BabylonRuntime', () => {
       target: { scope: 'object', objectId: 'hyp', backendId: 'babylon', layerId: 'content' }
     });
 
-    const branchTubes = [...FakeMeshBuilder.meshes]
-      .filter(([name]) => name.startsWith('babylon:hyp:segment-'))
-      .map(([, mesh]) => mesh.options?.path);
-    expect(branchTubes).toHaveLength(2);
-    expect(branchTubes.every((path) => Array.isArray(path) && path.length === 48)).toBe(true);
+    const branchPlanes = [...FakeMeshBuilder.meshes]
+      .filter(([name]) => name.startsWith('babylon:hyp:segment-') && !name.includes(':cap-'));
+    expect(branchPlanes).toHaveLength(94);
+    expect(branchPlanes.every(([, mesh]) => Number(mesh.options?.width) > 0 && Number(mesh.options?.height) > 0)).toBe(true);
 
     runtime.destroy();
   });

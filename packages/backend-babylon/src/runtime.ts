@@ -219,6 +219,8 @@ const BABYLON_2D_PATH_Z = 0;
 const BABYLON_2D_POINT_Z = -0.02;
 const BABYLON_2D_SELECTED_Z = -0.04;
 const BABYLON_2D_TEXT_Z = -0.06;
+const BABYLON_2D_LAYER_Z_STEP = 0.0001;
+const BABYLON_2D_JOIN_Z_OFFSET = BABYLON_2D_LAYER_Z_STEP * 0.25;
 const BABYLON_PROXY_BASE_STROKE_WIDTH = 2;
 const BABYLON_PROXY_THICKNESS = 0.055;
 const BABYLON_CAMERA_ORTHOGRAPHIC_MODE = 1;
@@ -253,6 +255,8 @@ export class BabylonRuntime implements BabylonRuntimePort {
   private readonly objects = new Map<string, BabylonStoredObject>();
   private readonly helperMeshes: BabylonMeshLike[] = [];
   private readonly helperLabels: HTMLElement[] = [];
+  private readonly object2DLayerOrders = new Map<string, number>();
+  private next2DLayerOrder = 0;
   private coordinateLayer: Babylon2DCoordinateLayer | null = null;
 
   public constructor(
@@ -347,6 +351,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
     if (!stored) return;
     this.disposeStoredObject(stored);
     this.objects.delete(handle.id);
+    this.object2DLayerOrders.delete(handle.id);
   }
 
   public pick(point: GraphClientPoint, _options: GraphPickOptions = {}): BabylonRuntimePickResult | null {
@@ -408,6 +413,8 @@ export class BabylonRuntime implements BabylonRuntimePort {
     if (this.renderLoop) this.engine?.stopRenderLoop?.(this.renderLoop);
     for (const object of this.objects.values()) this.disposeStoredObject(object);
     this.objects.clear();
+    this.object2DLayerOrders.clear();
+    this.next2DLayerOrder = 0;
     this.disposeHelperMeshes();
     this.disposeCoordinateLayer();
     this.scene?.dispose();
@@ -649,16 +656,25 @@ export class BabylonRuntime implements BabylonRuntimePort {
 
     if (node.type === 'point') {
       const anchor = readObjectAnchor(node);
+      const pointZ = this.resolve2DLayerZ(handle, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_POINT_Z);
       const position = this.renderMode === '2d'
-        ? this.layerPoint(anchor, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_POINT_Z)
+        ? this.layerPoint(anchor, pointZ)
         : { x: anchor.x, y: anchor.y, z: anchor.z + 0.02 };
-      const mesh = this.BABYLON.MeshBuilder.CreateSphere
+      const mesh = this.renderMode === '2d' && this.BABYLON.MeshBuilder.CreateDisc
+        ? this.BABYLON.MeshBuilder.CreateDisc(handle.id, {
+          radius: 0.16,
+          tessellation: 32,
+          sideOrientation: BABYLON_DOUBLE_SIDE
+        }, scene)
+        : this.BABYLON.MeshBuilder.CreateSphere
         ? this.BABYLON.MeshBuilder.CreateSphere(handle.id, { diameter: 0.32, segments: 18 }, scene)
         : this.BABYLON.MeshBuilder.CreateBox(handle.id, { size: 0.28 }, scene);
       mesh.name = handle.id;
       mesh.metadata = metadata;
       mesh.position = new this.BABYLON.Vector3(position.x, position.y, position.z);
-      mesh.material = this.createMaterial(`${handle.id}:material`, scene, color);
+      mesh.material = this.renderMode === '2d'
+        ? this.createFlatMaterial(`${handle.id}:material`, scene, color)
+        : this.createMaterial(`${handle.id}:material`, scene, color);
       return [mesh];
     }
 
@@ -668,7 +684,21 @@ export class BabylonRuntime implements BabylonRuntimePort {
       return pathSegments.flatMap((linePoints) => {
         const close = node.type === 'polygon' || geometry?.kind === 'polygon';
         const points = close ? closePointPath(linePoints) : linePoints;
-        const layeredPoints = this.layerPathPoints(points, node);
+        const pathZ = this.resolve2DLayerZ(handle, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z);
+        const layeredPoints = this.layerPathPoints(points, pathZ);
+        if (this.renderMode === '2d' && this.BABYLON.MeshBuilder.CreatePlane) {
+          const meshes = this.createFlatPathMeshes({
+            namePrefix: `${handle.id}:segment`,
+            points: layeredPoints,
+            thickness: proxyThickness,
+            scene,
+            color,
+            metadata,
+            startIndex: segmentIndex
+          });
+          segmentIndex += meshes.segmentCount;
+          return meshes.meshes;
+        }
         const tube = this.createPathTube({
           name: `${handle.id}:segment-${segmentIndex + 1}`,
           points: layeredPoints,
@@ -698,8 +728,9 @@ export class BabylonRuntime implements BabylonRuntimePort {
     }
 
     const rawAnchor = readObjectAnchor(node);
+    const fallbackZ = this.resolve2DLayerZ(handle, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z);
     const anchor = this.renderMode === '2d'
-      ? this.layerPoint(rawAnchor, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z)
+      ? this.layerPoint(rawAnchor, fallbackZ)
       : { x: rawAnchor.x, y: rawAnchor.y, z: rawAnchor.z + 0.02 };
     const mesh = this.BABYLON.MeshBuilder.CreateBox(handle.id, proxyDimensionsForNode(node), scene);
     mesh.name = handle.id;
@@ -1327,9 +1358,19 @@ export class BabylonRuntime implements BabylonRuntimePort {
     return this.renderMode === '2d' ? { x: point.x, y: point.y, z } : point;
   }
 
-  private layerPathPoints(points: BabylonVector3Like[], node: GraphObjectNode): BabylonVector3Like[] {
-    const z = isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z;
+  private layerPathPoints(points: BabylonVector3Like[], z: number): BabylonVector3Like[] {
     return points.map((point) => this.layerPoint(point, z));
+  }
+
+  private resolve2DLayerZ(handle: GraphRenderHandle, baseZ: number): number {
+    if (this.renderMode !== '2d') return baseZ;
+    let order = this.object2DLayerOrders.get(handle.id);
+    if (order === undefined) {
+      order = this.next2DLayerOrder;
+      this.next2DLayerOrder += 1;
+      this.object2DLayerOrders.set(handle.id, order);
+    }
+    return baseZ - order * BABYLON_2D_LAYER_Z_STEP;
   }
 
   private pick2DObjectWithTolerance(point: GraphClientPoint, options: GraphPickOptions = {}): BabylonRuntimePickResult | null {
@@ -1372,6 +1413,100 @@ export class BabylonRuntime implements BabylonRuntimePort {
       return Math.max(0.001, visualStrokeWidth * this.get2DBaselineWorldUnitsPerPixel());
     }
     return BABYLON_PROXY_THICKNESS * (visualStrokeWidth / BABYLON_PROXY_BASE_STROKE_WIDTH);
+  }
+
+  private createFlatPathMeshes(options: {
+    namePrefix: string;
+    points: BabylonVector3Like[];
+    thickness: number;
+    scene: BabylonSceneLike;
+    color: RgbaColor;
+    metadata: Record<string, unknown> | null;
+    startIndex: number;
+  }): { meshes: BabylonMeshLike[]; segmentCount: number } {
+    const meshes: BabylonMeshLike[] = [];
+    const segments = createPointSegments(options.points);
+    let segmentIndex = options.startIndex;
+
+    for (const segment of segments) {
+      segmentIndex += 1;
+      meshes.push(this.createFlatLinePlane({
+        name: `${options.namePrefix}-${segmentIndex}`,
+        start: segment.start,
+        end: segment.end,
+        thickness: options.thickness,
+        scene: options.scene,
+        color: options.color,
+        metadata: options.metadata
+      }));
+    }
+
+    if (this.BABYLON.MeshBuilder.CreateDisc) {
+      const capPrefix = options.namePrefix.replace(':segment', ':cap');
+      options.points.forEach((point, pointIndex) => {
+        meshes.push(this.createFlatDisc({
+          name: `${capPrefix}-${options.startIndex + 1}-${pointIndex + 1}`,
+          center: { ...point, z: point.z - BABYLON_2D_JOIN_Z_OFFSET },
+          radius: options.thickness / 2,
+          scene: options.scene,
+          color: options.color,
+          metadata: options.metadata
+        }));
+      });
+    }
+
+    return { meshes, segmentCount: segments.length };
+  }
+
+  private createFlatLinePlane(options: {
+    name: string;
+    start: BabylonVector3Like;
+    end: BabylonVector3Like;
+    thickness: number;
+    scene: BabylonSceneLike;
+    color: RgbaColor;
+    metadata: Record<string, unknown> | null;
+  }): BabylonMeshLike {
+    const dx = options.end.x - options.start.x;
+    const dy = options.end.y - options.start.y;
+    const length = Math.max(0.001, Math.hypot(dx, dy));
+    const mesh = this.BABYLON.MeshBuilder.CreatePlane!(options.name, {
+      width: length,
+      height: options.thickness,
+      sideOrientation: BABYLON_DOUBLE_SIDE
+    }, options.scene);
+    mesh.name = options.name;
+    if (!options.metadata) mesh.isPickable = false;
+    if (options.metadata) mesh.metadata = { ...(mesh.metadata ?? {}), ...options.metadata };
+    mesh.position = new this.BABYLON.Vector3(
+      (options.start.x + options.end.x) / 2,
+      (options.start.y + options.end.y) / 2,
+      (options.start.z + options.end.z) / 2
+    );
+    mesh.rotation = new this.BABYLON.Vector3(0, 0, Math.atan2(dy, dx));
+    mesh.material = this.createFlatMaterial(`${options.name}:material`, options.scene, options.color);
+    return mesh;
+  }
+
+  private createFlatDisc(options: {
+    name: string;
+    center: BabylonVector3Like;
+    radius: number;
+    scene: BabylonSceneLike;
+    color: RgbaColor;
+    metadata: Record<string, unknown> | null;
+  }): BabylonMeshLike {
+    const mesh = this.BABYLON.MeshBuilder.CreateDisc!(options.name, {
+      radius: Math.max(0.0005, options.radius),
+      tessellation: 24,
+      sideOrientation: BABYLON_DOUBLE_SIDE
+    }, options.scene);
+    mesh.name = options.name;
+    if (!options.metadata) mesh.isPickable = false;
+    if (options.metadata) mesh.metadata = { ...(mesh.metadata ?? {}), ...options.metadata };
+    mesh.position = new this.BABYLON.Vector3(options.center.x, options.center.y, options.center.z);
+    mesh.material = this.createFlatMaterial(`${options.name}:material`, options.scene, options.color);
+    return mesh;
   }
 
   private createLineBox(options: {
@@ -1436,6 +1571,19 @@ export class BabylonRuntime implements BabylonRuntimePort {
     material.emissiveColor = this.createColor3(color.r * 0.18, color.g * 0.18, color.b * 0.18);
     material.specularColor = this.createColor3(0.08, 0.08, 0.08);
     material.alpha = color.a;
+    return material;
+  }
+
+  private createFlatMaterial(name: string, scene: BabylonSceneLike, color: RgbaColor): unknown {
+    if (!this.BABYLON.StandardMaterial) return undefined;
+    const material = new this.BABYLON.StandardMaterial(name, scene);
+    const color3 = this.createColor3(color.r, color.g, color.b);
+    material.diffuseColor = color3;
+    material.emissiveColor = color3;
+    material.specularColor = this.createColor3(0, 0, 0);
+    material.alpha = color.a;
+    material.backFaceCulling = false;
+    material.disableLighting = true;
     return material;
   }
 
