@@ -18,16 +18,3 @@ export function registerPlaygroundShapes(engine: GraphXEngine) {
     wireframeCubeShapeDefinition
   ]);
 }
-
-export function registerDualLayerTopShapes(engine: GraphXEngine) {
-  engine.registerShapes([
-    circleShapeDefinition,
-    triangleShapeDefinition
-  ]);
-}
-
-export function registerDualLayerBottomShapes(engine: GraphXEngine) {
-  engine.registerShapes([
-    wireframeCubeShapeDefinition
-  ]);
-}

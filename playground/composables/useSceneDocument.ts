@@ -42,7 +42,7 @@ export function useSceneDocument(options: UseSceneDocumentOptions) {
   const diagnostics = ref<GraphSceneDiagnostic[]>([]);
   const lastStatus = ref<GraphSceneExportResult['status'] | GraphSceneLoadStatus | null>(null);
 
-  const supportsScene = computed(() => options.getActiveMode() !== 'dual-layer');
+  const supportsScene = computed(() => true);
   const errorCount = computed(() => diagnostics.value.filter((item) => item.severity === 'error').length);
 
   const setFailureDiagnostics = (message: string) => {

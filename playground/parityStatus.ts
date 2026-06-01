@@ -42,8 +42,8 @@ export const parityRendererBackends: { id: PlaygroundRenderBackend; label: strin
   { id: 'babylon', label: 'Babylon Core' }
 ];
 
-export const isBackendSelectableForMode = (mode: PlaygroundMode, backend: PlaygroundRenderBackend): boolean => (
-  mode === 'dual-layer' ? backend === 'jsxgraph' : CURRICULUM_PARITY_BACKENDS.includes(backend)
+export const isBackendSelectableForMode = (_mode: PlaygroundMode, backend: PlaygroundRenderBackend): boolean => (
+  CURRICULUM_PARITY_BACKENDS.includes(backend)
 );
 
 export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, PlaygroundBackendCapability> => {
@@ -57,7 +57,7 @@ export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, 
       summary: `课程标准原生同构后端：与 Canvas2D/Babylon 使用同一份语义场景和 ${coverage}。`,
       supported: [`对象族：${objectTypes.join(' / ')}`, `能力族：${families.join(' / ')}`],
       unsupported: [],
-      notes: ['关系面板、隐藏线调试、双层区仍属于 JSXGraph 专项面板；课程 parity demo 不依赖这些专项面板。'],
+      notes: ['关系面板、隐藏线调试仍属于 JSXGraph 专项面板；课程 parity demo 不依赖这些专项面板。'],
       interactions: [
         { id: 'viewport.zoom', label: '缩放', status: 'supported', detail: 'JSXGraph board zoom + VueGraphX modifier-wheel bridge' },
         { id: 'viewport.gestureZoom', label: '手势缩放', status: 'supported', detail: 'pinch 选项和 ctrl/meta wheel 兼容路径' },

@@ -59,7 +59,7 @@ const createMockEngine = () => {
 describe('useRelations', () => {
   it('subscribes to relation state and creates a distance assertion from selected targets', async () => {
     const engine = createMockEngine();
-    const activeMode = ref<'2d' | '3d' | 'geometry' | 'dual-layer'>('geometry');
+    const activeMode = ref<'2d' | '3d' | 'geometry'>('geometry');
     const engineRef = ref(engine as any);
 
     const relationState = useRelations({

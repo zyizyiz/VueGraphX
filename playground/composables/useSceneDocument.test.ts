@@ -30,7 +30,7 @@ describe('useSceneDocument', () => {
   });
 
   it('switches mode and syncs command store after importing a scene', async () => {
-    let activeMode: '2d' | '3d' | 'geometry' | 'dual-layer' = '3d';
+    let activeMode: '2d' | '3d' | 'geometry' = '3d';
     const syncCommandsFromScene = vi.fn();
     const switchMode = vi.fn(async (mode: typeof activeMode) => {
       activeMode = mode;

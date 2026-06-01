@@ -328,7 +328,6 @@ describe('buildPlaygroundCanvasScene', () => {
       expect(isBackendSelectableForMode('2d', backend.id)).toBe(true);
       expect(isBackendSelectableForMode('geometry', backend.id)).toBe(true);
       expect(isBackendSelectableForMode('3d', backend.id)).toBe(true);
-      expect(isBackendSelectableForMode('dual-layer', backend.id)).toBe(backend.id === 'jsxgraph');
       expect(getParityCapabilitySummaries()[backend.id].unsupported).toEqual([]);
     }
   });

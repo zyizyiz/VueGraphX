@@ -283,19 +283,5 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       desc: '一条直线穿过两点，配合圆形演示',
       commands: ['A = (-3, -1)', 'B = (3, 1)', 'O = (0, 3)', 'R = (2, 3)', 'Line(A, B)', 'Circle(O, R)']
     }
-  ],
-  'dual-layer': [
-    {
-      emoji: '🧬',
-      title: '2D/3D 双层穿透',
-      desc: '左侧面板添加 2D 圆/三角与 3D 线框体，底部控件验证事件穿透',
-      commands: []
-    },
-    {
-      emoji: '🧊',
-      title: '立体展开控件',
-      desc: '几何区可创建 cube-2d / cylinder-2d / cone-2d；双层区保留底层 3D + 顶层 2D 协同',
-      commands: []
-    }
   ]
 };

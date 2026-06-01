@@ -53,7 +53,7 @@ export function useHiddenLineDebug(options: UseHiddenLineDebugOptions) {
 
   const supportsHiddenLine = computed(() => {
     const mode = options.getActiveMode();
-    return mode === '3d' || mode === 'dual-layer';
+    return mode === '3d';
   });
 
   const refreshSnapshot = (): GraphHiddenLineSceneSnapshot | null => {

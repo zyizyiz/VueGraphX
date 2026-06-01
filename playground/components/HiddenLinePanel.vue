@@ -3,7 +3,7 @@
     <div class="flex items-start justify-between gap-3">
       <div>
         <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Hidden Line</p>
-        <p class="text-[11px] text-slate-400 mt-1">3D / 双层模式下的隐线调试与质量档位</p>
+        <p class="text-[11px] text-slate-400 mt-1">3D 模式下的隐线调试与质量档位</p>
       </div>
       <span
         class="rounded-full px-2 py-1 text-[10px] font-semibold"
@@ -114,7 +114,7 @@
     </div>
 
     <div v-else class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-[11px] leading-5 text-slate-500">
-      当前模式下没有 hidden-line 运行时。切到 `3d` 或 `dual-layer` 后，这里会显示 source 数、遮挡统计和 diagnostics。
+      当前模式下没有 hidden-line 运行时。切到 `3d` 后，这里会显示 source 数、遮挡统计和 diagnostics。
     </div>
   </div>
 </template>
