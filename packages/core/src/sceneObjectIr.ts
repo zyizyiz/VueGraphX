@@ -26,7 +26,8 @@ export const SUPPORTED_GRAPH_SCENE_OBJECT_IR_TYPES = [
   'vector',
   'transform',
   'measurement',
-  'solid'
+  'solid',
+  'coordinate-system'
 ] as const;
 
 export type GraphSceneObjectIrType = typeof SUPPORTED_GRAPH_SCENE_OBJECT_IR_TYPES[number];
@@ -58,6 +59,16 @@ export interface GraphSceneNumericDomain {
   min?: number;
   max?: number;
   step?: number;
+}
+
+export interface GraphSceneAxisRange {
+  min: number;
+  max: number;
+}
+
+export interface GraphSceneViewportSize {
+  width: number;
+  height: number;
 }
 
 export interface GraphSceneVectorComponents {
@@ -223,6 +234,22 @@ export interface GraphSolidSceneObjectIr extends GraphSceneObjectIrBase<'solid'>
   parameters?: Record<string, unknown>;
 }
 
+export interface GraphCoordinateSystemSceneObjectIr extends GraphSceneObjectIrBase<'coordinate-system'> {
+  dimension: 'plane' | 'space';
+  origin: Extract<GraphSceneCoordinate, { dimension: '2d' }>;
+  size: GraphSceneViewportSize;
+  unitPx: number;
+  xRange: GraphSceneAxisRange;
+  yRange: GraphSceneAxisRange;
+  showAxes?: boolean;
+  showTicks?: boolean;
+  showLabels?: boolean;
+  clipContent?: boolean;
+  snap?: boolean;
+  colorSequence?: readonly string[];
+  geometry?: Record<string, unknown>;
+}
+
 export type GraphSceneObjectIr =
   | GraphPointSceneObjectIr
   | GraphLineSceneObjectIr
@@ -237,7 +264,8 @@ export type GraphSceneObjectIr =
   | GraphVectorSceneObjectIr
   | GraphTransformSceneObjectIr
   | GraphMeasurementSceneObjectIr
-  | GraphSolidSceneObjectIr;
+  | GraphSolidSceneObjectIr
+  | GraphCoordinateSystemSceneObjectIr;
 
 export type GraphSceneObjectIrNode = GraphObjectNode<GraphSceneObjectIr> & {
   type: GraphSceneObjectIrType;
@@ -387,6 +415,10 @@ const isOptionalString = (value: unknown): boolean => value === undefined || typ
 
 const isOptionalNumber = (value: unknown): boolean => value === undefined || isFiniteNumber(value);
 
+const isOptionalBoolean = (value: unknown): boolean => value === undefined || typeof value === 'boolean';
+
+const isFinitePositiveNumber = (value: unknown): value is number => isFiniteNumber(value) && value > 0;
+
 const validateCommonSceneObjectIrFields = (payload: PlainRecord): ValidationFailure | null => {
   if (payload.schemaVersion !== undefined && payload.schemaVersion !== GRAPH_SCENE_OBJECT_IR_VERSION) {
     return invalidPayload('schemaVersion', `${GRAPH_SCENE_OBJECT_IR_VERSION}`);
@@ -471,6 +503,23 @@ const validateSceneObjectIrShape = (
         && (payload.parameters === undefined || !!asRecord(payload.parameters))
         ? null
         : invalidPayload('solidKind', 'solid kind with optional 3D vertices/faces/parameters');
+    case 'coordinate-system':
+      return (payload.dimension === 'plane' || payload.dimension === 'space')
+        && isGraphSceneCoordinate(payload.origin)
+        && asRecord(payload.origin)?.dimension === '2d'
+        && isViewportSize(payload.size)
+        && isFinitePositiveNumber(payload.unitPx)
+        && isAxisRange(payload.xRange)
+        && isAxisRange(payload.yRange)
+        && isOptionalBoolean(payload.showAxes)
+        && isOptionalBoolean(payload.showTicks)
+        && isOptionalBoolean(payload.showLabels)
+        && isOptionalBoolean(payload.clipContent)
+        && isOptionalBoolean(payload.snap)
+        && (payload.colorSequence === undefined || isStringArray(payload.colorSequence))
+        && (payload.geometry === undefined || !!asRecord(payload.geometry))
+        ? null
+        : invalidPayload('coordinate-system', 'dimension, 2D origin, size, positive unitPx, axis ranges, flags, and optional proxy geometry');
   }
 };
 
@@ -509,6 +558,16 @@ const isSceneVectorComponents = (value: unknown): value is GraphSceneVectorCompo
 const isNumericDomain = (value: unknown): value is GraphSceneNumericDomain => {
   const domain = asRecord(value);
   return !!domain && isOptionalNumber(domain.min) && isOptionalNumber(domain.max) && isOptionalNumber(domain.step);
+};
+
+const isAxisRange = (value: unknown): value is GraphSceneAxisRange => {
+  const range = asRecord(value);
+  return !!range && isFiniteNumber(range.min) && isFiniteNumber(range.max) && range.min < range.max;
+};
+
+const isViewportSize = (value: unknown): value is GraphSceneViewportSize => {
+  const size = asRecord(value);
+  return !!size && isFinitePositiveNumber(size.width) && isFinitePositiveNumber(size.height);
 };
 
 const isSceneStyleIr = (value: unknown): value is GraphSceneStyleIr => {
@@ -610,6 +669,10 @@ const isNumberArray = (value: unknown): value is number[] => (
 
 const isNumberArrayArray = (value: unknown): boolean => (
   Array.isArray(value) && value.every(isNumberArray)
+);
+
+const isStringArray = (value: unknown): value is string[] => (
+  Array.isArray(value) && value.every(isString)
 );
 
 const isWorldPointArray = (value: unknown, dimension: GraphWorldPoint['dimension']): boolean => (

@@ -16,3 +16,4 @@ export * from './linearAlgebra';
 export * from './sets';
 export * from './calculus';
 export * from './sceneSampling';
+export * from './subjectFunctions';

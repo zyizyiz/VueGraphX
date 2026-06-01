@@ -6,6 +6,7 @@ import {
   type PlaygroundBackendCapability,
   type PlaygroundRenderBackend
 } from './parityStatus';
+import { subjectToolsRepresentativeDemos } from './subjectToolsShowcase';
 
 export type { PlaygroundBackendCapability, PlaygroundRenderBackend };
 
@@ -13,8 +14,8 @@ export interface DemoItem {
   emoji: string;
   title: string;
   desc: string;
-  commands: (string | { expr: string; options?: Record<string, unknown> })[];
-  compatibleBackends?: PlaygroundRenderBackend[];
+  commands: readonly (string | { expr: string; options?: Record<string, unknown> })[];
+  compatibleBackends?: readonly PlaygroundRenderBackend[];
 }
 
 export { rendererBackends };
@@ -34,6 +35,7 @@ const curriculumParityDemos: DemoItem[] = getParityDemoCommands().map((demo) => 
 
 export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
   '2d': [
+    ...subjectToolsRepresentativeDemos,
     ...curriculumParityDemos,
     {
       emoji: '🖱️',

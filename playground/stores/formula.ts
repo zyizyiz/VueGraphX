@@ -67,7 +67,7 @@ export const useFormulaStore = defineStore('formula', () => {
     commandsMap.value[activeMode.value] = [];
   };
 
-  const injectDemo = (mode: PlaygroundMode, demoCommands: (string | { expr: string, options?: any })[]) => {
+  const injectDemo = (mode: PlaygroundMode, demoCommands: readonly (string | { expr: string, options?: any })[]) => {
     commandsMap.value[mode] = [];
     demoCommands.forEach((cmdRaw, idx) => {
       const colors = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#10b981', '#f59e0b'];

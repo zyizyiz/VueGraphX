@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   GRAPH_MATH_INTERACTION_CAPABILITY_PATHS,
   GraphInteractionRouter,
+  addSubjectCoordinateSystem,
   createParityFixtureNode,
+  createSubjectCanvasState,
+  createSubjectCoordinateSystemSceneNode,
   curriculumParityRows,
   validateGraphBackendMathInteractionCapabilities
 } from '@vuegraphx/core';
@@ -31,6 +34,9 @@ const pointNode: GraphObjectNode = {
 };
 
 const solidNode: GraphObjectNode = createParityFixtureNode({ id: 'cube', type: 'solid', rowIds: ['solid.metrics'] });
+const coordinateSystemNode: GraphObjectNode = createSubjectCoordinateSystemSceneNode(
+  addSubjectCoordinateSystem(createSubjectCanvasState(), { id: 'coord-contract' }).coordinateSystem
+);
 
 type CanvasDrawOp =
   | { name: 'lineTo'; x: number; y: number }
@@ -171,6 +177,16 @@ const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
   {
     id: 'solid-3d',
     node: solidNode,
+    expectations: {
+      memory: 'success',
+      canvas2d: 'success',
+      jsxgraph: 'success',
+      babylon: 'success'
+    }
+  },
+  {
+    id: 'coordinate-system',
+    node: coordinateSystemNode,
     expectations: {
       memory: 'success',
       canvas2d: 'success',
@@ -455,8 +471,8 @@ describe('shared backend contract adapters', () => {
       }
     }
 
-    expect(jsxGraphRuntime.createObject).toHaveBeenCalledTimes(2);
-    expect(babylonRuntime.createObject).toHaveBeenCalledTimes(2);
+    expect(jsxGraphRuntime.createObject).toHaveBeenCalledTimes(3);
+    expect(babylonRuntime.createObject).toHaveBeenCalledTimes(3);
 
     for (const backend of backends) {
       backend.destroy();

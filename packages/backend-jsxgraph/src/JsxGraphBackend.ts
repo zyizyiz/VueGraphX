@@ -76,6 +76,7 @@ const JSXGRAPH_SUPPORTED_TYPES = new Set([
 const JSXGRAPH_PARTIAL_TYPES = new Set(['parametric']);
 
 const getJsxGraphSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
+  if (node.type === 'coordinate-system') return hasRenderablePathGeometry(node) ? 'success' : 'partial-support';
   if (node.type === 'implicit') return hasRenderablePathGeometry(node) ? 'success' : 'unsupported';
   if (JSXGRAPH_SUPPORTED_TYPES.has(node.type)) return 'success';
   if (JSXGRAPH_PARTIAL_TYPES.has(node.type)) return 'partial-support';
@@ -226,6 +227,10 @@ const hasRenderablePathGeometry = (node: GraphObjectNode): boolean => {
   const geometry = asRecord(payload?.geometry);
   if (Array.isArray(geometry?.points) && geometry.points.length >= 2) return true;
   if (Array.isArray(geometry?.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.length >= 2)) return true;
+  if (typeof geometry?.kind === 'string' && geometry.kind === 'coordinate-system') {
+    if (Array.isArray(geometry.gridSegments) && geometry.gridSegments.some((segment) => Array.isArray(segment) && segment.length >= 2)) return true;
+    if (Array.isArray(geometry.border) && geometry.border.length >= 2) return true;
+  }
   return ['circle', 'ellipse', 'hyperbola', 'arc', 'sector', 'semicircle', 'segment', 'line', 'ray', 'polyline', 'polygon', 'multiline', 'wireframe'].includes(
     typeof geometry?.kind === 'string' ? geometry.kind : ''
   );

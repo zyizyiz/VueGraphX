@@ -19,7 +19,7 @@ import {
 } from './canvasScene';
 
 const toCommands = (
-  commands: (string | { expr: string; options?: Record<string, unknown> })[]
+  commands: readonly (string | { expr: string; options?: Record<string, unknown> })[]
 ): PlaygroundCanvasCommand[] => commands.map((command, index) => ({
   id: `demo-${index}`,
   expression: typeof command === 'string' ? command : command.expr,

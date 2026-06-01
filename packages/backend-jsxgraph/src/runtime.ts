@@ -211,6 +211,14 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     const payload = asRecord(node.payload);
     const geometry = asRecord(payload?.geometry) ?? createSemanticGeometryForNode(node, payload, (objectId) => this.findStoredNode(objectId));
 
+    if (geometry?.kind === 'coordinate-system') {
+      return readCoordinateSystemSegments2D(geometry).flatMap((points) => (
+        points.length >= 2
+          ? normalizeElements(board.create('curve', [points.map((point) => point.x), points.map((point) => point.y)], attrs))
+          : []
+      ));
+    }
+
     if (geometry?.kind === 'line' && isPoint2D(geometry.point) && isPoint2D(geometry.direction)) {
       const start = geometry.point;
       const end = add(start, geometry.direction);
@@ -424,8 +432,19 @@ const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext):
     strokeWidth: selected ? resolveSelectedStrokeWidth(strokeWidth) : strokeWidth,
     size: readNumber(hints.radius, 3),
     visible: hints.visible !== false,
-    fixed: asRecord(node.meta)?.locked === true
+    fixed: isJsxGraphDragDisabled(node)
   };
+};
+
+const isJsxGraphDragDisabled = (node: GraphObjectNode): boolean => {
+  const hints = node.renderHints ?? {};
+  const meta = asRecord(node.meta);
+  return meta?.locked === true
+    || hints.draggable === false
+    || meta?.draggable === false
+    || meta?.dragDisabled === true
+    || meta?.dragMode === 'disabled'
+    || typeof meta?.coordinateSystemId === 'string';
 };
 
 const renderTextForJsxGraph = (
@@ -520,6 +539,28 @@ const isPoint2D = (value: unknown): value is Point2D => {
   const record = asRecord(value);
   return typeof record?.x === 'number' && Number.isFinite(record.x) && typeof record.y === 'number' && Number.isFinite(record.y);
 };
+const readCoordinateSystemSegments2D = (geometry: Record<string, unknown>): Point2D[][] => {
+  const segments: Point2D[][] = [];
+  if (Array.isArray(geometry.segments)) {
+    segments.push(...geometry.segments.map(readPointList2D).filter((points) => points.length >= 2));
+    return segments;
+  }
+  if (Array.isArray(geometry.gridSegments)) {
+    segments.push(...geometry.gridSegments.map(readPointList2D).filter((points) => points.length >= 2));
+  }
+  const border = readPointList2D(geometry.border);
+  if (border.length >= 2) segments.push(border);
+  const xAxis = readPointList2D(geometry.xAxis);
+  if (xAxis.length >= 2) segments.push(xAxis);
+  const yAxis = readPointList2D(geometry.yAxis);
+  if (yAxis.length >= 2) segments.push(yAxis);
+  return segments;
+};
+
+const readPointList2D = (value: unknown): Point2D[] => (
+  Array.isArray(value) ? value.filter(isPoint2D) : []
+);
+
 const readPayloadPoint2D = (payload: Record<string, unknown> | null): Point2D | null => {
   if (isPoint2D(payload?.point)) return payload.point;
   const position = asRecord(payload?.position);

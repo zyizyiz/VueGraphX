@@ -1,6 +1,10 @@
 import {
+  addSubjectCoordinateSystem,
   createGraphCapabilitiesForObject,
   createGraphObjectNode,
+  createSubjectCanvasState,
+  createSubjectCoordinateSystemSceneNode,
+  SUBJECT_CANVAS_DRAG_DISABLED_REASON,
   inferGraphTextFormat,
   okResult,
   type GraphObjectNode,
@@ -399,11 +403,15 @@ export const compileGraphCommand = (
     return { ok: false, diagnostics: nodeResult.diagnostics };
   }
 
+  const coordinatedNode = applyActiveCoordinateSystemPolicy(nodeResult.value, symbols);
+  const nodeInput = {
+    ...coordinatedNode,
+    renderHints: options.renderHints ? { ...options.renderHints, ...(coordinatedNode.renderHints ?? {}) } : coordinatedNode.renderHints,
+    meta: options.meta ? { ...options.meta, ...(coordinatedNode.meta ?? {}) } : coordinatedNode.meta
+  };
   const node = createGraphObjectNode({
-    ...nodeResult.value,
-    renderHints: options.renderHints ? { ...options.renderHints, ...(nodeResult.value.renderHints ?? {}) } : nodeResult.value.renderHints,
-    meta: options.meta ? { ...options.meta, ...(nodeResult.value.meta ?? {}) } : nodeResult.value.meta,
-    capabilities: createGraphCapabilitiesForObject(nodeResult.value)
+    ...nodeInput,
+    capabilities: createGraphCapabilitiesForObject(nodeInput)
   });
   symbols.set(id, node, { commandType: type });
   return okResult({ node, symbols });
@@ -427,14 +435,19 @@ export const compileGraphExpression = (
   const semanticNode = buildSemanticExpressionNode(trimmed, options);
   if (semanticNode) {
     const symbols = new GraphCommandSymbolStore(options.symbols);
-    symbols.set(semanticNode.id, semanticNode);
-    return okResult({ node: semanticNode, symbols });
+    const coordinatedNode = applyActiveCoordinateSystemPolicy(semanticNode, symbols);
+    const node = createGraphObjectNode({
+      ...coordinatedNode,
+      capabilities: createGraphCapabilitiesForObject(coordinatedNode)
+    });
+    symbols.set(node.id, node);
+    return okResult({ node, symbols });
   }
 
   if (options.fallbackToLegacy !== false) {
     const symbols = new GraphCommandSymbolStore(options.symbols);
     const id = options.id ?? `legacy-${symbols.size + 1}`;
-    const node = createGraphObjectNode({
+    const legacyNode = createGraphObjectNode({
       id,
       kind: 'command',
       type: 'legacy-expression',
@@ -446,6 +459,7 @@ export const compileGraphExpression = (
         compiler: 'legacy-fallback'
       }
     });
+    const node = createGraphObjectNode(applyActiveCoordinateSystemPolicy(legacyNode, symbols));
     symbols.set(id, node);
     return okResult({ node, symbols });
   }
@@ -545,7 +559,7 @@ const buildCommandNode = (
     case 'equation':
       return buildEquationNode(id, args, layerId);
     case 'coordinate-system':
-      return okResult(createBaseNode(id, type, { dimension: stripQuotes(args[0] ?? 'plane') }, [], layerId));
+      return buildCoordinateSystemNode(id, args, layerId);
     case 'solid':
       return buildSolidNode(id, args, layerId);
     case 'surface':
@@ -577,6 +591,29 @@ const buildCommandNode = (
     case 'slope':
       return buildSlopeMeasurementNode(id, args, symbols, layerId);
   }
+};
+
+const applyActiveCoordinateSystemPolicy = (
+  node: GraphObjectNode,
+  symbols: GraphCommandSymbolStore
+): GraphObjectNode => {
+  if (node.type === 'coordinate-system') return node;
+  const coordinateSystem = [...symbols.records()].reverse().find((record) => record.node.type === 'coordinate-system');
+  if (!coordinateSystem) return node;
+  return {
+    ...node,
+    renderHints: {
+      ...(node.renderHints ?? {}),
+      draggable: false
+    },
+    meta: {
+      ...(node.meta ?? {}),
+      coordinateSystemId: coordinateSystem.id,
+      draggable: false,
+      dragDisabled: true,
+      dragDisabledReason: SUBJECT_CANVAS_DRAG_DISABLED_REASON
+    }
+  };
 };
 
 const buildSemanticExpressionNode = (
@@ -954,6 +991,22 @@ const buildFunctionNode = (id: string, args: readonly string[], layerId: GraphOb
 const buildEquationNode = (id: string, args: readonly string[], layerId: GraphObjectNode['layerId']): GraphOperationResult<GraphObjectNode> => {
   if (args.length !== 1) return arityError('Equation requires exactly one expression.');
   return okResult(createBaseNode(id, 'equation', createEquationDescriptor(stripQuotes(args[0])), [], layerId));
+};
+
+const buildCoordinateSystemNode = (
+  id: string,
+  args: readonly string[],
+  layerId: GraphObjectNode['layerId']
+): GraphOperationResult<GraphObjectNode> => {
+  const requestedDimension = stripQuotes(args[0] ?? 'plane');
+  if (requestedDimension !== 'plane' && requestedDimension !== 'space') {
+    return invalidArgument('CoordinateSystem dimension must be "plane" or "space".', { dimension: requestedDimension });
+  }
+  const { state } = addSubjectCoordinateSystem(createSubjectCanvasState(), { id });
+  const coordinateSystem = state.coordinateSystems.find((system) => system.id === id);
+  if (!coordinateSystem) return domainError('CoordinateSystem failed to allocate a coordinate system state.', { id });
+  const node = createSubjectCoordinateSystemSceneNode(coordinateSystem, { id, dimension: requestedDimension });
+  return okResult({ ...node, layerId });
 };
 
 const buildSolidNode = (id: string, args: readonly string[], layerId: GraphObjectNode['layerId']): GraphOperationResult<GraphObjectNode> => {

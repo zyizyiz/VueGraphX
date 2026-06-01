@@ -198,5 +198,29 @@ export const createGraphCapabilitiesForObject = (
 ): GraphRuntimeCapabilityDescriptor[] => {
   const profile = inferGraphMathObjectProfile(node);
   if (!profile) return [];
-  return createGraphCapabilitiesForProfile(profile, { scope: 'object', objectId: node.id }, disabled);
+  return createGraphCapabilitiesForProfile(profile, { scope: 'object', objectId: node.id }, {
+    ...disabled,
+    ...dragDisabledCapabilities(node, disabled)
+  });
+};
+
+const dragDisabledCapabilities = (
+  node: GraphObjectNode,
+  disabled: Partial<Record<string, string>>
+): Partial<Record<string, string>> => {
+  if (disabled['math.object.move']) return {};
+  const meta = node.meta as Record<string, unknown> | undefined;
+  const coordinateSystemId = typeof meta?.coordinateSystemId === 'string' ? meta.coordinateSystemId : null;
+  const configuredReason = typeof meta?.dragDisabledReason === 'string' ? meta.dragDisabledReason : null;
+  if (coordinateSystemId) {
+    return {
+      'math.object.move': configuredReason ?? `对象属于坐标系 ${coordinateSystemId}，不支持自由拖拽移动。`
+    };
+  }
+  if (meta?.draggable === false || meta?.dragDisabled === true || meta?.dragMode === 'disabled') {
+    return {
+      'math.object.move': configuredReason ?? '对象不支持自由拖拽移动。'
+    };
+  }
+  return {};
 };

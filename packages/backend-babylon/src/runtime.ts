@@ -1887,6 +1887,9 @@ const readRenderablePathSegments = (
   payload: Record<string, unknown> | null,
   geometry: Record<string, unknown> | null
 ): BabylonVector3Like[][] => {
+  if (geometry?.kind === 'coordinate-system') {
+    return readCoordinateSystemSegments3D(geometry);
+  }
   if ((geometry?.kind === 'multiline' || geometry?.kind === 'wireframe') && Array.isArray(geometry.segments)) {
     return geometry.segments
       .filter(Array.isArray)
@@ -1908,6 +1911,30 @@ const readRenderablePathSegments = (
   const points = readRenderablePathPoints(payload, geometry);
   return points.length >= 2 ? [points] : [];
 };
+
+const readCoordinateSystemSegments3D = (geometry: Record<string, unknown>): BabylonVector3Like[][] => {
+  const segments: BabylonVector3Like[][] = [];
+  if (Array.isArray(geometry.segments)) {
+    segments.push(...geometry.segments.map(readPointList3D).filter((points) => points.length >= 2));
+    return segments;
+  }
+  if (Array.isArray(geometry.gridSegments)) {
+    segments.push(...geometry.gridSegments.map(readPointList3D).filter((points) => points.length >= 2));
+  }
+  const border = readPointList3D(geometry.border);
+  if (border.length >= 2) segments.push(border);
+  const xAxis = readPointList3D(geometry.xAxis);
+  if (xAxis.length >= 2) segments.push(xAxis);
+  const yAxis = readPointList3D(geometry.yAxis);
+  if (yAxis.length >= 2) segments.push(yAxis);
+  return segments;
+};
+
+const readPointList3D = (value: unknown): BabylonVector3Like[] => (
+  Array.isArray(value)
+    ? value.map((entry) => readVector3(entry) ?? readVector2AsVector3(entry)).filter((point): point is BabylonVector3Like => !!point)
+    : []
+);
 
 const readRenderablePathPoints = (
   payload: Record<string, unknown> | null,

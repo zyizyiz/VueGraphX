@@ -32,6 +32,32 @@ describe('JsxGraphRuntime', () => {
     expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.any(Object));
   });
 
+  it('keeps coordinate-system scoped JSXGraph objects fixed instead of draggable', () => {
+    const create = vi.fn((type: string) => ({ id: `${type}-1` }));
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      ...createPointNode(),
+      meta: { coordinateSystemId: 'coord-A' }
+    }, {
+      id: 'jsxgraph:A',
+      objectId: 'A',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'A', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.objectContaining({
+      fixed: true
+    }));
+  });
+
   it('renders selected JSXGraph objects by doubling stroke width without changing color', () => {
     const create = vi.fn((type: string) => ({ id: `${type}-1` }));
     const runtime = createJsxGraphRuntime({} as any, {

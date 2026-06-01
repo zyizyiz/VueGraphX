@@ -66,6 +66,11 @@ export const resolveGraphDragOperation = (
     return dragFailure(node, 'drag.locked-object', `Graph object ${node.id} is locked and cannot be dragged.`);
   }
 
+  const disabledReason = readDragDisabledReason(node);
+  if (disabledReason) {
+    return dragFailure(node, 'drag.disabled-object', disabledReason);
+  }
+
   if (isRelationDrivenDrag(node)) {
     return dragFailure(node, 'drag.relation-driven-object', `Graph object ${node.id} is relation-driven and must be recomputed from its dependencies instead of directly dragged.`);
   }
@@ -283,6 +288,19 @@ const readDragBounds2D = (node: GraphObjectNode): GraphDragBounds2D | null => {
 const isRelationDrivenDrag = (node: GraphObjectNode): boolean => {
   const meta = node.meta as Record<string, unknown> | undefined;
   return meta?.relationDriven === true || meta?.dragMode === 'relation-driven';
+};
+
+const readDragDisabledReason = (node: GraphObjectNode): string | null => {
+  const meta = node.meta as Record<string, unknown> | undefined;
+  const coordinateSystemId = typeof meta?.coordinateSystemId === 'string' ? meta.coordinateSystemId : null;
+  const configuredReason = typeof meta?.dragDisabledReason === 'string' ? meta.dragDisabledReason : null;
+  if (coordinateSystemId) {
+    return configuredReason ?? `Graph object ${node.id} belongs to coordinate system ${coordinateSystemId} and cannot be freely dragged.`;
+  }
+  if (meta?.draggable === false || meta?.dragDisabled === true || meta?.dragMode === 'disabled') {
+    return configuredReason ?? `Graph object ${node.id} is not draggable.`;
+  }
+  return null;
 };
 
 const dragFailure = (

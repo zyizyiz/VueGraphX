@@ -61,6 +61,52 @@ describe('renderer-free command compiler', () => {
     expect(JSON.stringify(json.value)).not.toMatch(/JXG|BABYLON|HTMLElement/);
   });
 
+
+
+  it('compiles CoordinateSystem into valid scene IR with subject-canvas capabilities', () => {
+    const result = compileGraphCommand('cs = CoordinateSystem("plane")');
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value?.node).toMatchObject({
+      id: 'cs',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        objectType: 'coordinate-system',
+        dimension: 'plane',
+        origin: { dimension: '2d', x: 0, y: 0 },
+        unitPx: 30,
+        xRange: { min: -6, max: 6 },
+        yRange: { min: -6, max: 6 }
+      }
+    });
+    expect(result.value?.node.capabilities?.map((capability) => capability.id)).toContain('math.coordinate-system.toggle-assist');
+    expect(result.value?.node.renderHints).toMatchObject({ draggable: false });
+    expect(result.value?.node.meta).toMatchObject({ coordinateSystemId: 'cs', draggable: false, dragDisabled: true });
+    expect(result.value?.node.capabilities?.find((capability) => capability.id === 'math.object.move')).toMatchObject({
+      status: 'disabled'
+    });
+
+    const store = new GraphSceneStore('coordinate-system-command');
+    expect(store.addObject(result.value!.node).ok).toBe(true);
+
+    const functionResult = compileGraphCommand('f = Function("x^2", -2, 2)', { symbols: result.value?.symbols });
+    expect(functionResult.ok).toBe(true);
+    expect(functionResult.value?.node).toMatchObject({
+      id: 'f',
+      type: 'function',
+      renderHints: { draggable: false },
+      meta: { coordinateSystemId: 'cs', draggable: false, dragDisabled: true }
+    });
+    expect(functionResult.value?.node.capabilities?.find((capability) => capability.id === 'math.object.move')).toMatchObject({
+      status: 'disabled'
+    });
+
+    const invalid = compileGraphCommand('bad = CoordinateSystem("polar")');
+    expect(invalid.ok).toBe(false);
+    expect(invalid.diagnostics[0]).toMatchObject({ code: 'commands.invalid-argument' });
+  });
+
   it('supports constructed relation commands without rendering side effects', () => {
     const first = compileGraphCommand('A = Point(0, 0)');
     expect(first.ok).toBe(true);
@@ -354,6 +400,19 @@ describe('renderer-free command compiler', () => {
     expect(fn.value?.node.type).toBe('function');
     expect(fn.value?.node.renderHints?.strokeColor).toBe('#f00');
     expect(fn.value?.node.capabilities?.map((capability) => capability.id)).toContain('math.function.set-expression');
+
+    const coordinateSystem = compileGraphCommand('cs = CoordinateSystem("plane")');
+    const coordinateExpression = compileGraphExpression('g(x) = x^2', { symbols: coordinateSystem.value?.symbols });
+    expect(coordinateExpression.ok).toBe(true);
+    expect(coordinateExpression.value?.node).toMatchObject({
+      id: 'g',
+      type: 'function',
+      renderHints: { draggable: false },
+      meta: { coordinateSystemId: 'cs', draggable: false, dragDisabled: true }
+    });
+    expect(coordinateExpression.value?.node.capabilities?.find((capability) => capability.id === 'math.object.move')).toMatchObject({
+      status: 'disabled'
+    });
 
     const variable = compileGraphExpression('a = 0.5');
     expect(variable.ok).toBe(true);

@@ -59,6 +59,10 @@ interface CanvasDrawablePayload {
     vertices?: Array<{ x: number; y: number }>;
     points?: Array<{ x: number; y: number }>;
     segments?: Array<Array<{ x: number; y: number }>>;
+    border?: Array<{ x: number; y: number }>;
+    xAxis?: Array<{ x: number; y: number }>;
+    yAxis?: Array<{ x: number; y: number }>;
+    gridSegments?: Array<Array<{ x: number; y: number }>>;
     start?: { x: number; y: number };
     end?: { x: number; y: number };
     point?: { x: number; y: number };
@@ -104,7 +108,8 @@ const CANVAS2D_SUPPORTED_TYPES = new Set([
   'conic',
   'equation',
   'solid',
-  'parametric'
+  'parametric',
+  'coordinate-system'
 ]);
 const CANVAS2D_PARTIAL_TYPES = new Set<string>();
 const CANVAS2D_MIN_VISUAL_ZOOM_SCALE = 0.25;
@@ -165,6 +170,7 @@ const isDrawableCanvas2DNode = (node: GraphObjectNode): boolean => {
   }
   if (geometry.kind === 'polygon') return Array.isArray(geometry.vertices) && geometry.vertices.filter(isCanvasPoint).length > 0;
   if (geometry.kind === 'segment') return isCanvasPoint(geometry.start) && isCanvasPoint(geometry.end);
+  if (geometry.kind === 'coordinate-system') return readCoordinateSystemSegments(geometry).length > 0;
   if (geometry.kind === 'polyline') return Array.isArray(geometry.points) && geometry.points.filter(isCanvasPoint).length > 1;
   if (geometry.kind === 'multiline' || geometry.kind === 'wireframe') {
     return Array.isArray(geometry.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.filter(isCanvasPoint).length > 1);
@@ -179,6 +185,26 @@ const isCanvasPoint = (value: unknown): value is { x: number; y: number } => {
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;
   return isFiniteNumber(record.x) && isFiniteNumber(record.y);
+};
+
+const isCanvasPointArray = (value: unknown): value is Array<{ x: number; y: number }> => (
+  Array.isArray(value) && value.every(isCanvasPoint)
+);
+
+const readCoordinateSystemSegments = (geometry: CanvasDrawablePayload['geometry'] | undefined): Array<Array<{ x: number; y: number }>> => {
+  if (!geometry || geometry.kind !== 'coordinate-system') return [];
+  const segments: Array<Array<{ x: number; y: number }>> = [];
+  if (Array.isArray(geometry.segments)) {
+    segments.push(...geometry.segments.filter(isCanvasPointArray));
+    return segments.filter((segment) => segment.length >= 2);
+  }
+  if (Array.isArray(geometry.gridSegments)) {
+    segments.push(...geometry.gridSegments.filter(isCanvasPointArray));
+  }
+  if (isCanvasPointArray(geometry.border)) segments.push(geometry.border);
+  if (isCanvasPointArray(geometry.xAxis)) segments.push(geometry.xAxis);
+  if (isCanvasPointArray(geometry.yAxis)) segments.push(geometry.yAxis);
+  return segments.filter((segment) => segment.length >= 2);
 };
 
 const readCanvasTextLayout = (node: GraphObjectNode): CanvasTextLayout | null => {
@@ -422,7 +448,9 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     }
 
     const geometry = payload.geometry;
-    if (geometry?.kind === 'circle' && geometry.center && typeof geometry.radius === 'number') {
+    if (geometry?.kind === 'coordinate-system') {
+      this.drawCoordinateSystemGeometry(geometry);
+    } else if (geometry?.kind === 'circle' && geometry.center && typeof geometry.radius === 'number') {
       const center = this.projectPoint(geometry.center);
       this.context.beginPath();
       this.context.arc(center.x, center.y, this.projectRadius(geometry.radius), 0, Math.PI * 2);
@@ -462,6 +490,32 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
         : this.drawPointPath([payload.start, payload.end]);
     }
 
+    this.context.restore();
+  }
+
+  private drawCoordinateSystemGeometry(geometry: NonNullable<CanvasDrawablePayload['geometry']>): void {
+    if (!this.context) return;
+    const gridSegments = Array.isArray(geometry.gridSegments)
+      ? geometry.gridSegments.filter(isCanvasPointArray)
+      : [];
+    const axes = [geometry.xAxis, geometry.yAxis].filter(isCanvasPointArray);
+    const border = isCanvasPointArray(geometry.border) ? geometry.border : null;
+
+    this.context.save();
+    this.context.globalAlpha = 0.45;
+    this.context.strokeStyle = '#CBD5E1';
+    this.context.lineWidth = Math.max(0.5, this.context.lineWidth * 0.5);
+    for (const segment of gridSegments) this.drawPointPath(segment);
+    this.context.restore();
+
+    this.context.save();
+    this.context.strokeStyle = '#8080FF';
+    this.context.lineWidth = Math.max(1, this.context.lineWidth);
+    for (const axis of axes) this.drawPointPath(axis);
+    if (border) {
+      this.context.globalAlpha = 0.7;
+      this.drawPointPath(border);
+    }
     this.context.restore();
   }
 

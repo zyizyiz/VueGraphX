@@ -13,3 +13,4 @@ export * from './renderRuntime';
 export * from './parityMatrix';
 export * from './standardCoordinateStyle';
 export * from './textRendering';
+export * from './subjectCanvas';

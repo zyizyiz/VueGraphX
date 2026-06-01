@@ -74,7 +74,8 @@ const CANVAS_RENDERABLE_TYPES = new Set([
   'conic',
   'equation',
   'solid',
-  'parametric'
+  'parametric',
+  'coordinate-system'
 ]);
 
 export interface PlaygroundSceneBuildOptions {

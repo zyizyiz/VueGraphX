@@ -83,10 +83,12 @@ const BABYLON_SUPPORTED_TYPES = new Set([
   'rotated',
   'conic',
   'equation',
-  'solid'
+  'solid',
+  'coordinate-system'
 ]);
 
 const getBabylonSupportStatus = (node: GraphObjectNode): BabylonBackendSupportStatus => {
+  if (node.type === 'coordinate-system') return hasRenderableProxyGeometry(node) ? 'success' : 'partial-support';
   if (node.type === 'implicit') return hasRenderableProxyGeometry(node) ? 'success' : 'unsupported';
   if (node.type === 'solid') return 'success';
   if (!BABYLON_SUPPORTED_TYPES.has(node.type)) return 'unsupported';
@@ -275,6 +277,10 @@ const hasRenderableProxyGeometry = (node: GraphObjectNode): boolean => {
   if (Array.isArray(geometry?.points) && geometry.points.length >= 2) return true;
   if (Array.isArray(geometry?.vertices) && geometry.vertices.length >= 2) return true;
   if (Array.isArray(geometry?.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.length >= 2)) return true;
+  if (typeof geometry?.kind === 'string' && geometry.kind === 'coordinate-system') {
+    if (Array.isArray(geometry.gridSegments) && geometry.gridSegments.some((segment) => Array.isArray(segment) && segment.length >= 2)) return true;
+    if (Array.isArray(geometry.border) && geometry.border.length >= 2) return true;
+  }
   return ['circle', 'ellipse', 'hyperbola', 'arc', 'sector', 'semicircle', 'segment', 'line', 'ray', 'polyline', 'polygon', 'multiline', 'wireframe'].includes(
     typeof geometry?.kind === 'string' ? geometry.kind : ''
   );
@@ -292,6 +298,7 @@ const isDrawableBabylonProxyNode = (node: GraphObjectNode): boolean => {
 
   const geometry = asRecord(payload.geometry);
   if (!geometry?.kind) return false;
+  if (geometry.kind === 'coordinate-system') return hasRenderableProxyGeometry(node);
   if (geometry.kind === 'circle') return isPointLike(geometry.center) && isFiniteNumber(geometry.radius);
   if (geometry.kind === 'ellipse' || geometry.kind === 'hyperbola') {
     return isPointLike(geometry.center) && isFiniteNumber(geometry.radiusX) && isFiniteNumber(geometry.radiusY);

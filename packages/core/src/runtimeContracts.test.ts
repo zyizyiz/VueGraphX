@@ -6,6 +6,7 @@ import {
   GraphSceneStore,
   GRAPH_RELATION_SNAPSHOT_VERSION,
   SUPPORTED_GRAPH_SCENE_OBJECT_IR_TYPES,
+  SUBJECT_CANVAS_DRAG_DISABLED_REASON,
   GRAPH_ACTIVE_MATH_INTERACTION_CAPABILITY_IDS,
   GRAPH_MATH_INTERACTION_CAPABILITY_PATHS,
   createGraphBackendInteractionCapability,
@@ -297,7 +298,8 @@ describe('renderer-neutral core runtime contracts', () => {
       'vector',
       'transform',
       'measurement',
-      'solid'
+      'solid',
+      'coordinate-system'
     ]);
 
     const sceneObjects = [
@@ -443,6 +445,20 @@ describe('renderer-neutral core runtime contracts', () => {
             { dimension: '3d', x: 0, y: 0, z: 1 }
           ],
           faces: [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
+        }
+      }),
+      createGraphSceneObjectIrNode({
+        id: 'coordinate-system-cs',
+        objectType: 'coordinate-system',
+        payload: {
+          objectType: 'coordinate-system',
+          dimension: 'plane',
+          origin: { dimension: '2d', x: 0, y: 0 },
+          size: { width: 360, height: 360 },
+          unitPx: 30,
+          xRange: { min: -6, max: 6 },
+          yRange: { min: -6, max: 6 },
+          geometry: { kind: 'coordinate-system', segments: [] }
         }
       })
     ];
@@ -922,6 +938,21 @@ describe('renderer-neutral core runtime contracts', () => {
     expect(capabilityIds).toContain('math.geometry.start-cut');
     expect(capabilityIds).toContain('math.solid.toggle-section');
     expect(capabilityIds).toContain('math.object.move');
+
+    const coordinateScopedMove = createGraphCapabilitiesForObject({
+      id: 'function-in-coordinate-system',
+      kind: 'shape',
+      type: 'function',
+      payload: {},
+      meta: {
+        coordinateSystemId: 'coord-A',
+        dragDisabledReason: SUBJECT_CANVAS_DRAG_DISABLED_REASON
+      }
+    }).find((capability) => capability.id === 'math.object.move');
+    expect(coordinateScopedMove).toMatchObject({
+      status: 'disabled',
+      reason: SUBJECT_CANVAS_DRAG_DISABLED_REASON
+    });
   });
 
   it('routes UI, overlay pass-through, backend pick, and drag sessions deterministically', () => {
@@ -1040,6 +1071,21 @@ describe('renderer-neutral core runtime contracts', () => {
     });
     expect(unsupported.ok).toBe(false);
     expect(unsupported.diagnostics[0].code).toBe('drag.unsupported-object');
+
+    const coordinateScoped = createGraphDragPatch({
+      ...createPointNode('coord-point', 0, 0),
+      meta: {
+        coordinateSystemId: 'coord-A',
+        dragDisabledReason: SUBJECT_CANVAS_DRAG_DISABLED_REASON
+      }
+    }, {
+      delta: { dimension: '2d', dx: 1, dy: 1 }
+    });
+    expect(coordinateScoped.ok).toBe(false);
+    expect(coordinateScoped.diagnostics[0]).toMatchObject({
+      code: 'drag.disabled-object',
+      message: SUBJECT_CANVAS_DRAG_DISABLED_REASON
+    });
   });
 
   it('explains drag success, constrained clamps, and relation-driven failures', () => {
