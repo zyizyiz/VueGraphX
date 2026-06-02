@@ -41,15 +41,16 @@ const coordinateSystemNode: GraphObjectNode = createSubjectCoordinateSystemScene
 type CanvasDrawOp =
   | { name: 'lineTo'; x: number; y: number }
   | { name: 'arc'; x: number; y: number; radius: number; fillStyle: string; strokeStyle: string }
-  | { name: 'stroke'; strokeStyle: string; lineWidth: number; lineToCount: number }
+  | { name: 'stroke'; strokeStyle: string; lineWidth: number; lineCap: string; lineToCount: number }
   | { name: 'fill'; fillStyle: string }
+  | { name: 'fillRect'; x: number; y: number; width: number; height: number; fillStyle: string }
   | { name: 'fillText' | 'strokeText'; text: string; x: number; y: number; font: string; fillStyle?: string; strokeStyle?: string }
   | { name: 'translate' | 'scale'; x: number; y: number }
   | { name: string; [key: string]: unknown };
 
 const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; ops: CanvasDrawOp[] } => {
   const ops: CanvasDrawOp[] = [];
-  const stack: Array<Pick<CanvasRenderingContext2D, 'strokeStyle' | 'fillStyle' | 'lineWidth' | 'font' | 'globalAlpha' | 'textAlign' | 'textBaseline'>> = [];
+  const stack: Array<Pick<CanvasRenderingContext2D, 'strokeStyle' | 'fillStyle' | 'lineWidth' | 'lineCap' | 'lineJoin' | 'font' | 'globalAlpha' | 'textAlign' | 'textBaseline'>> = [];
   let lineToCount = 0;
   const context: any = {
     strokeStyle: '#000000',
@@ -66,6 +67,8 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
         strokeStyle: this.strokeStyle,
         fillStyle: this.fillStyle,
         lineWidth: this.lineWidth,
+        lineCap: this.lineCap,
+        lineJoin: this.lineJoin,
         font: this.font,
         globalAlpha: this.globalAlpha,
         textAlign: this.textAlign,
@@ -78,6 +81,8 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
       this.strokeStyle = entry.strokeStyle;
       this.fillStyle = entry.fillStyle;
       this.lineWidth = entry.lineWidth;
+      this.lineCap = entry.lineCap;
+      this.lineJoin = entry.lineJoin;
       this.font = entry.font;
       this.globalAlpha = entry.globalAlpha;
       this.textAlign = entry.textAlign;
@@ -104,10 +109,19 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
       ops.push({ name: 'ellipse' });
     },
     stroke() {
-      ops.push({ name: 'stroke', strokeStyle: String(this.strokeStyle), lineWidth: this.lineWidth, lineToCount });
+      ops.push({ name: 'stroke', strokeStyle: String(this.strokeStyle), lineWidth: this.lineWidth, lineCap: String(this.lineCap), lineToCount });
     },
     fill() {
       ops.push({ name: 'fill', fillStyle: String(this.fillStyle) });
+    },
+    fillRect(x: number, y: number, width: number, height: number) {
+      ops.push({ name: 'fillRect', x, y, width, height, fillStyle: String(this.fillStyle) });
+    },
+    rect(x: number, y: number, width: number, height: number) {
+      ops.push({ name: 'rect', x, y, width, height });
+    },
+    clip() {
+      ops.push({ name: 'clip' });
     },
     fillText(text: string, x: number, y: number) {
       ops.push({ name: 'fillText', text, x, y, font: String(this.font), fillStyle: String(this.fillStyle) });
@@ -522,6 +536,31 @@ describe('shared backend contract adapters', () => {
     expect(backend.pick({ x: 100, y: 100 })?.target.objectId).toBe('A');
   });
 
+
+
+  it('derives a 30px-per-unit viewport grid when Canvas2D grid is enabled without explicit bounds', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-grid',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      grid: true,
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 600, height: 420 } });
+
+    expect(backend.getWorldBounds()).toEqual({ left: -10, right: 10, top: 7, bottom: -7 });
+    expect(backend.project({ dimension: '2d', x: 1, y: 1 })).toEqual({ x: 330, y: 180 });
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'fillRect', x: 0, y: 0, width: 600, height: 420, fillStyle: '#F8FAFC' }),
+      expect.objectContaining({ name: 'stroke', strokeStyle: 'rgba(148, 163, 184, 0.18)', lineWidth: 1 })
+    ]));
+
+    backend.destroy();
+  });
+
   it('can preserve unit aspect and draw standard coordinate labels on rectangular Canvas2D viewports', () => {
     const { context, ops } = createRecordingCanvasContext();
     const backend = createCanvas2DGraphBackend({
@@ -544,7 +583,7 @@ describe('shared backend contract adapters', () => {
       expect.objectContaining({ name: 'fillText', text: '5', x: 190, y: 41, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
       expect.objectContaining({ name: 'fillText', text: 'O', x: 188, y: 100, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
       expect.objectContaining({ name: 'fillText', text: 'x', x: 394, y: 100, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
-      expect.objectContaining({ name: 'fillText', text: 'y', x: 190, y: 0, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
+      expect.objectContaining({ name: 'fillText', text: 'y', x: 190, y: -7, fillStyle: 'rgba(0, 0, 0, 0.85)' }),
       expect.objectContaining({ name: 'moveTo', x: 0.6, y: 100 }),
       expect.objectContaining({ name: 'lineTo', x: 394, y: 100 }),
       expect.objectContaining({ name: 'moveTo', x: 200, y: 200 }),
@@ -582,7 +621,7 @@ describe('shared backend contract adapters', () => {
       expect.objectContaining({ name: 'lineTo', x: 388, y: 100 }),
       expect.objectContaining({ name: 'lineTo', x: 200, y: 12 }),
       expect.objectContaining({ name: 'fillText', text: 'x', x: 388, y: 100, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
-      expect.objectContaining({ name: 'fillText', text: 'y', x: 180, y: 0, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
+      expect.objectContaining({ name: 'fillText', text: 'y', x: 180, y: -14, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
       expect.objectContaining({ name: 'arc', radius: 8 })
     ]));
     expect(ops).toEqual(expect.arrayContaining([
@@ -749,6 +788,48 @@ describe('shared backend contract adapters', () => {
     backend.destroy();
   });
 
+  it('clips Canvas2D coordinate-scoped paths to their coordinate window', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-clip-scoped',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      id: 'scoped-f',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: -4, y: 0 }, { x: 0, y: 0 }, { x: 4, y: 0 }]
+        }
+      },
+      renderHints: {
+        strokeColor: '#0ea5e9',
+        lineCap: 'butt',
+        clipWorldBounds: { left: -2, right: 2, top: 2, bottom: -2 }
+      },
+      layerId: 'content'
+    }).ok).toBe(true);
+
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'rect', x: 80, y: 80, width: 40, height: 40 }),
+      expect.objectContaining({ name: 'clip' }),
+      expect.objectContaining({ name: 'stroke', strokeStyle: '#0ea5e9', lineCap: 'butt' })
+    ]));
+
+    backend.destroy();
+  });
+
   it('renders selected Canvas2D objects by doubling stroke width without changing color', () => {
     const { context, ops } = createRecordingCanvasContext();
     const backend = createCanvas2DGraphBackend({
@@ -804,6 +885,47 @@ describe('shared backend contract adapters', () => {
 
     expect(ops).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'stroke', strokeStyle: '#0ea5e9', lineWidth: 2 })
+    ]));
+
+    backend.destroy();
+  });
+
+  it('does not render a Canvas2D coordinate-system selection border', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-coordinate-selected-borderless',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, bottom: -10, right: 10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      id: 'coord-selected',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: {
+          kind: 'coordinate-system',
+          border: [{ x: -6, y: -6 }, { x: 6, y: -6 }, { x: 6, y: 6 }, { x: -6, y: 6 }],
+          xAxis: [{ x: -6, y: 0 }, { x: 6, y: 0 }],
+          yAxis: [{ x: 0, y: -6 }, { x: 0, y: 6 }]
+        }
+      },
+      meta: { selected: true },
+      renderHints: { strokeWidth: 12 },
+      layerId: 'content'
+    }).ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'stroke', strokeStyle: '#CBD5E1' })
+    ]));
+    expect(ops).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'stroke', lineWidth: 24 })
     ]));
 
     backend.destroy();
@@ -1067,6 +1189,35 @@ describe('shared backend contract adapters', () => {
     expect(backend.pick({ x: 10, y: 20 }, { tolerancePx: 1 })?.target.objectId).toBe('polyline');
     expect(backend.pick({ x: 13.5, y: 30 }, { tolerancePx: 1 })?.target.objectId).toBe('angle');
     expect(backend.pick({ x: 50, y: 40 }, { tolerancePx: 1 })?.target.objectId).toBe('arc');
+  });
+
+
+  it('picks Canvas2D coordinate systems from the whole coordinate region', () => {
+    const host = document.createElement('div');
+    const backend = createCanvas2DGraphBackend({ id: 'canvas-coordinate-region-hit-test' });
+    backend.mount(host, { size: { width: 200, height: 200 } });
+
+    backend.create({
+      id: 'coord',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: {
+          kind: 'coordinate-system',
+          border: [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }],
+          segments: [
+            [{ x: -10, y: 0 }, { x: 10, y: 0 }],
+            [{ x: 0, y: -10 }, { x: 0, y: 10 }]
+          ]
+        }
+      },
+      layerId: 'content'
+    });
+
+    expect(backend.pick({ x: 5, y: 5 }, { tolerancePx: 0.1 })?.target.objectId).toBe('coord');
+    expect(backend.pick({ x: 12, y: 12 }, { tolerancePx: 0.1 })).toBeNull();
+
+    backend.destroy();
   });
 
   it('wraps JSXGraph as an adapter without leaking JSXGraph objects into core handles', () => {

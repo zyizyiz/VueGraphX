@@ -1,4 +1,10 @@
 import JXG from 'jsxgraph';
+import {
+  createCenteredWorldBoundsForViewportGrid,
+  resolveGraphViewportGridOptions,
+  resolveGraphViewportGridStep,
+  type ResolvedGraphViewportGridOptions
+} from '@vuegraphx/core';
 import { EngineMode, GraphXOptions, JXGView3D } from '../types/engine';
 import jsxgraphCssText from '../../node_modules/jsxgraph/distrib/jsxgraph.css?inline';
 
@@ -82,6 +88,7 @@ export class BoardManager {
   private globalOptions?: GraphXOptions;
   private baseView3DRect: View3DRect = cloneView3DRect(DEFAULT_VIEW3D_RECT);
   private disposeTrackpadGestureBridge: (() => void) | null = null;
+  private disposeGridSync: (() => void) | null = null;
 
   /**
    * 创建一个绑定到指定 DOM 容器 id 的画板管理器。
@@ -106,6 +113,14 @@ export class BoardManager {
     styleEl.innerHTML = `
       ${jsxgraphCssText}
       .jxgbox { position: relative; overflow: hidden; touch-action: none; }
+      .jxgbox.vuegraphx-grid-enabled {
+        background-color: var(--vuegraphx-grid-background, #F8FAFC);
+        background-image:
+          linear-gradient(to right, var(--vuegraphx-grid-line-color, rgba(148, 163, 184, 0.18)) var(--vuegraphx-grid-line-width, 1px), transparent var(--vuegraphx-grid-line-width, 1px)),
+          linear-gradient(to bottom, var(--vuegraphx-grid-line-color, rgba(148, 163, 184, 0.18)) var(--vuegraphx-grid-line-width, 1px), transparent var(--vuegraphx-grid-line-width, 1px));
+        background-size: var(--vuegraphx-grid-size-x, 30px) var(--vuegraphx-grid-size-y, 30px);
+        background-position: var(--vuegraphx-grid-origin-x, 0px) var(--vuegraphx-grid-origin-y, 0px);
+      }
       .jxgbox :focus { outline: none !important; }
       .JXGtext { position: absolute; white-space: nowrap; pointer-events: none; }
       .JXGimage { position: absolute; pointer-events: none; }
@@ -118,6 +133,8 @@ export class BoardManager {
    */
   public initBoard(): void {
     this.teardownTrackpadGestureBridge();
+    this.teardownGridSync();
+    this.clearGridStyle();
 
     if (this.board) {
       JXG.JSXGraph.freeBoard(this.board);
@@ -126,6 +143,7 @@ export class BoardManager {
 
     const dragEnabled = this.globalOptions?.drag?.enabled !== false;
     const defaultMoveTarget = dragEnabled ? document : null;
+    const gridOptions = resolveGraphViewportGridOptions(this.globalOptions?.grid);
 
     const defaultOptions = {
       boundingbox: [-10, 10, 10, -10] as [number, number, number, number],
@@ -152,9 +170,14 @@ export class BoardManager {
       defaultOptions.showNavigation = false;
     }
 
+    if (gridOptions.enabled && !this.globalOptions?.boundingbox) {
+      defaultOptions.boundingbox = this.createGridAlignedBoundingBox(gridOptions) ?? defaultOptions.boundingbox;
+    }
+
     const view3DOptions = this.globalOptions?.view3D;
     const boardOptions = { ...this.globalOptions };
     delete (boardOptions as Partial<GraphXOptions>).view3D;
+    delete (boardOptions as Partial<GraphXOptions>).grid;
     if (shouldUseTrackpadGestureBridge(this.globalOptions) && boardOptions.zoom) {
       boardOptions.zoom = {
         ...boardOptions.zoom,
@@ -164,6 +187,7 @@ export class BoardManager {
 
     this.board = JXG.JSXGraph.initBoard(this.containerId, { ...defaultOptions, ...boardOptions } as any);
     this.setupTrackpadGestureBridge();
+    this.setupGridSync(gridOptions);
 
     if (this.mode === '3d' && view3DOptions?.fitToBoard) {
       this.board.on('boundingbox', () => {
@@ -187,6 +211,10 @@ export class BoardManager {
 
       this.syncView3DToBoard();
     }
+  }
+
+  public syncGridToBoard(): void {
+    this.syncGridStyle(resolveGraphViewportGridOptions(this.globalOptions?.grid));
   }
 
   public syncView3DToBoard(): void {
@@ -236,9 +264,106 @@ export class BoardManager {
    */
   public destroy(): void {
     this.teardownTrackpadGestureBridge();
+    this.teardownGridSync();
+    this.clearGridStyle();
     if (this.board) {
       JXG.JSXGraph.freeBoard(this.board);
     }
+  }
+
+  private setupGridSync(gridOptions: ResolvedGraphViewportGridOptions): void {
+    if (!this.board || !gridOptions.enabled) {
+      this.clearGridStyle();
+      return;
+    }
+
+    const sync = () => this.syncGridStyle(gridOptions);
+    sync();
+    this.board.on('boundingbox', sync);
+    this.disposeGridSync = () => {
+      (this.board as any)?.off?.('boundingbox', sync);
+    };
+  }
+
+  private teardownGridSync(): void {
+    this.disposeGridSync?.();
+    this.disposeGridSync = null;
+  }
+
+  private createGridAlignedBoundingBox(gridOptions: ResolvedGraphViewportGridOptions): [number, number, number, number] | null {
+    const size = this.readContainerSize();
+    if (!size) return null;
+    const bounds = createCenteredWorldBoundsForViewportGrid(size, gridOptions);
+    return [bounds.left, bounds.top, bounds.right, bounds.bottom];
+  }
+
+  private syncGridStyle(gridOptions: ResolvedGraphViewportGridOptions): void {
+    const container = this.board?.containerObj as HTMLElement | undefined ?? this.getContainerElement();
+    if (!container || !gridOptions.enabled || !this.board) {
+      this.clearGridStyle(container);
+      return;
+    }
+
+    const bounds = this.board.getBoundingBox() as [number, number, number, number] | undefined;
+    const size = this.readContainerSize(container);
+    if (!bounds || bounds.length < 4 || !size) {
+      this.clearGridStyle(container);
+      return;
+    }
+
+    const [left, top, right, bottom] = bounds;
+    const worldWidth = Math.abs(right - left);
+    const worldHeight = Math.abs(top - bottom);
+    if (worldWidth <= 1e-9 || worldHeight <= 1e-9) {
+      this.clearGridStyle(container);
+      return;
+    }
+
+    const pixelsPerUnitX = size.width / worldWidth;
+    const pixelsPerUnitY = size.height / worldHeight;
+    const stepX = resolveGraphViewportGridStep(pixelsPerUnitX, worldWidth, gridOptions);
+    const stepY = resolveGraphViewportGridStep(pixelsPerUnitY, worldHeight, gridOptions);
+    const cellSizeX = pixelsPerUnitX * stepX;
+    const cellSizeY = pixelsPerUnitY * stepY;
+    const originX = normalizeCssModulo(((0 - left) / (right - left)) * size.width, cellSizeX);
+    const originY = normalizeCssModulo(((top - 0) / (top - bottom)) * size.height, cellSizeY);
+
+    container.classList.add('vuegraphx-grid-enabled');
+    container.style.setProperty('--vuegraphx-grid-background', gridOptions.backgroundColor);
+    container.style.setProperty('--vuegraphx-grid-line-color', gridOptions.lineColor);
+    container.style.setProperty('--vuegraphx-grid-line-width', `${formatCssNumber(gridOptions.lineWidth)}px`);
+    container.style.setProperty('--vuegraphx-grid-size-x', `${formatCssNumber(cellSizeX)}px`);
+    container.style.setProperty('--vuegraphx-grid-size-y', `${formatCssNumber(cellSizeY)}px`);
+    container.style.setProperty('--vuegraphx-grid-origin-x', `${formatCssNumber(originX)}px`);
+    container.style.setProperty('--vuegraphx-grid-origin-y', `${formatCssNumber(originY)}px`);
+  }
+
+  private clearGridStyle(container: HTMLElement | null = this.getContainerElement()): void {
+    if (!container) return;
+    container.classList.remove('vuegraphx-grid-enabled');
+    for (const name of [
+      '--vuegraphx-grid-background',
+      '--vuegraphx-grid-line-color',
+      '--vuegraphx-grid-line-width',
+      '--vuegraphx-grid-size-x',
+      '--vuegraphx-grid-size-y',
+      '--vuegraphx-grid-origin-x',
+      '--vuegraphx-grid-origin-y'
+    ]) {
+      container.style.removeProperty(name);
+    }
+  }
+
+  private getContainerElement(): HTMLElement | null {
+    return typeof document === 'undefined' ? null : document.getElementById(this.containerId);
+  }
+
+  private readContainerSize(container: HTMLElement | null = this.getContainerElement()): { width: number; height: number } | null {
+    if (!container) return null;
+    const rect = container.getBoundingClientRect?.();
+    const width = container.clientWidth || rect?.width || 0;
+    const height = container.clientHeight || rect?.height || 0;
+    return width > 0 && height > 0 ? { width, height } : null;
   }
 
   private setupTrackpadGestureBridge(): void {
@@ -274,6 +399,7 @@ export class BoardManager {
     const origin = (this.board as any)?.origin?.scrCoords;
     if (!origin) return;
     this.board.moveOrigin(origin[1] - event.deltaX, origin[2] - event.deltaY);
+    this.syncGridToBoard();
   }
 
   private zoomBoardByWheel(event: WheelEvent): void {
@@ -286,6 +412,7 @@ export class BoardManager {
       } else {
         this.board.zoomOut();
       }
+      this.syncGridToBoard();
       return;
     }
 
@@ -296,5 +423,15 @@ export class BoardManager {
     } else {
       this.board.zoomOut(userPoint[1], userPoint[2]);
     }
+    this.syncGridToBoard();
   }
 }
+
+const normalizeCssModulo = (value: number, modulo: number): number => {
+  if (!Number.isFinite(value) || !Number.isFinite(modulo) || modulo <= 0) return 0;
+  return ((value % modulo) + modulo) % modulo;
+};
+
+const formatCssNumber = (value: number): string => (
+  Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '0'
+);

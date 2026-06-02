@@ -11,6 +11,40 @@ const createPointNode = (): GraphObjectNode => ({
 });
 
 describe('JsxGraphRuntime', () => {
+  it('mounts a viewport grid with fixed 30px cells when enabled', () => {
+    const host = document.createElement('div');
+    Object.defineProperty(host, 'clientWidth', { value: 600 });
+    Object.defineProperty(host, 'clientHeight', { value: 420 });
+    let mountedAttributes: Record<string, unknown> = {};
+    const board = {
+      create: vi.fn(),
+      removeObject: vi.fn(),
+      update: vi.fn(),
+      containerObj: host,
+      getBoundingBox: () => mountedAttributes.boundingbox as [number, number, number, number]
+    };
+    const initBoard = vi.fn((_container: HTMLElement, attributes?: Record<string, unknown>) => {
+      mountedAttributes = attributes ?? {};
+      return board;
+    });
+    const runtime = createJsxGraphRuntime({
+      JSXGraph: { initBoard }
+    } as any);
+
+    runtime.mount(host, {
+      size: { width: 600, height: 420 },
+      attributes: { grid: true }
+    });
+
+    expect(initBoard).toHaveBeenCalledWith(host, expect.objectContaining({
+      boundingbox: [-10, 7, 10, -7]
+    }));
+    expect(mountedAttributes.grid).toBeUndefined();
+    expect(host.style.backgroundColor).toBe('rgb(248, 250, 252)');
+    expect(host.style.backgroundSize).toBe('30px 30px');
+    expect(host.style.backgroundPosition).toBe('0px 0px');
+  });
+
   it('passes flat coordinate parents when creating a point', () => {
     const create = vi.fn((type: string) => ({ id: `${type}-1` }));
     const runtime = createJsxGraphRuntime({} as any, {
@@ -54,8 +88,189 @@ describe('JsxGraphRuntime', () => {
     });
 
     expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.objectContaining({
-      fixed: true
+      fixed: true,
+      linecap: 'butt'
     }));
+  });
+
+  it('renders coordinate-system geometry as fixed styled axes and labels', () => {
+    const host = document.createElement('div');
+    const create = vi.fn((type: string, _args?: unknown[], _attributes?: Record<string, unknown>) => ({ id: `${type}-${create.mock.calls.length}` }));
+    const runtime = createJsxGraphRuntime({
+      COORDS_BY_USER: 'user',
+      Coords: class {
+        public scrCoords: number[];
+        public usrCoords: number[];
+        public constructor(_mode: unknown, point: number[]) {
+          this.usrCoords = [1, point[0], point[1]];
+          this.scrCoords = [1, point[0] * 10, -point[1] * 10];
+        }
+      }
+    } as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn(),
+        containerObj: host
+      }
+    });
+
+    runtime.createObject({
+      id: 'coord',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: {
+          kind: 'coordinate-system',
+          segments: [
+            [{ x: -3, y: 0 }, { x: 3, y: 0 }],
+            [{ x: 0, y: -3 }, { x: 0, y: 3 }]
+          ],
+          xAxis: [{ x: -3, y: 0 }, { x: 3, y: 0 }],
+          yAxis: [{ x: 0, y: -3 }, { x: 0, y: 3 }],
+          labels: [
+            { text: 'O', axis: 'plain', role: 'origin', point: { x: 0, y: 0 } },
+            { text: 'x', axis: 'plain', role: 'x-axis', point: { x: 3, y: 0 } }
+          ]
+        }
+      },
+      meta: { coordinateSystemId: 'coord' },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:coord',
+      objectId: 'coord',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'coord', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(create.mock.calls.filter(([type]) => type === 'arrow')).toHaveLength(2);
+    expect(create).toHaveBeenNthCalledWith(1, 'arrow', [[-3, 0], [3, 0]], expect.objectContaining({
+      fixed: true,
+      strokeColor: '#666666',
+      strokeWidth: 1.2,
+      withLabel: false
+    }));
+    const labels = Array.from(host.querySelectorAll('[data-vuegraphx-coordinate-label="true"]')) as HTMLElement[];
+    expect(labels.map((label) => label.textContent)).toEqual(['O', 'x']);
+    expect(labels[0].style.left).toBe('-12px');
+    expect(labels[0].style.top).toBe('0px');
+    expect(labels[1].style.left).toBe('24px');
+  });
+
+  it('keeps coordinate label overlays synced when the JSXGraph viewport changes', () => {
+    const host = document.createElement('div');
+    Object.defineProperty(host, 'clientWidth', { value: 100 });
+    Object.defineProperty(host, 'clientHeight', { value: 100 });
+    let bounds: [number, number, number, number] = [-5, 5, 5, -5];
+    const listeners = new Map<string, () => void>();
+    const create = vi.fn((type: string) => ({ id: `${type}-${create.mock.calls.length}` }));
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn(),
+        containerObj: host,
+        getBoundingBox: () => bounds,
+        on: vi.fn((eventName: string, handler: () => void) => {
+          listeners.set(eventName, handler);
+        }),
+        off: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      id: 'coord',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: {
+          kind: 'coordinate-system',
+          xAxis: [{ x: -1, y: 0 }, { x: 1, y: 0 }],
+          yAxis: [{ x: 0, y: -1 }, { x: 0, y: 1 }],
+          labels: [
+            { text: 'O', axis: 'plain', role: 'origin', point: { x: 2, y: 0 } }
+          ]
+        }
+      },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:coord',
+      objectId: 'coord',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'coord', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    const label = host.querySelector('[data-vuegraphx-coordinate-label="true"]') as HTMLElement | null;
+    expect(label?.style.left).toBe('58px');
+    expect(label?.style.top).toBe('50px');
+
+    bounds = [-10, 10, 10, -10];
+    listeners.get('boundingbox')?.();
+
+    expect(label?.style.left).toBe('48px');
+    expect(label?.style.top).toBe('50px');
+
+    runtime.updateObject({
+      id: 'jsxgraph:coord',
+      objectId: 'coord',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'coord', backendId: 'jsxgraph', layerId: 'content' }
+    }, {
+      payload: {
+        geometry: {
+          kind: 'coordinate-system',
+          xAxis: [{ x: 1, y: -1 }, { x: 3, y: -1 }],
+          yAxis: [{ x: 2, y: -2 }, { x: 2, y: 0 }],
+          labels: [
+            { text: 'O', axis: 'plain', role: 'origin', point: { x: 2, y: -1 } }
+          ]
+        }
+      }
+    });
+
+    const movedLabel = host.querySelector('[data-vuegraphx-coordinate-label="true"]') as HTMLElement | null;
+    expect(movedLabel?.style.left).toBe('48px');
+    expect(movedLabel?.style.top).toBe('55px');
+  });
+
+
+  it('picks coordinate systems from the whole coordinate region', () => {
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create: vi.fn((type: string) => ({ id: `${type}-1` })),
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      id: 'coord',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: {
+          kind: 'coordinate-system',
+          border: [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }],
+          segments: [
+            [{ x: -10, y: 0 }, { x: 10, y: 0 }],
+            [{ x: 0, y: -10 }, { x: 0, y: 10 }]
+          ]
+        }
+      },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:coord',
+      objectId: 'coord',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'coord', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(runtime.pick({ x: 5, y: 5 }, { tolerancePx: 0.1 })?.target.objectId).toBe('coord');
+    expect(runtime.pick({ x: 12, y: 12 }, { tolerancePx: 0.1 })).toBeNull();
   });
 
   it('renders selected JSXGraph objects by doubling stroke width without changing color', () => {

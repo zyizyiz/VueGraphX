@@ -9,16 +9,25 @@ import { GraphRelationState } from './relationState';
 import JXG from 'jsxgraph';
 import {
   GraphSceneStore,
+  createStandardCoordinateSystemGeometry,
   executeGraphCapability,
+  snapPointToGraphGrid,
   type GraphObjectNode,
   type GraphObjectPatch,
   type GraphOperationDiagnostic,
   type GraphRenderHandle,
   type GraphRuntimeSceneDocument,
   type GraphRuntimeTargetRef,
-  type GraphSceneStoreSnapshot
+  type GraphSceneStoreSnapshot,
+  type GraphViewportGridInput
 } from '@vuegraphx/core';
 import { compileGraphExpression, type GraphCommandSymbolTable } from '@vuegraphx/commands';
+import {
+  clipSegmentsToBounds2D,
+  sampleFunctionExpressionSegments,
+  sampleImplicitEquationSegments,
+  type SceneSamplePoint2D
+} from '@vuegraphx/math';
 import {
   createJsxGraphBackend,
   createJsxGraphRuntime,
@@ -129,6 +138,18 @@ export interface GraphCreateShapeOptions {
   select?: boolean;
 }
 
+interface CommandCoordinateSystemRuntimeOptions {
+  id: string;
+  origin: { x: number; y: number };
+  unitScale: number;
+  xRange: { min: number; max: number };
+  yRange: { min: number; max: number };
+  snapToGrid?: unknown;
+}
+
+const COMMAND_COORDINATE_SAMPLE_STEPS = 240;
+const COMMAND_COORDINATE_IMPLICIT_GRID_SIZE = 72;
+
 const cloneHiddenLineOptions = (options?: GraphHiddenLineOptions): GraphHiddenLineOptions | undefined => (
   options
     ? {
@@ -146,12 +167,18 @@ const cloneBoundingBox = (boundingbox?: [number, number, number, number]) => (
     : undefined
 );
 
+const cloneGridOptions = (grid?: GraphViewportGridInput): GraphViewportGridInput | undefined => {
+  if (typeof grid === 'boolean' || grid === undefined) return grid;
+  return { ...grid };
+};
+
 const cloneGraphXOptions = (options?: GraphXOptions): GraphXOptions | undefined => {
   if (!options) return undefined;
 
   return {
     ...options,
     boundingbox: cloneBoundingBox(options.boundingbox),
+    grid: cloneGridOptions(options.grid),
     drag: options.drag ? { ...options.drag } : undefined,
     pan: options.pan ? { ...options.pan } : undefined,
     zoom: options.zoom ? { ...options.zoom } : undefined,
@@ -227,6 +254,293 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const isEngineMode = (value: unknown): value is EngineMode => value === '2d' || value === '3d' || value === 'geometry';
 
+const readFiniteNumber = (value: unknown): number | null => (
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+);
+
+const readCommandCoordinateSystemOptions = (value: unknown): CommandCoordinateSystemRuntimeOptions | null => {
+  const record = isRecord(value) ? value : null;
+  const coordinateSystem = isRecord(record?.coordinateSystem) ? record.coordinateSystem : null;
+  const origin = isRecord(coordinateSystem?.origin) ? coordinateSystem.origin : null;
+  const xRange = isRecord(coordinateSystem?.xRange) ? coordinateSystem.xRange : null;
+  const yRange = isRecord(coordinateSystem?.yRange) ? coordinateSystem.yRange : null;
+  const id = typeof coordinateSystem?.id === 'string' && coordinateSystem.id.trim() ? coordinateSystem.id : '';
+  const originX = readFiniteNumber(origin?.x);
+  const originY = readFiniteNumber(origin?.y);
+  const unitScale = readFiniteNumber(coordinateSystem?.unitScale);
+  const xMin = readFiniteNumber(xRange?.min);
+  const xMax = readFiniteNumber(xRange?.max);
+  const yMin = readFiniteNumber(yRange?.min);
+  const yMax = readFiniteNumber(yRange?.max);
+  if (!id || originX === null || originY === null || unitScale === null || unitScale <= 0) return null;
+  if (xMin === null || xMax === null || yMin === null || yMax === null || xMax <= xMin || yMax <= yMin) return null;
+  const snapToGrid = coordinateSystem?.snapToGrid;
+  return {
+    id,
+    origin: snapPointToGraphGrid(
+      { x: originX, y: originY },
+      snapToGrid,
+      { enabled: false, step: 1 }
+    ),
+    unitScale,
+    xRange: { min: xMin, max: xMax },
+    yRange: { min: yMin, max: yMax },
+    snapToGrid
+  };
+};
+
+const withCommandCoordinateSystemMeta = (
+  node: GraphObjectNode,
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions,
+  options: { clipToCoordinateSystem?: boolean } = {}
+): GraphObjectNode => {
+  const isCoordinateSystem = node.type === 'coordinate-system';
+  return {
+    ...node,
+    meta: {
+      ...(node.meta ?? {}),
+      coordinateSystemId: coordinateSystem.id,
+      independentCoordinateSystem: true,
+      draggable: isCoordinateSystem,
+      ...(coordinateSystem.snapToGrid !== undefined ? { snapToGrid: coordinateSystem.snapToGrid } : {}),
+      ...(!isCoordinateSystem ? { dragDisabled: true } : {})
+    },
+    renderHints: {
+      ...(node.renderHints ?? {}),
+      draggable: isCoordinateSystem,
+      lineCap: 'butt',
+      ...(options.clipToCoordinateSystem ? { clipWorldBounds: commandCoordinateWorldBounds(coordinateSystem) } : {})
+    }
+  };
+};
+
+const commandCoordinateToWorld = (
+  point: SceneSamplePoint2D,
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions
+): SceneSamplePoint2D => ({
+  x: coordinateSystem.origin.x + point.x * coordinateSystem.unitScale,
+  y: coordinateSystem.origin.y + point.y * coordinateSystem.unitScale
+});
+
+const commandCoordinateWorldBounds = (
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions
+): { left: number; right: number; top: number; bottom: number } => ({
+  left: coordinateSystem.origin.x + coordinateSystem.xRange.min * coordinateSystem.unitScale,
+  right: coordinateSystem.origin.x + coordinateSystem.xRange.max * coordinateSystem.unitScale,
+  top: coordinateSystem.origin.y + coordinateSystem.yRange.max * coordinateSystem.unitScale,
+  bottom: coordinateSystem.origin.y + coordinateSystem.yRange.min * coordinateSystem.unitScale
+});
+
+const transformCommandCoordinateSegments = (
+  segments: readonly SceneSamplePoint2D[][],
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions
+): SceneSamplePoint2D[][] => segments.map((segment) => segment.map((point) => commandCoordinateToWorld(point, coordinateSystem)));
+
+const clipCommandCoordinateSegments = (
+  segments: readonly SceneSamplePoint2D[][],
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions
+): SceneSamplePoint2D[][] => clipSegmentsToBounds2D(segments, {
+  left: coordinateSystem.xRange.min,
+  right: coordinateSystem.xRange.max,
+  top: coordinateSystem.yRange.max,
+  bottom: coordinateSystem.yRange.min
+});
+
+const clampCommandCoordinateDomain = (
+  domain: [number, number] | undefined,
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions
+): [number, number] | null => {
+  const min = Math.max(domain?.[0] ?? coordinateSystem.xRange.min, coordinateSystem.xRange.min);
+  const max = Math.min(domain?.[1] ?? coordinateSystem.xRange.max, coordinateSystem.xRange.max);
+  return min < max ? [min, max] : null;
+};
+
+const createCommandCoordinateGeometry = (coordinateSystem: CommandCoordinateSystemRuntimeOptions): Record<string, unknown> => {
+  return createStandardCoordinateSystemGeometry({
+    origin: coordinateSystem.origin,
+    unitPx: coordinateSystem.unitScale,
+    xRange: coordinateSystem.xRange,
+    yRange: coordinateSystem.yRange,
+    showTicks: true,
+    showLabels: true,
+    includeGrid: false,
+    includeBorder: false
+  });
+};
+
+const createCommandCoordinatePolylineGeometry = (
+  segments: readonly SceneSamplePoint2D[][]
+): Record<string, unknown> | null => {
+  if (segments.length === 0) return null;
+  return segments.length === 1
+    ? { kind: 'polyline', points: segments[0] }
+    : { kind: 'multiline', segments };
+};
+
+const withEmptyCommandCoordinateGeometry = (
+  node: GraphObjectNode,
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions
+): GraphObjectNode => withCommandCoordinateSystemMeta({
+  ...node,
+  payload: {
+    ...(isRecord(node.payload) ? node.payload : {}),
+    geometry: { kind: 'multiline', segments: [] }
+  },
+  renderHints: {
+    ...(node.renderHints ?? {}),
+    visible: false
+  }
+}, coordinateSystem);
+
+const readCommandFunctionDescriptor = (
+  payload: unknown
+): { expression: string; variable: string; domain?: [number, number]; scope: Record<string, number> } | null => {
+  const record = isRecord(payload) ? payload : null;
+  if (typeof record?.expression !== 'string') return null;
+  const domain = readCommandFunctionDomain(record.domain);
+  return {
+    expression: record.expression,
+    variable: typeof record.variable === 'string' ? record.variable : 'x',
+    domain,
+    scope: {
+      ...readFiniteNumberRecord(record.scope),
+      ...readFiniteNumberRecord(record.parameters)
+    }
+  };
+};
+
+const readCommandFunctionDomain = (value: unknown): [number, number] | undefined => {
+  if (Array.isArray(value) && value.length >= 2) {
+    const min = readFiniteNumber(value[0]);
+    const max = readFiniteNumber(value[1]);
+    if (min !== null && max !== null && min < max) return [min, max];
+  }
+  if (isRecord(value)) {
+    const min = readFiniteNumber(value.min);
+    const max = readFiniteNumber(value.max);
+    if (min !== null && max !== null && min < max) return [min, max];
+  }
+  return undefined;
+};
+
+const readFiniteNumberRecord = (value: unknown): Record<string, number> => {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, number] => readFiniteNumber(entry[1]) !== null)
+  );
+};
+
+const applyCommandCoordinateSystemOptions = (
+  node: GraphObjectNode,
+  options: unknown
+): GraphObjectNode => {
+  const coordinateSystem = readCommandCoordinateSystemOptions(options);
+  if (!coordinateSystem) return node;
+
+  if (node.type === 'coordinate-system') {
+    const payload = isRecord(node.payload) ? node.payload : {};
+    const geometry = createCommandCoordinateGeometry(coordinateSystem);
+    return withCommandCoordinateSystemMeta({
+      ...node,
+      payload: {
+        ...payload,
+        origin: { dimension: '2d', ...coordinateSystem.origin },
+        unitPx: coordinateSystem.unitScale,
+        xRange: { ...coordinateSystem.xRange },
+        yRange: { ...coordinateSystem.yRange },
+        size: {
+          width: (coordinateSystem.xRange.max - coordinateSystem.xRange.min) * coordinateSystem.unitScale,
+          height: (coordinateSystem.yRange.max - coordinateSystem.yRange.min) * coordinateSystem.unitScale
+        },
+        showAxes: true,
+        showTicks: true,
+        showLabels: true,
+        geometry
+      }
+    }, coordinateSystem);
+  }
+
+  if (node.type === 'function' || node.type === 'derivative') {
+    const descriptor = readCommandFunctionDescriptor(node.payload);
+    if (!descriptor) return withCommandCoordinateSystemMeta(node, coordinateSystem);
+    const domain = clampCommandCoordinateDomain(descriptor.domain, coordinateSystem);
+    if (!domain) return withEmptyCommandCoordinateGeometry(node, coordinateSystem);
+    const localSegments = sampleFunctionExpressionSegments(descriptor.expression, descriptor.variable, descriptor.scope, {
+      min: domain[0],
+      max: domain[1],
+      yMin: coordinateSystem.yRange.min,
+      yMax: coordinateSystem.yRange.max,
+      steps: COMMAND_COORDINATE_SAMPLE_STEPS
+    });
+    const geometry = createCommandCoordinatePolylineGeometry(transformCommandCoordinateSegments(
+      clipCommandCoordinateSegments(localSegments, coordinateSystem),
+      coordinateSystem
+    ));
+    if (!geometry) return withEmptyCommandCoordinateGeometry(node, coordinateSystem);
+    return withCommandCoordinateSystemMeta({
+      ...node,
+      payload: {
+        ...(isRecord(node.payload) ? node.payload : {}),
+        geometry
+      }
+    }, coordinateSystem, { clipToCoordinateSystem: true });
+  }
+
+  if (node.type === 'equation') {
+    const payload = isRecord(node.payload) ? node.payload : {};
+    const expression = typeof payload.expression === 'string' ? payload.expression : '';
+    const localSegments = expression
+      ? sampleImplicitEquationSegments(expression, {
+        bounds: {
+          left: coordinateSystem.xRange.min,
+          right: coordinateSystem.xRange.max,
+          top: coordinateSystem.yRange.max,
+          bottom: coordinateSystem.yRange.min
+        },
+        grid: COMMAND_COORDINATE_IMPLICIT_GRID_SIZE
+      })
+      : [];
+    const geometry = createCommandCoordinatePolylineGeometry(transformCommandCoordinateSegments(
+      clipCommandCoordinateSegments(localSegments, coordinateSystem),
+      coordinateSystem
+    ));
+    if (!geometry) return withEmptyCommandCoordinateGeometry(node, coordinateSystem);
+    return withCommandCoordinateSystemMeta({
+      ...node,
+      payload: {
+        ...payload,
+        geometry
+      }
+    }, coordinateSystem, { clipToCoordinateSystem: true });
+  }
+
+  return withCommandCoordinateSystemMeta(node, coordinateSystem, { clipToCoordinateSystem: true });
+};
+
+const normalizeSceneGridOptions = (value: unknown): GraphViewportGridInput | null => {
+  if (typeof value === 'boolean') return value;
+  if (!isRecord(value)) return null;
+
+  const grid: Exclude<GraphViewportGridInput, boolean> = {};
+  if (value.enabled !== undefined) {
+    if (typeof value.enabled !== 'boolean') return null;
+    grid.enabled = value.enabled;
+  }
+  for (const key of ['cellSizePx', 'lineWidth', 'minCellSizePx', 'maxLines'] as const) {
+    if (value[key] !== undefined) {
+      if (typeof value[key] !== 'number' || !Number.isFinite(value[key]) || value[key] <= 0) return null;
+      grid[key] = value[key];
+    }
+  }
+  for (const key of ['lineColor', 'backgroundColor'] as const) {
+    if (value[key] !== undefined) {
+      if (typeof value[key] !== 'string' || !value[key].trim()) return null;
+      grid[key] = value[key];
+    }
+  }
+  return grid;
+};
+
 const normalizeSceneSettings = (value: unknown): GraphSceneSettings | null => {
   if (!isRecord(value)) return null;
 
@@ -252,6 +566,12 @@ const normalizeSceneSettings = (value: unknown): GraphSceneSettings | null => {
   if (value.keepaspectratio !== undefined) {
     if (typeof value.keepaspectratio !== 'boolean') return null;
     settings.keepaspectratio = value.keepaspectratio;
+  }
+
+  if (value.grid !== undefined) {
+    const grid = normalizeSceneGridOptions(value.grid);
+    if (grid === null) return null;
+    settings.grid = grid;
   }
 
   if (value.view3D !== undefined) {
@@ -1051,6 +1371,9 @@ export class GraphXEngine {
       return this.setCommandCoreObjectSelected(target.objectId, selected);
     }
     const commandId = target.objectId ? this.getCommandIdForCoreObject(target.objectId) : null;
+    const coordinateMoveObjectIds = target.objectId && capabilityId === 'math.object.move'
+      ? this.getCoordinateSystemDragObjectIds(target.objectId)
+      : [];
     const result = executeGraphCapability({
       scene: this.runtimeSceneStore,
       capabilityId,
@@ -1070,12 +1393,34 @@ export class GraphXEngine {
       return true;
     }
 
+    if (result.value.action === 'update' && coordinateMoveObjectIds.length > 0) {
+      for (const objectId of coordinateMoveObjectIds) {
+        const object = this.runtimeSceneStore.getObject(objectId);
+        const scopedCommandId = this.getCommandIdForCoreObject(objectId);
+        if (object && scopedCommandId) this.syncCoreCommandMutationToJsxGraph(scopedCommandId, object, capabilityId);
+      }
+      this.notifyCapabilityChange();
+      return true;
+    }
+
     if (commandId && result.value.action === 'update') {
       this.syncCoreCommandMutationToJsxGraph(commandId, result.value.object, capabilityId);
     }
 
     this.notifyCapabilityChange();
     return true;
+  }
+
+  private getCoordinateSystemDragObjectIds(objectId: string): string[] {
+    const object = this.runtimeSceneStore.getObject(objectId);
+    if (!object || object.type !== 'coordinate-system') return [];
+    const coordinateSystemId = typeof object.meta?.coordinateSystemId === 'string' ? object.meta.coordinateSystemId : object.id;
+    return this.runtimeSceneStore.listObjects()
+      .filter((candidate) => (
+        candidate.id === object.id
+        || (typeof candidate.meta?.coordinateSystemId === 'string' && candidate.meta.coordinateSystemId === coordinateSystemId)
+      ))
+      .map((candidate) => candidate.id);
   }
 
   /** 导出当前引擎的公开 scene document。 */
@@ -1575,6 +1920,11 @@ export class GraphXEngine {
       settings.boundingbox = boundingbox;
     }
 
+    const grid = cloneGridOptions(this.currentOptions?.grid);
+    if (grid !== undefined) {
+      settings.grid = grid;
+    }
+
     if (this.boardMgr.mode === '3d') {
       settings.view3D = {
         hiddenLine: {
@@ -1607,6 +1957,10 @@ export class GraphXEngine {
 
     if (settings.keepaspectratio !== undefined) {
       options.keepaspectratio = settings.keepaspectratio;
+    }
+
+    if (settings.grid !== undefined) {
+      options.grid = cloneGridOptions(settings.grid);
     }
 
     if (settings.view3D?.hiddenLine?.enabled !== undefined) {
@@ -1645,7 +1999,10 @@ export class GraphXEngine {
     }
 
     this.commandSymbols = result.value.symbols;
-    const node = this.prepareCommandCoreNodeForRuntime(result.value.node);
+    const node = applyCommandCoordinateSystemOptions(
+      this.prepareCommandCoreNodeForRuntime(result.value.node),
+      extraOptions
+    );
     this.commandSymbols.set(node.id, node);
     const stored = this.runtimeSceneStore.addObject(node, { replace: true });
     if (!stored.ok) {
@@ -1893,6 +2250,7 @@ export class GraphXEngine {
       'rotated',
       'conic',
       'equation',
+      'coordinate-system',
       'solid',
       'measurement'
     ].includes(node.type);
@@ -2082,6 +2440,7 @@ export class GraphXEngine {
     if (targetWidth !== undefined && targetHeight !== undefined) {
       board.resizeContainer(targetWidth, targetHeight, true);
       this.boardMgr.syncView3DToBoard();
+      this.boardMgr.syncGridToBoard();
       board.update();
     }
   }

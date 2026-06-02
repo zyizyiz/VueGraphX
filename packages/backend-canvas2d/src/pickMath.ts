@@ -120,6 +120,14 @@ export const pickGraphObjectNode = (
     return distancePx <= tolerancePx ? { target, backendId, layerId, clientPoint: { ...clientPoint }, worldPoint: { dimension: '2d', ...point }, distancePx } : null;
   }
 
+  const coordinateSystem = readCoordinateSystemHitGeometry(node);
+  if (coordinateSystem) {
+    const distancePx = pointInCoordinateSystemRegion(point, coordinateSystem)
+      ? 0
+      : Math.min(...coordinateSystem.segments.map((segment) => distanceToPolyline(point, segment)));
+    return distancePx <= tolerancePx ? { target, backendId, layerId, clientPoint: { ...clientPoint }, worldPoint: { dimension: '2d', ...point }, distancePx } : null;
+  }
+
   const arc = readArcLikeGeometry(node);
   if (arc) {
     const distancePx = distanceToArcLike(point, arc);
@@ -153,6 +161,38 @@ const readMultilineGeometry = (node: GraphObjectNode): MathPoint2D[][] | null =>
   return segments.some((segment) => segment.length >= 2) ? segments : null;
 };
 
+const readCoordinateSystemHitGeometry = (node: GraphObjectNode): { border: MathPoint2D[]; segments: MathPoint2D[][] } | null => {
+  const geometry = readGeometryPayload<Record<string, unknown>>(node, 'coordinate-system');
+  if (!geometry) return null;
+  const segments = Array.isArray(geometry.segments)
+    ? geometry.segments.filter(isPointArray)
+    : [];
+  const axisSegments = [geometry.xAxis, geometry.yAxis].filter(isPointArray);
+  const hitSegments = segments.length > 0 ? segments : axisSegments;
+  const border = isPointArray(geometry.border) ? geometry.border : boundsPolygonForSegments([...hitSegments, ...segments, ...axisSegments]);
+  return hitSegments.length > 0 || border.length >= 3 ? { border, segments: hitSegments } : null;
+};
+
+const pointInCoordinateSystemRegion = (point: MathPoint2D, geometry: { border: MathPoint2D[] }): boolean => (
+  geometry.border.length >= 3 && pointInPolygon2D(point, { kind: 'polygon', vertices: geometry.border })
+);
+
+const boundsPolygonForSegments = (segments: MathPoint2D[][]): MathPoint2D[] => {
+  const points = segments.flat();
+  if (points.length === 0) return [];
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) return [];
+  return [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY }
+  ];
+};
+
 const readArcLikeGeometry = (
   node: GraphObjectNode
 ): { center: MathPoint2D; start: MathPoint2D; end: MathPoint2D; radius: number } | null => {
@@ -177,6 +217,10 @@ const isPointLike = (value: unknown): value is MathPoint2D => {
   const record = value as Record<string, unknown>;
   return typeof record.x === 'number' && Number.isFinite(record.x) && typeof record.y === 'number' && Number.isFinite(record.y);
 };
+
+const isPointArray = (value: unknown): value is MathPoint2D[] => (
+  Array.isArray(value) && value.every(isPointLike)
+);
 
 const distanceToAngle = (point: MathPoint2D, [first, vertex, third]: [MathPoint2D, MathPoint2D, MathPoint2D]): number => {
   const radius = Math.max(0.35, Math.min(distance2D(first, vertex), distance2D(third, vertex)) * 0.35);

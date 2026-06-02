@@ -283,5 +283,6 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       desc: '一条直线穿过两点，配合圆形演示',
       commands: ['A = (-3, -1)', 'B = (3, 1)', 'O = (0, 3)', 'R = (2, 3)', 'Line(A, B)', 'Circle(O, R)']
     }
-  ]
+  ],
+  'operation': []
 };

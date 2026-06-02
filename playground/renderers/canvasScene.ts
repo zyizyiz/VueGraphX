@@ -1,5 +1,6 @@
 import * as math from 'mathjs';
 import {
+  clipSegmentsToBounds2D,
   projectSurfaceWireframeIsometric,
   sampleExplicitSurfaceWireframe,
   sampleFunctionSegments,
@@ -11,7 +12,9 @@ import {
 } from '@vuegraphx/math';
 import {
   CURRICULUM_PARITY_BACKENDS,
+  createStandardCoordinateSystemGeometry,
   createParitySnapshot,
+  snapPointToGraphGrid,
   type CurriculumBackendId,
   type GraphObjectNode,
   type NormalizedParitySnapshot
@@ -33,6 +36,15 @@ export interface PlaygroundCanvasDiagnostic {
 export interface PlaygroundCanvasSceneResult {
   nodes: GraphObjectNode[];
   diagnostics: PlaygroundCanvasDiagnostic[];
+}
+
+interface OperationCoordinateSystemRuntimeOptions {
+  id: string;
+  origin: { x: number; y: number };
+  unitScale: number;
+  xRange: { min: number; max: number };
+  yRange: { min: number; max: number };
+  snapToGrid?: unknown;
 }
 
 export const PLAYGROUND_CANVAS_WORLD_BOUNDS = {
@@ -116,7 +128,9 @@ const buildPlaygroundCoreScene = (
       const result = compileCanvasGraphCommand(graphCommand, symbols);
       if (result.ok && result.value) {
         symbols = result.value.symbols;
-        const expanded = expandCanvasCommandNode(result.value.node, command, symbols, scope, options);
+        const node = applyOperationCoordinateSystemOptions(result.value.node, command);
+        if (node !== result.value.node) symbols.set(node.id, node);
+        const expanded = expandCanvasCommandNode(node, command, symbols, scope, options);
         if (expanded.ok) {
           nodes.push(...expanded.nodes);
         } else {
@@ -173,6 +187,145 @@ const withRenderHints = (node: GraphObjectNode, command: PlaygroundCanvasCommand
     radius: readNumber(command.options?.size, 4)
   }
 });
+
+const withOperationCoordinateMeta = (
+  node: GraphObjectNode,
+  command: PlaygroundCanvasCommand,
+  options: { clipToCoordinateSystem?: boolean } = {}
+): GraphObjectNode => {
+  const coordinateSystem = readOperationCoordinateSystemOptions(command);
+  if (!coordinateSystem) return node;
+  const isCoordinateSystem = node.type === 'coordinate-system';
+  return {
+    ...node,
+    meta: {
+      ...(node.meta ?? {}),
+      coordinateSystemId: coordinateSystem.id,
+      independentCoordinateSystem: true,
+      draggable: isCoordinateSystem,
+      ...(coordinateSystem.snapToGrid !== undefined ? { snapToGrid: coordinateSystem.snapToGrid } : {}),
+      ...(!isCoordinateSystem ? { dragDisabled: true } : {})
+    },
+    renderHints: {
+      ...(node.renderHints ?? {}),
+      draggable: isCoordinateSystem,
+      lineCap: 'butt',
+      ...(options.clipToCoordinateSystem ? { clipWorldBounds: operationCoordinateWorldBounds(coordinateSystem) } : {})
+    }
+  };
+};
+
+const applyOperationCoordinateSystemOptions = (
+  node: GraphObjectNode,
+  command: PlaygroundCanvasCommand
+): GraphObjectNode => {
+  const coordinateSystem = readOperationCoordinateSystemOptions(command);
+  if (!coordinateSystem || node.type !== 'coordinate-system') return node;
+  const payload = asRecord(node.payload) ?? {};
+  const geometry = createOperationCoordinateSystemGeometry(coordinateSystem);
+  return withOperationCoordinateMeta({
+    ...node,
+    payload: {
+      ...payload,
+      origin: { dimension: '2d', ...coordinateSystem.origin },
+      unitPx: coordinateSystem.unitScale,
+      xRange: { ...coordinateSystem.xRange },
+      yRange: { ...coordinateSystem.yRange },
+      size: {
+        width: (coordinateSystem.xRange.max - coordinateSystem.xRange.min) * coordinateSystem.unitScale,
+        height: (coordinateSystem.yRange.max - coordinateSystem.yRange.min) * coordinateSystem.unitScale
+      },
+      showAxes: true,
+      showTicks: true,
+      showLabels: true,
+      geometry
+    }
+  }, command);
+};
+
+const createOperationCoordinateSystemGeometry = (coordinateSystem: OperationCoordinateSystemRuntimeOptions) => (
+  createStandardCoordinateSystemGeometry({
+    origin: coordinateSystem.origin,
+    unitPx: coordinateSystem.unitScale,
+    xRange: coordinateSystem.xRange,
+    yRange: coordinateSystem.yRange,
+    showTicks: true,
+    showLabels: true,
+    includeGrid: false,
+    includeBorder: false
+  })
+);
+
+const readOperationCoordinateSystemOptions = (
+  command: PlaygroundCanvasCommand
+): OperationCoordinateSystemRuntimeOptions | null => {
+  const value = asRecord(command.options?.coordinateSystem);
+  const origin = asRecord(value?.origin);
+  const xRange = asRecord(value?.xRange);
+  const yRange = asRecord(value?.yRange);
+  const id = typeof value?.id === 'string' && value.id.trim() ? value.id : '';
+  const originX = readFiniteNumber(origin?.x);
+  const originY = readFiniteNumber(origin?.y);
+  const unitScale = readFiniteNumber(value?.unitScale);
+  const xMin = readFiniteNumber(xRange?.min);
+  const xMax = readFiniteNumber(xRange?.max);
+  const yMin = readFiniteNumber(yRange?.min);
+  const yMax = readFiniteNumber(yRange?.max);
+  if (!id || originX === null || originY === null || unitScale === null || unitScale <= 0) return null;
+  if (xMin === null || xMax === null || yMin === null || yMax === null || xMax <= xMin || yMax <= yMin) return null;
+  return {
+    id,
+    origin: snapPointToGraphGrid(
+      { x: originX, y: originY },
+      value?.snapToGrid,
+      { enabled: false, step: 1 }
+    ),
+    unitScale,
+    xRange: { min: xMin, max: xMax },
+    yRange: { min: yMin, max: yMax },
+    snapToGrid: value?.snapToGrid
+  };
+};
+
+const transformOperationCoordinateSegments = (
+  segments: SceneSamplePoint2D[][],
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): SceneSamplePoint2D[][] => segments.map((segment) => segment.map((point) => ({
+  x: coordinateSystem.origin.x + point.x * coordinateSystem.unitScale,
+  y: coordinateSystem.origin.y + point.y * coordinateSystem.unitScale
+})));
+
+const operationCoordinateWorldBounds = (
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): { left: number; right: number; top: number; bottom: number } => ({
+  left: coordinateSystem.origin.x + coordinateSystem.xRange.min * coordinateSystem.unitScale,
+  right: coordinateSystem.origin.x + coordinateSystem.xRange.max * coordinateSystem.unitScale,
+  top: coordinateSystem.origin.y + coordinateSystem.yRange.max * coordinateSystem.unitScale,
+  bottom: coordinateSystem.origin.y + coordinateSystem.yRange.min * coordinateSystem.unitScale
+});
+
+const clipOperationCoordinateSegments = (
+  segments: SceneSamplePoint2D[][],
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): SceneSamplePoint2D[][] => clipSegmentsToBounds2D(segments, {
+  left: coordinateSystem.xRange.min,
+  right: coordinateSystem.xRange.max,
+  top: coordinateSystem.yRange.max,
+  bottom: coordinateSystem.yRange.min
+});
+
+const clampOperationCoordinateDomain = (
+  domain: [number, number] | undefined,
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): [number, number] | null => {
+  const min = Math.max(domain?.[0] ?? coordinateSystem.xRange.min, coordinateSystem.xRange.min);
+  const max = Math.min(domain?.[1] ?? coordinateSystem.xRange.max, coordinateSystem.xRange.max);
+  return min < max ? [min, max] : null;
+};
+
+const readFiniteNumber = (value: unknown): number | null => (
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+);
 
 const backendLabel = (backendId: CurriculumBackendId): string => {
   if (backendId === 'jsxgraph') return 'JSXGraph 后端';
@@ -253,7 +406,7 @@ const expandCanvasCommandNode = (
   if (node.type === 'function' || node.type === 'derivative') {
     const descriptor = readFunctionDescriptor(node.payload);
     if (!descriptor) return { ok: false, message: `${backendLabel(options.backendId)} 无法读取函数描述符。` };
-    return createSampledDescriptorNode(command, node.id, descriptor, scope);
+    return createSampledDescriptorNode(command, node.id, descriptor, scope, node.meta);
   }
 
   if (node.type === 'equation') {
@@ -375,7 +528,8 @@ const createSampledDescriptorNode = (
   command: PlaygroundCanvasCommand,
   id: string,
   descriptor: { expression: string; variable: string; domain?: [number, number]; scope?: Record<string, unknown> },
-  scope: Record<string, unknown>
+  scope: Record<string, unknown>,
+  meta?: GraphObjectNode['meta']
 ): { ok: true; nodes: GraphObjectNode[] } | { ok: false; message: string } => {
   let code: math.EvalFunction;
   try {
@@ -388,7 +542,8 @@ const createSampledDescriptorNode = (
     id,
     descriptor.expression,
     (x) => code.evaluate({ ...(descriptor.scope ?? {}), ...scope, [descriptor.variable]: x }),
-    descriptor.domain
+    descriptor.domain,
+    meta
   );
 };
 
@@ -397,33 +552,50 @@ const createSampledFunctionNode = (
   id: string,
   expression: string,
   evaluate: (x: number) => unknown,
-  domain?: [number, number]
+  domain?: [number, number],
+  meta?: GraphObjectNode['meta']
 ): { ok: true; nodes: GraphObjectNode[] } | { ok: false; message: string } => {
-  const { left, right, bottom, top } = PLAYGROUND_CANVAS_WORLD_BOUNDS;
+  const coordinateSystem = readOperationCoordinateSystemOptions(command);
+  const domainRange = coordinateSystem ? clampOperationCoordinateDomain(domain, coordinateSystem) : domain;
+  if (coordinateSystem && !domainRange) {
+    return { ok: false, message: '函数定义域不在当前坐标系范围内。' };
+  }
+  const { left, right, bottom, top } = coordinateSystem
+    ? {
+      left: coordinateSystem.xRange.min,
+      right: coordinateSystem.xRange.max,
+      bottom: coordinateSystem.yRange.min,
+      top: coordinateSystem.yRange.max
+    }
+    : PLAYGROUND_CANVAS_WORLD_BOUNDS;
   const segments = sampleFunctionSegments(evaluate, {
-    min: domain?.[0] ?? left,
-    max: domain?.[1] ?? right,
+    min: domainRange?.[0] ?? left,
+    max: domainRange?.[1] ?? right,
     yMin: bottom,
     yMax: top,
     steps: SAMPLE_STEPS
   });
+  const renderedSegments = coordinateSystem
+    ? transformOperationCoordinateSegments(clipOperationCoordinateSegments(segments, coordinateSystem), coordinateSystem)
+    : segments;
 
-  if (segments.length === 0) {
+  if (renderedSegments.length === 0) {
     return { ok: false, message: '当前后端没有采样到可绘制的函数点。' };
   }
 
   return {
     ok: true,
-    nodes: segments.map((points, index) => withRenderHints({
-      id: segments.length === 1 ? id : `${id}:segment-${index + 1}`,
+    nodes: renderedSegments.map((points, index) => withOperationCoordinateMeta(withRenderHints({
+      id: renderedSegments.length === 1 ? id : `${id}:segment-${index + 1}`,
       kind: 'shape',
       type: 'function',
       payload: {
         expression,
         geometry: { kind: 'polyline', points }
       },
-      layerId: 'content'
-    }, command))
+      layerId: 'content',
+      meta: meta ? { ...meta } : undefined
+    }, command), command, { clipToCoordinateSystem: true }))
   };
 };
 
@@ -433,22 +605,33 @@ const createEquationPolylineNode = (
 ): { ok: true; nodes: GraphObjectNode[] } | { ok: false; message: string } => {
   const payload = asRecord(node.payload);
   const expression = typeof payload?.expression === 'string' ? payload.expression : '';
+  const coordinateSystem = readOperationCoordinateSystemOptions(command);
   const segments = sampleImplicitEquationSegments(expression, {
-    bounds: PLAYGROUND_CANVAS_WORLD_BOUNDS,
+    bounds: coordinateSystem
+      ? {
+        left: coordinateSystem.xRange.min,
+        right: coordinateSystem.xRange.max,
+        top: coordinateSystem.yRange.max,
+        bottom: coordinateSystem.yRange.min
+      }
+      : PLAYGROUND_CANVAS_WORLD_BOUNDS,
     grid: IMPLICIT_GRID_SIZE
   });
-  if (segments.length === 0) return { ok: false, message: '当前后端没有采样到可绘制的方程等值线。' };
+  const renderedSegments = coordinateSystem
+    ? transformOperationCoordinateSegments(clipOperationCoordinateSegments(segments, coordinateSystem), coordinateSystem)
+    : segments;
+  if (renderedSegments.length === 0) return { ok: false, message: '当前后端没有采样到可绘制的方程等值线。' };
 
   return {
     ok: true,
-    nodes: [withRenderHints({
+    nodes: [withOperationCoordinateMeta(withRenderHints({
       ...node,
       payload: {
         ...payload,
         expression,
-        geometry: createPolylineOrMultilineGeometry(segments)
+        geometry: createPolylineOrMultilineGeometry(renderedSegments)
       }
-    }, command)]
+    }, command), command, { clipToCoordinateSystem: true })]
   };
 };
 

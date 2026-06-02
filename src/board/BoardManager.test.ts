@@ -126,6 +126,41 @@ describe('BoardManager.initBoard interaction options', () => {
     }));
   });
 
+
+
+  it('uses a 30px grid-aligned bounding box and CSS grid when requested', () => {
+    document.body.innerHTML = '<div id="box"></div>';
+    const container = document.getElementById('box') as HTMLElement;
+    Object.defineProperty(container, 'clientWidth', { value: 600, configurable: true });
+    Object.defineProperty(container, 'clientHeight', { value: 420, configurable: true });
+
+    const fakeBoard = {
+      containerObj: container,
+      on: vi.fn(),
+      getBoundingBox: vi.fn(),
+      update: vi.fn()
+    } as any;
+
+    const initBoardSpy = vi.spyOn(JXG.JSXGraph, 'initBoard').mockImplementation((_id, options: any) => {
+      fakeBoard.getBoundingBox.mockReturnValue(options.boundingbox);
+      return fakeBoard;
+    });
+    vi.spyOn(JXG.JSXGraph, 'freeBoard').mockImplementation(() => undefined as any);
+
+    const manager = new BoardManager('box', { axis: false, grid: true });
+
+    manager.initBoard();
+
+    expect(initBoardSpy).toHaveBeenCalledWith('box', expect.objectContaining({
+      boundingbox: [-10, 7, 10, -7],
+      axis: false
+    }));
+    expect(initBoardSpy.mock.calls[0]?.[1]).not.toHaveProperty('grid');
+    expect(container.classList.contains('vuegraphx-grid-enabled')).toBe(true);
+    expect(container.style.getPropertyValue('--vuegraphx-grid-size-x')).toBe('30px');
+    expect(container.style.getPropertyValue('--vuegraphx-grid-size-y')).toBe('30px');
+  });
+
   it('keeps library zoom disabled by default', () => {
     document.body.innerHTML = '<div id="box"></div>';
 

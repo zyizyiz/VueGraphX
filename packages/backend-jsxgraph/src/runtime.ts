@@ -3,9 +3,14 @@ import katex from 'katex';
 import katexCss from 'katex/dist/katex.min.css?raw';
 import { sampleImplicitEquationSegments } from '@vuegraphx/math';
 import {
+  createCenteredWorldBoundsForViewportGrid,
   mergeGraphObjectPatch,
   resolveGraphTextAnchor,
   resolveGraphTextRenderDescriptor,
+  resolveGraphViewportGridOptions,
+  resolveGraphViewportGridStep,
+  STANDARD_COORDINATE_UI,
+  resolveStandardCoordinateLabelPixelOffset,
   type GraphBackendContext,
   type GraphBackendMountOptions,
   type GraphClientPoint,
@@ -16,8 +21,10 @@ import {
   type GraphRenderHandle,
   type GraphTextRenderDescriptor,
   type GraphViewportRef,
+  type GraphViewportGridInput,
   type GraphViewportSize,
-  type GraphWorldPoint
+  type GraphWorldPoint,
+  type StandardCoordinateLabelModel
 } from '@vuegraphx/core';
 import type { JsxGraphRuntimePort } from './JsxGraphBackend';
 
@@ -35,6 +42,8 @@ type JsxGraphBoardLike = {
   fullUpdate?(): void;
   resizeContainer?(width: number, height: number, emit?: boolean): void;
   getBoundingBox?(): [number, number, number, number];
+  on?(eventName: string, handler: () => void): void;
+  off?(eventName: string, handler: () => void): void;
   containerObj?: HTMLElement;
 };
 
@@ -69,6 +78,7 @@ interface StoredJsxGraphObject {
   node: GraphObjectNode;
   handle: GraphRenderHandle;
   elements: JsxGraphElement[];
+  overlays: HTMLElement[];
 }
 
 interface Point2D {
@@ -86,30 +96,46 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
   private ownsBoard = false;
   private readonly objects = new Map<string, StoredJsxGraphObject>();
   private readonly visualBaselines = new WeakMap<JsxGraphBoardLike, { width: number; height: number }>();
+  private gridInput?: GraphViewportGridInput;
+  private disposeBoardOverlaySync: (() => void) | null = null;
 
   public constructor(
     private readonly JXG: JsxGraphNamespaceLike,
     private readonly options: JsxGraphRuntimeOptions = {}
   ) {
     this.board = options.board ?? null;
-    if (this.board) this.captureVisualBaseline(this.board);
+    if (this.board) {
+      this.captureVisualBaseline(this.board);
+      this.bindBoardOverlaySync(this.board);
+    }
   }
 
   public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): void {
     if (this.board) return;
+    this.gridInput = readGridInput(options.attributes?.grid) ?? readGridInput(this.options.boardOptions?.grid);
+    const gridOptions = resolveGraphViewportGridOptions(this.gridInput);
+    const boardOptions = {
+      axis: true,
+      showNavigation: false,
+      showCopyright: false,
+      boundingbox: gridOptions.enabled
+        ? toJsxGraphBounds(createCenteredWorldBoundsForViewportGrid(
+          options.size ?? readHostSize(host) ?? { width: 600, height: 600 },
+          gridOptions
+        ))
+        : DEFAULT_BOUNDS,
+      ...(this.options.boardOptions ?? {}),
+      ...(options.attributes ?? {})
+    };
+    delete (boardOptions as Record<string, unknown>).grid;
     this.board = this.options.createBoard?.(host, options)
-      ?? this.JXG.JSXGraph?.initBoard(host, {
-        axis: true,
-        showNavigation: false,
-        showCopyright: false,
-        boundingbox: DEFAULT_BOUNDS,
-        ...(this.options.boardOptions ?? {}),
-        ...(options.attributes ?? {})
-      })
+      ?? this.JXG.JSXGraph?.initBoard(host, boardOptions)
       ?? null;
     if (!this.board) throw new Error('JSXGraph runtime requires a board or a JXG.JSXGraph.initBoard implementation.');
     this.captureVisualBaseline(this.board);
+    this.bindBoardOverlaySync(this.board);
     this.ownsBoard = true;
+    this.syncGridStyle();
   }
 
   public createObject(node: GraphObjectNode, handle: GraphRenderHandle, context: GraphBackendContext = {}): void {
@@ -118,7 +144,8 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     if (previous) this.removeStored(previous);
 
     const elements = this.createElements(board, node, context);
-    const stored = { node, handle, elements };
+    const overlays = this.createOverlays(board, node);
+    const stored = { node, handle, elements, overlays };
     this.objects.set(handle.id, stored);
     if (elements.length > 0) this.options.onCreateElements?.(stored);
     this.flush();
@@ -131,7 +158,8 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     this.removeStored(stored);
     const board = this.requireBoard();
     const elements = this.createElements(board, nextNode, context);
-    const nextStored = { node: nextNode, handle, elements };
+    const overlays = this.createOverlays(board, nextNode);
+    const nextStored = { node: nextNode, handle, elements, overlays };
     this.objects.set(handle.id, nextStored);
     if (elements.length > 0) this.options.onCreateElements?.(nextStored);
     this.flush();
@@ -187,15 +215,20 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
 
   public resize(size: GraphViewportSize): void {
     this.board?.resizeContainer?.(size.width, size.height, true);
+    this.syncGridStyle();
   }
 
   public flush(): void {
     this.board?.update?.();
+    this.syncCoordinateLabelOverlays();
   }
 
   public destroy(): void {
     for (const stored of this.objects.values()) this.removeStored(stored);
     this.objects.clear();
+    this.clearGridStyle();
+    this.disposeBoardOverlaySync?.();
+    this.disposeBoardOverlaySync = null;
     if (this.ownsBoard && this.board) this.JXG.JSXGraph?.freeBoard?.(this.board);
     this.board = null;
     this.ownsBoard = false;
@@ -205,6 +238,68 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     return [...(this.objects.get(handleId)?.elements ?? [])];
   }
 
+  private syncGridStyle(): void {
+    const gridOptions = resolveGraphViewportGridOptions(this.gridInput);
+    const container = this.board?.containerObj;
+    if (!container || !this.board || !gridOptions.enabled) {
+      this.clearGridStyle();
+      return;
+    }
+    const bounds = this.board.getBoundingBox?.();
+    const size = readHostSize(container);
+    if (!bounds || !size) return;
+    const [left, top, right, bottom] = bounds;
+    const worldWidth = Math.abs(right - left);
+    const worldHeight = Math.abs(top - bottom);
+    if (worldWidth <= 1e-9 || worldHeight <= 1e-9) return;
+    const pixelsPerUnitX = size.width / worldWidth;
+    const pixelsPerUnitY = size.height / worldHeight;
+    const stepX = resolveGraphViewportGridStep(pixelsPerUnitX, worldWidth, gridOptions);
+    const stepY = resolveGraphViewportGridStep(pixelsPerUnitY, worldHeight, gridOptions);
+    const sizeX = pixelsPerUnitX * stepX;
+    const sizeY = pixelsPerUnitY * stepY;
+    const originX = normalizeCssModulo(((0 - left) / (right - left)) * size.width, sizeX);
+    const originY = normalizeCssModulo(((top - 0) / (top - bottom)) * size.height, sizeY);
+    Object.assign(container.style, {
+      backgroundColor: gridOptions.backgroundColor,
+      backgroundImage: `linear-gradient(to right, ${gridOptions.lineColor} ${gridOptions.lineWidth}px, transparent ${gridOptions.lineWidth}px), linear-gradient(to bottom, ${gridOptions.lineColor} ${gridOptions.lineWidth}px, transparent ${gridOptions.lineWidth}px)`,
+      backgroundSize: `${formatCssNumber(sizeX)}px ${formatCssNumber(sizeY)}px`,
+      backgroundPosition: `${formatCssNumber(originX)}px ${formatCssNumber(originY)}px`
+    });
+  }
+
+  private clearGridStyle(): void {
+    const container = this.board?.containerObj;
+    if (!container) return;
+    container.style.backgroundColor = '';
+    container.style.backgroundImage = '';
+    container.style.backgroundSize = '';
+    container.style.backgroundPosition = '';
+  }
+
+  private bindBoardOverlaySync(board: JsxGraphBoardLike): void {
+    this.disposeBoardOverlaySync?.();
+    const subscriptions: Array<{ eventName: string; handler: () => void }> = [];
+    for (const eventName of ['boundingbox', 'update', 'resize']) {
+      const handler = () => this.syncCoordinateLabelOverlays();
+      try {
+        board.on?.(eventName, handler);
+        subscriptions.push({ eventName, handler });
+      } catch {
+        // Lightweight test boards and older JSXGraph surfaces may not expose all events.
+      }
+    }
+    this.disposeBoardOverlaySync = () => {
+      for (const subscription of subscriptions) {
+        try {
+          board.off?.(subscription.eventName, subscription.handler);
+        } catch {
+          // Ignore stale board event teardown failures during board reset.
+        }
+      }
+    };
+  }
+
   private createElements(board: JsxGraphBoardLike, node: GraphObjectNode, context: GraphBackendContext): JsxGraphElement[] {
     if (node.renderHints?.visible === false) return [];
     const attrs = createAttributes(node, context);
@@ -212,11 +307,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     const geometry = asRecord(payload?.geometry) ?? createSemanticGeometryForNode(node, payload, (objectId) => this.findStoredNode(objectId));
 
     if (geometry?.kind === 'coordinate-system') {
-      return readCoordinateSystemSegments2D(geometry).flatMap((points) => (
-        points.length >= 2
-          ? normalizeElements(board.create('curve', [points.map((point) => point.x), points.map((point) => point.y)], attrs))
-          : []
-      ));
+      return this.createCoordinateSystemElements(board, geometry, attrs);
     }
 
     if (geometry?.kind === 'line' && isPoint2D(geometry.point) && isPoint2D(geometry.direction)) {
@@ -359,6 +450,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
   }
 
   private removeStored(stored: StoredJsxGraphObject): void {
+    for (const overlay of stored.overlays) overlay.remove();
     if (stored.elements.length > 0) this.options.onRemoveElements?.(stored);
     const board = this.board;
     if (!board) return;
@@ -408,6 +500,121 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
       baseline.height / Math.max(1e-9, span.height)
     );
   }
+
+  private createCoordinateSystemElements(
+    board: JsxGraphBoardLike,
+    geometry: Record<string, unknown>,
+    attrs: Record<string, unknown>
+  ): JsxGraphElement[] {
+    const axisAttrs = {
+      ...attrs,
+      name: '',
+      withLabel: false,
+      strokeColor: STANDARD_COORDINATE_UI.axisStrokeColor,
+      fillColor: STANDARD_COORDINATE_UI.axisStrokeColor,
+      strokeWidth: STANDARD_COORDINATE_UI.axisStrokeWidthPx,
+      fixed: true
+    };
+    const elements: JsxGraphElement[] = [];
+    const xAxis = readPointList2D(geometry.xAxis);
+    const yAxis = readPointList2D(geometry.yAxis);
+    for (const axis of [xAxis, yAxis]) {
+      if (axis.length >= 2) {
+        const start = axis[0];
+        const end = axis[axis.length - 1];
+        elements.push(...normalizeElements(board.create('arrow', [[start.x, start.y], [end.x, end.y]], axisAttrs)));
+      }
+    }
+    if (elements.length === 0) {
+      elements.push(...readCoordinateSystemSegments2D(geometry).flatMap((points) => (
+        points.length >= 2
+          ? normalizeElements(board.create('curve', [points.map((point) => point.x), points.map((point) => point.y)], axisAttrs))
+          : []
+      )));
+    }
+    return elements;
+  }
+
+  private createOverlays(board: JsxGraphBoardLike, node: GraphObjectNode): HTMLElement[] {
+    if (!board.containerObj) return [];
+    const geometry = asRecord(asRecord(node.payload)?.geometry);
+    if (geometry?.kind !== 'coordinate-system') return [];
+    const overlays = readStandardCoordinateLabels(geometry.labels).map((label) => this.createCoordinateLabelOverlay(board, label));
+    return overlays.filter((overlay): overlay is HTMLElement => !!overlay);
+  }
+
+  private createCoordinateLabelOverlay(board: JsxGraphBoardLike, label: StandardCoordinateLabelModel): HTMLElement | null {
+    const container = board.containerObj;
+    if (!container) return null;
+    const doc = container.ownerDocument;
+    const overlay = doc.createElement('span');
+    overlay.textContent = label.text;
+    overlay.dataset.vuegraphxCoordinateLabel = 'true';
+    overlay.dataset.vuegraphxCoordinateLabelRole = label.role;
+    Object.assign(overlay.style, {
+      position: 'absolute',
+      pointerEvents: 'none',
+      userSelect: 'none',
+      color: STANDARD_COORDINATE_UI.tickLabelColor,
+      font: STANDARD_COORDINATE_UI.tickLabelFont,
+      lineHeight: `${STANDARD_COORDINATE_UI.tickLabelLineHeightPx}px`,
+      whiteSpace: 'nowrap',
+      zIndex: '3'
+    });
+    container.appendChild(overlay);
+    if (!this.positionCoordinateLabelOverlay(board, overlay, label)) {
+      overlay.remove();
+      return null;
+    }
+    return overlay;
+  }
+
+  private syncCoordinateLabelOverlays(): void {
+    const board = this.board;
+    if (!board) return;
+    for (const stored of this.objects.values()) {
+      const geometry = asRecord(asRecord(stored.node.payload)?.geometry);
+      if (geometry?.kind !== 'coordinate-system') continue;
+      const labels = readStandardCoordinateLabels(geometry.labels);
+      stored.overlays.forEach((overlay, index) => {
+        const label = labels[index];
+        if (label) this.positionCoordinateLabelOverlay(board, overlay, label);
+      });
+    }
+  }
+
+  private positionCoordinateLabelOverlay(board: JsxGraphBoardLike, overlay: HTMLElement, label: StandardCoordinateLabelModel): boolean {
+    const projected = this.projectCoordinateLabelPoint(board, label.point);
+    if (!projected) return false;
+    const offset = resolveStandardCoordinateLabelPixelOffset(label);
+    overlay.style.left = `${formatCssNumber(projected.x + offset.x)}px`;
+    overlay.style.top = `${formatCssNumber(projected.y + offset.y)}px`;
+    overlay.style.transform = label.axis === 'x' ? 'translate(-50%, 0)' : '';
+    return true;
+  }
+
+  private projectCoordinateLabelPoint(board: JsxGraphBoardLike, point: Point2D): { x: number; y: number } | null {
+    if (this.JXG.Coords && this.JXG.COORDS_BY_USER !== undefined) {
+      try {
+        const coords = new this.JXG.Coords(this.JXG.COORDS_BY_USER, [point.x, point.y], board);
+        const x = coords.scrCoords[1];
+        const y = coords.scrCoords[2];
+        if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+      } catch {
+        // Fall back to a bounding-box projection for lightweight test boards.
+      }
+    }
+    const bounds = board.getBoundingBox?.();
+    const container = board.containerObj;
+    const width = container?.clientWidth ?? 0;
+    const height = container?.clientHeight ?? 0;
+    if (!bounds || width <= 0 || height <= 0) return null;
+    const [left, top, right, bottom] = bounds;
+    return {
+      x: ((point.x - left) / Math.max(1e-9, right - left)) * width,
+      y: ((top - point.y) / Math.max(1e-9, top - bottom)) * height
+    };
+  }
 }
 
 export const createJsxGraphRuntime = (
@@ -432,9 +639,26 @@ const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext):
     strokeWidth: selected ? resolveSelectedStrokeWidth(strokeWidth) : strokeWidth,
     size: readNumber(hints.radius, 3),
     visible: hints.visible !== false,
-    fixed: isJsxGraphDragDisabled(node)
+    fixed: isJsxGraphDragDisabled(node),
+    linecap: readJsxGraphLineCap(hints.lineCap, isJsxGraphDragDisabled(node) ? 'butt' : 'round')
   };
 };
+
+const readStandardCoordinateLabels = (value: unknown): StandardCoordinateLabelModel[] => (
+  Array.isArray(value)
+    ? value.filter((entry): entry is StandardCoordinateLabelModel => {
+      const record = asRecord(entry) as Partial<StandardCoordinateLabelModel> | null;
+      return !!record
+        && typeof record.text === 'string'
+        && (record.axis === 'x' || record.axis === 'y' || record.axis === 'plain')
+        && (record.role === 'x-tick' || record.role === 'y-tick' || record.role === 'x-axis' || record.role === 'y-axis' || record.role === 'origin')
+        && isPoint2D(record.point);
+    })
+    : []
+);
+
+
+
 
 const isJsxGraphDragDisabled = (node: GraphObjectNode): boolean => {
   const hints = node.renderHints ?? {};
@@ -535,6 +759,9 @@ const asRecord = (value: unknown): Record<string, unknown> | null => typeof valu
 const isSelectedNode = (node: GraphObjectNode): boolean => node.meta?.selected === true || node.renderHints?.selected === true;
 
 const resolveSelectedStrokeWidth = (strokeWidth: number): number => Math.max(1, strokeWidth) * 2;
+const readJsxGraphLineCap = (value: unknown, fallback: 'butt' | 'round' | 'square'): 'butt' | 'round' | 'square' => (
+  value === 'butt' || value === 'round' || value === 'square' ? value : fallback
+);
 const isPoint2D = (value: unknown): value is Point2D => {
   const record = asRecord(value);
   return typeof record?.x === 'number' && Number.isFinite(record.x) && typeof record.y === 'number' && Number.isFinite(record.y);
@@ -819,6 +1046,8 @@ const distanceToNode = (node: GraphObjectNode, point: Point2D): number | null =>
   const geometry = asRecord(payload?.geometry);
   const payloadPoint = readPayloadPoint2D(payload);
   if (payloadPoint) return Math.hypot(payloadPoint.x - point.x, payloadPoint.y - point.y);
+  const coordinateSystemDistance = distanceToCoordinateSystemRegion(geometry, point);
+  if (coordinateSystemDistance !== null) return coordinateSystemDistance;
   if (geometry?.kind === 'circle' && isPoint2D(geometry.center) && typeof geometry.radius === 'number') {
     return Math.abs(Math.hypot(point.x - geometry.center.x, point.y - geometry.center.y) - geometry.radius);
   }
@@ -857,6 +1086,47 @@ const distanceToNode = (node: GraphObjectNode, point: Point2D): number | null =>
     return distanceToAngle(point, anglePoints);
   }
   return null;
+};
+
+
+const distanceToCoordinateSystemRegion = (geometry: Record<string, unknown> | null, point: Point2D): number | null => {
+  if (geometry?.kind !== 'coordinate-system') return null;
+  const border = readPointList2D(geometry.border);
+  if (border.length >= 3 && pointInPolygon2D(point, border)) return 0;
+
+  const segments = readCoordinateSystemSegments2D(geometry);
+  if (segments.length === 0) return null;
+  const bounds = boundsForPointGroups(segments);
+  if (bounds && point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY) return 0;
+
+  const distances: number[] = [];
+  for (const segment of segments) {
+    for (let index = 1; index < segment.length; index += 1) distances.push(distanceToSegment(point, segment[index - 1], segment[index]));
+  }
+  return distances.length > 0 ? Math.min(...distances) : null;
+};
+
+const boundsForPointGroups = (groups: Point2D[][]): { minX: number; maxX: number; minY: number; maxY: number } | null => {
+  const points = groups.flat();
+  if (points.length === 0) return null;
+  return {
+    minX: Math.min(...points.map((entry) => entry.x)),
+    maxX: Math.max(...points.map((entry) => entry.x)),
+    minY: Math.min(...points.map((entry) => entry.y)),
+    maxY: Math.max(...points.map((entry) => entry.y))
+  };
+};
+
+const pointInPolygon2D = (point: Point2D, polygon: readonly Point2D[]): boolean => {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index, index += 1) {
+    const currentPoint = polygon[index];
+    const previousPoint = polygon[previous];
+    const crosses = (currentPoint.y > point.y) !== (previousPoint.y > point.y)
+      && point.x < ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)) / ((previousPoint.y - currentPoint.y) || Number.EPSILON) + currentPoint.x;
+    if (crosses) inside = !inside;
+  }
+  return inside;
 };
 
 const readAnglePoints = (payload: Record<string, unknown> | null): [Point2D, Point2D, Point2D] | null => {
@@ -907,4 +1177,28 @@ const distanceToArcLike = (
     Math.hypot(point.x - geometry.start.x, point.y - geometry.start.y),
     Math.hypot(point.x - geometry.end.x, point.y - geometry.end.y)
   );
+};
+const readGridInput = (value: unknown): GraphViewportGridInput | undefined => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) return value as GraphViewportGridInput;
+  return undefined;
+};
+
+const readHostSize = (host: HTMLElement): GraphViewportSize | null => {
+  const rect = host.getBoundingClientRect?.();
+  const width = host.clientWidth || rect?.width || 0;
+  const height = host.clientHeight || rect?.height || 0;
+  return width > 0 && height > 0 ? { width, height } : null;
+};
+
+const toJsxGraphBounds = (bounds: { left: number; top: number; right: number; bottom: number }): [number, number, number, number] => [
+  bounds.left,
+  bounds.top,
+  bounds.right,
+  bounds.bottom
+];
+
+const normalizeCssModulo = (value: number, modulo: number): number => {
+  if (!Number.isFinite(value) || !Number.isFinite(modulo) || modulo <= 0) return 0;
+  return ((value % modulo) + modulo) % modulo;
 };

@@ -6,6 +6,7 @@ import {
   type GraphOperationResult,
   type GraphWorldPoint
 } from './contracts';
+import { resolveGraphGridSnapOptions, snapDeltaToGraphGrid } from './gridSnapping';
 
 export interface GraphDragDelta2D {
   dimension: '2d';
@@ -26,6 +27,13 @@ export interface GraphCreateDragPatchOptions {
   delta?: GraphDragDelta;
   startWorldPoint?: GraphWorldPoint;
   currentWorldPoint?: GraphWorldPoint;
+  dragPhase?: 'move' | 'end';
+  /**
+   * Internal group-drag escape hatch: coordinate-scoped children are normally
+   * not freely draggable, but they must move when their owning coordinate
+   * system moves.
+   */
+  allowCoordinateScoped?: boolean;
 }
 
 export type GraphDragOperationStatus = 'success' | 'clamped' | 'failure';
@@ -42,6 +50,11 @@ export interface GraphDragOperation {
   status: GraphDragOperationStatus;
   patch?: GraphObjectPatch;
   explanation: GraphOperationDiagnostic;
+}
+
+export interface GraphScopedDragPatch {
+  objectId: string;
+  patch: GraphObjectPatch;
 }
 
 type PlainRecord = Record<string, unknown>;
@@ -66,7 +79,7 @@ export const resolveGraphDragOperation = (
     return dragFailure(node, 'drag.locked-object', `Graph object ${node.id} is locked and cannot be dragged.`);
   }
 
-  const disabledReason = readDragDisabledReason(node);
+  const disabledReason = readDragDisabledReason(node, options);
   if (disabledReason) {
     return dragFailure(node, 'drag.disabled-object', disabledReason);
   }
@@ -75,7 +88,7 @@ export const resolveGraphDragOperation = (
     return dragFailure(node, 'drag.relation-driven-object', `Graph object ${node.id} is relation-driven and must be recomputed from its dependencies instead of directly dragged.`);
   }
 
-  const delta = options.delta ?? deltaFromWorldPoints(options.startWorldPoint, options.currentWorldPoint);
+  let delta = options.delta ?? deltaFromWorldPoints(options.startWorldPoint, options.currentWorldPoint);
   if (!delta) {
     return dragFailure(node, 'drag.missing-delta', 'Drag patch requires either a delta or start/current world points.');
   }
@@ -84,6 +97,7 @@ export const resolveGraphDragOperation = (
   if (typeof payload !== 'object' || payload === null) {
     return dragFailure(node, 'drag.unsupported-payload', `Graph object ${node.id} has no draggable payload.`);
   }
+  delta = applyDragSnap(node, payload as PlainRecord, delta, options);
 
   const updated = translatePayload(payload as PlainRecord, delta);
   if (!updated) {
@@ -91,6 +105,7 @@ export const resolveGraphDragOperation = (
   }
 
   const constrained = applyDragBounds(updated, node, delta);
+  const renderHints = translateRenderHints(node.renderHints, delta);
   const code = constrained.clamped ? 'drag.clamped-to-bounds' : 'drag.success';
   const explanation = dragDiagnostic(
     node,
@@ -104,11 +119,58 @@ export const resolveGraphDragOperation = (
     ok: true,
     value: {
       status: constrained.clamped ? 'clamped' : 'success',
-      patch: { payload: constrained.payload },
+      patch: {
+        payload: constrained.payload,
+        ...(renderHints ? { renderHints } : {})
+      },
       explanation
     },
     diagnostics: constrained.clamped ? [explanation] : []
   };
+};
+
+export const createGraphCoordinateSystemDragPatches = (
+  nodes: readonly GraphObjectNode[],
+  coordinateSystemNode: GraphObjectNode,
+  options: GraphCreateDragPatchOptions
+): GraphOperationResult<GraphScopedDragPatch[]> => {
+  const coordinateSystemId = readCoordinateSystemScopeId(coordinateSystemNode);
+  if (!coordinateSystemId) {
+    return {
+      ok: false,
+      diagnostics: [dragDiagnostic(
+        coordinateSystemNode,
+        'drag.unsupported-coordinate-system',
+        `Graph object ${coordinateSystemNode.id} is not a draggable coordinate system.`,
+        'error'
+      )]
+    };
+  }
+
+  const patches: GraphScopedDragPatch[] = [];
+  const coordinatePatch = createGraphDragPatch(coordinateSystemNode, options);
+  if (!coordinatePatch.ok || !coordinatePatch.value) {
+    return { ok: false, diagnostics: coordinatePatch.diagnostics };
+  }
+  patches.push({ objectId: coordinateSystemNode.id, patch: coordinatePatch.value });
+  const scopedOptions = {
+    ...options,
+    delta: readAppliedCoordinateSystemDelta(coordinateSystemNode, coordinatePatch.value) ?? options.delta
+  };
+
+  for (const child of nodes) {
+    if (child.id === coordinateSystemNode.id || readScopedCoordinateSystemId(child) !== coordinateSystemId) continue;
+    const childPatch = createGraphDragPatch(child, {
+      ...scopedOptions,
+      allowCoordinateScoped: true
+    });
+    if (!childPatch.ok || !childPatch.value) {
+      return { ok: false, diagnostics: childPatch.diagnostics };
+    }
+    patches.push({ objectId: child.id, patch: childPatch.value });
+  }
+
+  return okResult(patches);
 };
 
 const deltaFromWorldPoints = (start?: GraphWorldPoint, current?: GraphWorldPoint): GraphDragDelta | null => {
@@ -131,6 +193,64 @@ const clonePayload = <T>(payload: T): T => {
   return JSON.parse(JSON.stringify(payload)) as T;
 };
 
+const applyDragSnap = (
+  node: GraphObjectNode,
+  payload: PlainRecord,
+  delta: GraphDragDelta,
+  options: GraphCreateDragPatchOptions
+): GraphDragDelta => {
+  if (delta.dimension !== '2d') return delta;
+  const snapInput = readGraphSnapInput(node, payload);
+  if (snapInput === undefined || snapInput === false) return delta;
+  const snapOptions = resolveGraphGridSnapOptions(snapInput, { enabled: true, step: 1 });
+  if (snapOptions.phase === 'end' && options.dragPhase === 'move') return delta;
+  const anchor = readDragSnapAnchor(payload);
+  if (!anchor) return delta;
+  return {
+    dimension: '2d',
+    ...snapDeltaToGraphGrid(anchor, delta, snapOptions)
+  };
+};
+
+const readGraphSnapInput = (node: GraphObjectNode, payload: PlainRecord): unknown => {
+  const meta = node.meta as Record<string, unknown> | undefined;
+  const hints = node.renderHints as Record<string, unknown> | undefined;
+  return meta?.snapToGrid ?? hints?.snapToGrid ?? payload.snapToGrid;
+};
+
+const readDragSnapAnchor = (payload: PlainRecord): MutablePoint2D | null => {
+  if (isWorldPoint2D(payload.origin)) return { x: payload.origin.x, y: payload.origin.y };
+  if (isPoint2D(payload.origin)) return payload.origin;
+  const geometry = typeof payload.geometry === 'object' && payload.geometry !== null
+    ? payload.geometry as PlainRecord
+    : null;
+  if (isPoint2D(geometry?.origin)) return geometry.origin;
+  if (isPoint2D(payload.point)) return payload.point;
+  if (isWorldPoint2D(payload.position)) return { x: payload.position.x, y: payload.position.y };
+  return null;
+};
+
+const readAppliedCoordinateSystemDelta = (
+  before: GraphObjectNode,
+  patch: GraphObjectPatch
+): GraphDragDelta2D | null => {
+  const beforePayload = typeof before.payload === 'object' && before.payload !== null
+    ? before.payload as PlainRecord
+    : null;
+  const afterPayload = typeof patch.payload === 'object' && patch.payload !== null
+    ? patch.payload as PlainRecord
+    : null;
+  if (!beforePayload || !afterPayload) return null;
+  const beforeAnchor = readDragSnapAnchor(beforePayload);
+  const afterAnchor = readDragSnapAnchor(afterPayload);
+  if (!beforeAnchor || !afterAnchor) return null;
+  return {
+    dimension: '2d',
+    dx: afterAnchor.x - beforeAnchor.x,
+    dy: afterAnchor.y - beforeAnchor.y
+  };
+};
+
 const translatePayload = (payload: PlainRecord, delta: GraphDragDelta): PlainRecord | null => {
   let changed = false;
 
@@ -141,6 +261,11 @@ const translatePayload = (payload: PlainRecord, delta: GraphDragDelta): PlainRec
 
   if (isWorldPoint2D(payload.position) && delta.dimension === '2d') {
     payload.position = translateWorldPoint2D(payload.position, delta);
+    changed = true;
+  }
+
+  if (isWorldPoint2D(payload.origin) && delta.dimension === '2d') {
+    payload.origin = translateWorldPoint2D(payload.origin, delta);
     changed = true;
   }
 
@@ -202,9 +327,46 @@ const translateGeometry = (geometry: PlainRecord, delta: GraphDragDelta): PlainR
       next.points = next.points.map((point) => translatePoint2D(point, delta));
       changed = true;
     }
+    for (const key of ['border', 'xAxis', 'yAxis', 'tickPoints'] as const) {
+      if (Array.isArray(next[key]) && next[key].every(isPoint2D)) {
+        next[key] = next[key].map((point) => translatePoint2D(point, delta));
+        changed = true;
+      }
+    }
+    for (const key of ['segments', 'gridSegments', 'axisArrowSegments'] as const) {
+      if (Array.isArray(next[key]) && next[key].every(isPoint2DArray)) {
+        next[key] = next[key].map((segment) => segment.map((point) => translatePoint2D(point, delta)));
+        changed = true;
+      }
+    }
+    if (Array.isArray(next.labels) && next.labels.every(isLabelWithPoint2D)) {
+      next.labels = next.labels.map((label) => ({
+        ...label,
+        point: translatePoint2D(label.point, delta)
+      }));
+      changed = true;
+    }
   }
 
   return changed ? next : null;
+};
+
+const translateRenderHints = (
+  renderHints: GraphObjectNode['renderHints'],
+  delta: GraphDragDelta
+): GraphObjectNode['renderHints'] | null => {
+  if (!renderHints || delta.dimension !== '2d') return null;
+  const bounds = renderHints.clipWorldBounds;
+  if (!isClipWorldBounds2D(bounds)) return null;
+  return {
+    ...renderHints,
+    clipWorldBounds: {
+      left: bounds.left + delta.dx,
+      right: bounds.right + delta.dx,
+      top: bounds.top + delta.dy,
+      bottom: bounds.bottom + delta.dy
+    }
+  };
 };
 
 const applyDragBounds = (
@@ -290,17 +452,31 @@ const isRelationDrivenDrag = (node: GraphObjectNode): boolean => {
   return meta?.relationDriven === true || meta?.dragMode === 'relation-driven';
 };
 
-const readDragDisabledReason = (node: GraphObjectNode): string | null => {
+const readDragDisabledReason = (
+  node: GraphObjectNode,
+  options: GraphCreateDragPatchOptions = {}
+): string | null => {
   const meta = node.meta as Record<string, unknown> | undefined;
   const coordinateSystemId = typeof meta?.coordinateSystemId === 'string' ? meta.coordinateSystemId : null;
   const configuredReason = typeof meta?.dragDisabledReason === 'string' ? meta.dragDisabledReason : null;
-  if (coordinateSystemId) {
+  if (coordinateSystemId && node.type !== 'coordinate-system') {
+    if (options.allowCoordinateScoped) return null;
     return configuredReason ?? `Graph object ${node.id} belongs to coordinate system ${coordinateSystemId} and cannot be freely dragged.`;
   }
   if (meta?.draggable === false || meta?.dragDisabled === true || meta?.dragMode === 'disabled') {
     return configuredReason ?? `Graph object ${node.id} is not draggable.`;
   }
   return null;
+};
+
+const readScopedCoordinateSystemId = (node: GraphObjectNode): string | null => {
+  const meta = node.meta as Record<string, unknown> | undefined;
+  return typeof meta?.coordinateSystemId === 'string' ? meta.coordinateSystemId : null;
+};
+
+const readCoordinateSystemScopeId = (node: GraphObjectNode): string | null => {
+  if (node.type !== 'coordinate-system') return null;
+  return readScopedCoordinateSystemId(node) ?? node.id;
 };
 
 const dragFailure = (
@@ -336,6 +512,24 @@ const isPoint3D = (value: unknown): value is MutablePoint3D => {
   return typeof point.x === 'number' && Number.isFinite(point.x)
     && typeof point.y === 'number' && Number.isFinite(point.y)
     && typeof point.z === 'number' && Number.isFinite(point.z);
+};
+
+const isPoint2DArray = (value: unknown): value is MutablePoint2D[] => (
+  Array.isArray(value) && value.every(isPoint2D)
+);
+
+const isLabelWithPoint2D = (value: unknown): value is { point: MutablePoint2D; [key: string]: unknown } => {
+  if (typeof value !== 'object' || value === null) return false;
+  return isPoint2D((value as { point?: unknown }).point);
+};
+
+const isClipWorldBounds2D = (value: unknown): value is { left: number; right: number; top: number; bottom: number } => {
+  if (typeof value !== 'object' || value === null) return false;
+  const bounds = value as Partial<{ left: unknown; right: unknown; top: unknown; bottom: unknown }>;
+  return typeof bounds.left === 'number' && Number.isFinite(bounds.left)
+    && typeof bounds.right === 'number' && Number.isFinite(bounds.right)
+    && typeof bounds.top === 'number' && Number.isFinite(bounds.top)
+    && typeof bounds.bottom === 'number' && Number.isFinite(bounds.bottom);
 };
 
 const isWorldPoint2D = (value: unknown): value is GraphWorldPoint & { dimension: '2d' } => {

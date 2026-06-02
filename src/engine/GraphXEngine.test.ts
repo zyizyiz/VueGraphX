@@ -127,6 +127,16 @@ describe('GraphXEngine command backend routing', () => {
     });
 
     expect(canRender).toBe(true);
+
+    const canRenderCoordinateSystem = GraphXEngine.prototype['canRenderCoreNodeWithJsxGraphBackend'].call(fakeEngine as any, {
+      id: 'coord',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: { objectType: 'coordinate-system', geometry: { kind: 'coordinate-system', segments: [] } },
+      layerId: 'content'
+    });
+
+    expect(canRenderCoordinateSystem).toBe(true);
   });
 });
 

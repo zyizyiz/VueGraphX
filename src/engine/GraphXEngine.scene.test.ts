@@ -140,6 +140,7 @@ describe('GraphXEngine scene document support', () => {
       axis: false,
       showNavigation: false,
       keepaspectratio: false,
+      grid: { enabled: true, cellSizePx: 30 },
       view3D: {
         hiddenLine: {
           enabled: true
@@ -162,6 +163,7 @@ describe('GraphXEngine scene document support', () => {
         axis: false,
         showNavigation: false,
         keepaspectratio: false,
+        grid: { enabled: true, cellSizePx: 30 },
         view3D: {
           hiddenLine: {
             enabled: true
@@ -340,6 +342,134 @@ describe('GraphXEngine scene document support', () => {
       expression: 'sin(x) + a',
       parameters: { a: 0.5 }
     });
+  });
+
+  it('renders scoped coordinate-system commands at the requested drop origin on the JSXGraph backend', () => {
+    const engine = createFakeEngine();
+    const created: Array<{ type: string; args: unknown[]; attrs: Record<string, unknown> }> = [];
+    const board = (engine as any).boardMgr.board;
+    board.containerObj = document.createElement('div');
+    board.create = vi.fn((type: string, args: unknown[], attrs: Record<string, unknown>) => {
+      created.push({ type, args, attrs });
+      return { id: `${type}-${created.length}`, elType: type };
+    });
+    board.removeObject = vi.fn();
+
+    const coordinateSystem = {
+      id: 'coord_drop',
+      origin: { x: 3.2, y: -1.8 },
+      unitScale: 1,
+      xRange: { min: -6, max: 6 },
+      yRange: { min: -6, max: 6 },
+      snapToGrid: true
+    };
+
+    engine.executeCommand('cmd_coord', 'coord_drop = CoordinateSystem("plane")', '#64748b', { coordinateSystem });
+    engine.executeCommand('cmd_f', 'f = Function("x^2", -20, 20)', '#0ea5e9', { coordinateSystem });
+    engine.executeCommand('cmd_eq', 'eq = Equation("x^2 + y^2 = 1")', '#f97316', { coordinateSystem });
+
+    expect(created.map((entry) => entry.type)).not.toContain('functiongraph');
+    expect(created.filter((entry) => entry.type === 'curve').length).toBeGreaterThanOrEqual(2);
+    expect(created.filter((entry) => entry.type === 'arrow')).toHaveLength(2);
+    expect(created.every((entry) => entry.attrs.fixed === true)).toBe(true);
+
+    const objects = engine.exportRuntimeScene().scene?.objects ?? [];
+    const coord = objects.find((node) => node.id === 'coord_drop');
+    expect(coord).toMatchObject({
+      type: 'coordinate-system',
+      meta: { coordinateSystemId: 'coord_drop', independentCoordinateSystem: true, draggable: true, snapToGrid: true },
+      payload: {
+        origin: { dimension: '2d', x: 3, y: -2 },
+        unitPx: 1,
+        geometry: {
+          xAxis: [{ x: -3, y: -2 }, { x: 9, y: -2 }],
+          yAxis: [{ x: 3, y: -8 }, { x: 3, y: 4 }]
+        }
+      }
+    });
+
+    const fn = objects.find((node) => node.id === 'f');
+    expect(fn).toMatchObject({
+      type: 'function',
+      meta: { coordinateSystemId: 'coord_drop', independentCoordinateSystem: true, draggable: false },
+      payload: { geometry: { kind: 'polyline', points: expect.any(Array) } }
+    });
+    expect(fn?.renderHints).toMatchObject({
+      draggable: false,
+      lineCap: 'butt',
+      clipWorldBounds: { left: -3, right: 9, top: 4, bottom: -8 }
+    });
+    const fnPoints = (fn?.payload as any).geometry.points as Array<{ x: number; y: number }>;
+    expect(fnPoints.length).toBeGreaterThan(0);
+    expect(fnPoints.every((point) => (
+      point.x >= -3 - 1e-9
+      && point.x <= 9 + 1e-9
+      && point.y >= -8 - 1e-9
+      && point.y <= 4 + 1e-9
+    ))).toBe(true);
+
+    const equation = objects.find((node) => node.id === 'eq');
+    expect(equation).toMatchObject({
+      type: expect.stringMatching(/^(equation|implicit)$/),
+      meta: { coordinateSystemId: 'coord_drop', independentCoordinateSystem: true, draggable: false },
+      payload: { geometry: expect.objectContaining({ kind: expect.stringMatching(/^(polyline|multiline)$/) }) }
+    });
+    const equationPoints = flattenGeometryPoints((equation?.payload as any)?.geometry);
+    expect(equationPoints.every((point) => (
+      point.x >= -3 - 1e-9
+      && point.x <= 9 + 1e-9
+      && point.y >= -8 - 1e-9
+      && point.y <= 4 + 1e-9
+    ))).toBe(true);
+  });
+
+  it('moves scoped coordinate-system commands together with their graph content', () => {
+    const engine = createFakeEngine();
+    const board = (engine as any).boardMgr.board;
+    board.containerObj = document.createElement('div');
+    board.create = vi.fn((type: string) => ({ id: `${type}-${board.create.mock.calls.length}`, elType: type }));
+    board.removeObject = vi.fn();
+
+    const coordinateSystem = {
+      id: 'coord_drag',
+      origin: { x: 0, y: 0 },
+      unitScale: 1,
+      xRange: { min: -6, max: 6 },
+      yRange: { min: -6, max: 6 }
+    };
+
+    engine.executeCommand('cmd_coord', 'coord_drag = CoordinateSystem("plane")', '#64748b', { coordinateSystem });
+    engine.executeCommand('cmd_f', 'f = Function("x", -6, 6)', '#0ea5e9', { coordinateSystem });
+
+    const beforeFunction = engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'f');
+    const beforePoints = ((beforeFunction?.payload as any).geometry.points as Array<{ x: number; y: number }>).map((point) => ({ ...point }));
+    const beforeCoordinate = engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'coord_drag');
+    const beforeLabel = ((beforeCoordinate?.payload as any).geometry.labels as Array<{ text: string; point: { x: number; y: number } }>).find((label) => label.text === 'y');
+
+    expect(engine.executeRuntimeCapability('math.object.move', {
+      scope: 'object',
+      objectId: 'coord_drag'
+    }, { delta: { dimension: '2d', dx: 3, dy: -2 } })).toBe(true);
+
+    const objects = engine.exportRuntimeScene().scene?.objects ?? [];
+    const movedCoordinate = objects.find((node) => node.id === 'coord_drag');
+    expect(movedCoordinate?.payload).toMatchObject({
+      origin: { dimension: '2d', x: 3, y: -2 },
+      geometry: {
+        xAxis: [{ x: -3, y: -2 }, { x: 9, y: -2 }],
+        yAxis: [{ x: 3, y: -8 }, { x: 3, y: 4 }]
+      }
+    });
+    const movedLabel = ((movedCoordinate?.payload as any).geometry.labels as Array<{ text: string; point: { x: number; y: number } }>).find((label) => label.text === 'y');
+    expect(movedLabel?.point).toEqual({ x: (beforeLabel?.point.x ?? 0) + 3, y: (beforeLabel?.point.y ?? 0) - 2 });
+
+    const movedFunction = objects.find((node) => node.id === 'f');
+    const movedPoints = (movedFunction?.payload as any).geometry.points as Array<{ x: number; y: number }>;
+    expect(movedPoints[0]).toEqual({ x: beforePoints[0].x + 3, y: beforePoints[0].y - 2 });
+    expect(movedFunction?.renderHints).toMatchObject({
+      clipWorldBounds: { left: -3, right: 9, top: 4, bottom: -8 }
+    });
+    expect(board.removeObject).toHaveBeenCalled();
   });
 
   it('selects clicked JSXGraph backend command objects and syncs stroke-width-only selection state', () => {
@@ -549,3 +679,9 @@ describe('GraphXEngine scene document support', () => {
     expect((engine as any).entityMgr.clearAll).toHaveBeenCalled();
   });
 });
+
+const flattenGeometryPoints = (geometry: any): Array<{ x: number; y: number }> => {
+  if (geometry?.kind === 'polyline' && Array.isArray(geometry.points)) return geometry.points;
+  if ((geometry?.kind === 'multiline' || geometry?.kind === 'wireframe') && Array.isArray(geometry.segments)) return geometry.segments.flat();
+  return [];
+};

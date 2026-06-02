@@ -3,6 +3,7 @@ import { GraphSceneRuntime, compareParitySnapshots } from '@vuegraphx/core';
 import { createBabylonGraphBackend } from '@vuegraphx/backend-babylon';
 import { createCanvas2DGraphBackend } from '@vuegraphx/backend-canvas2d';
 import { createJsxGraphBackend } from '@vuegraphx/backend-jsxgraph';
+import { createOperationScopedCommands, operationToolGroups } from '../operationTools';
 import { allDemos } from '../showcase';
 import {
   getParityCapabilitySummaries,
@@ -328,6 +329,7 @@ describe('buildPlaygroundCanvasScene', () => {
       expect(isBackendSelectableForMode('2d', backend.id)).toBe(true);
       expect(isBackendSelectableForMode('geometry', backend.id)).toBe(true);
       expect(isBackendSelectableForMode('3d', backend.id)).toBe(true);
+      expect(isBackendSelectableForMode('operation', backend.id)).toBe(true);
       expect(getParityCapabilitySummaries()[backend.id].unsupported).toEqual([]);
     }
   });
@@ -349,4 +351,116 @@ describe('buildPlaygroundCanvasScene', () => {
       }
     }
   });
+
+  it('keeps operation-area command tools diagnostic-free for every backend', () => {
+    const builders = {
+      jsxgraph: buildPlaygroundJsxGraphScene,
+      canvas2d: buildPlaygroundCanvasScene,
+      babylon: buildPlaygroundBabylonScene
+    };
+    const tools = operationToolGroups.flatMap((group) => group.tools);
+
+    for (const backend of parityRendererBackends) {
+      for (const tool of tools) {
+        const result = builders[backend.id](toCommands(tool.commands));
+        expect(result.diagnostics, `${backend.id}:${tool.id}`).toEqual([]);
+        expect(result.nodes.length, `${backend.id}:${tool.id}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('creates independent coordinate systems for scoped operation-area drops', () => {
+    const tools = operationToolGroups.flatMap((group) => group.tools);
+    const builders = {
+      jsxgraph: buildPlaygroundJsxGraphScene,
+      canvas2d: buildPlaygroundCanvasScene,
+      babylon: buildPlaygroundBabylonScene
+    };
+
+    expect(tools.length).toBeGreaterThan(0);
+    expect(
+      tools.flatMap((tool) => tool.commands.map((command) => command.expr))
+    ).not.toContain('CoordinateSystem("plane")');
+
+    const tool = tools.find((entry) => entry.id === 'linear-function') ?? tools[0];
+    const commands = [
+      ...createOperationScopedCommands(tool.commands, { x: 2.3, y: -2.7 }, 'coord_left'),
+      ...createOperationScopedCommands(tool.commands, { x: -4.2, y: 5.1 }, 'coord_right')
+    ];
+
+    for (const backend of parityRendererBackends) {
+      const result = builders[backend.id](toCommands(commands));
+      expect(result.diagnostics, backend.id).toEqual([]);
+
+      const coordinateSystems = result.nodes.filter((node) => node.type === 'coordinate-system');
+      expect(coordinateSystems.map((node) => node.id), backend.id).toEqual(['coord_left', 'coord_right']);
+      expect(coordinateSystems[0]).toMatchObject({
+        meta: { coordinateSystemId: 'coord_left', independentCoordinateSystem: true, draggable: true, snapToGrid: { enabled: true, phase: 'end' } },
+        payload: {
+          origin: { x: 2, y: -3 },
+          geometry: {
+            xAxis: [{ x: -4, y: -3 }, { x: 8, y: -3 }],
+            yAxis: [{ x: 2, y: -9 }, { x: 2, y: 3 }]
+          }
+        }
+      });
+      expect(coordinateSystems[1]).toMatchObject({
+        meta: { coordinateSystemId: 'coord_right', independentCoordinateSystem: true, draggable: true, snapToGrid: { enabled: true, phase: 'end' } },
+        payload: {
+          origin: { x: -4, y: 5 },
+          geometry: {
+            xAxis: [{ x: -10, y: 5 }, { x: 2, y: 5 }],
+            yAxis: [{ x: -4, y: -1 }, { x: -4, y: 11 }]
+          }
+        }
+      });
+
+      const scopedGraphs = result.nodes.filter((node) => node.type === 'function' || node.type === 'equation');
+      expect(scopedGraphs.some((node) => node.meta?.coordinateSystemId === 'coord_left'), backend.id).toBe(true);
+      expect(scopedGraphs.some((node) => node.meta?.coordinateSystemId === 'coord_right'), backend.id).toBe(true);
+      expect(scopedGraphs.every((node) => node.renderHints?.draggable === false), backend.id).toBe(true);
+    }
+  });
+
+  it('clips scoped operation-area graphs to their independent coordinate windows', () => {
+    const builders = {
+      jsxgraph: buildPlaygroundJsxGraphScene,
+      canvas2d: buildPlaygroundCanvasScene,
+      babylon: buildPlaygroundBabylonScene
+    };
+    const commands = createOperationScopedCommands([
+      { expr: 'Function("x^2 - 2", -20, 20)', options: { strokeColor: '#4DA6FF' } },
+      { expr: 'Equation("x^2 + y^2 = 50")', options: { strokeColor: '#FF8D1A' } }
+    ], { x: 10, y: 20 }, 'coord_clip');
+
+    for (const backend of parityRendererBackends) {
+      const result = builders[backend.id](toCommands(commands));
+      expect(result.diagnostics, backend.id).toEqual([]);
+      const scopedGraphs = result.nodes.filter((node) => node.meta?.coordinateSystemId === 'coord_clip' && node.type !== 'coordinate-system');
+      expect(scopedGraphs.length, backend.id).toBeGreaterThan(0);
+      for (const node of scopedGraphs) {
+        const points = geometryPoints((node.payload as any)?.geometry);
+        expect(points.length, `${backend.id}:${node.id}`).toBeGreaterThan(0);
+        expect(node.renderHints, `${backend.id}:${node.id}`).toMatchObject({
+          draggable: false,
+          lineCap: 'butt',
+          clipWorldBounds: { left: 4, right: 16, top: 26, bottom: 14 }
+        });
+        expect(points.every((point) => (
+          point.x >= 4 - 1e-9
+          && point.x <= 16 + 1e-9
+          && point.y >= 14 - 1e-9
+          && point.y <= 26 + 1e-9
+        )), `${backend.id}:${node.id}`).toBe(true);
+      }
+    }
+  });
 });
+
+const geometryPoints = (geometry: any): Array<{ x: number; y: number }> => {
+  if (geometry?.kind === 'polyline' && Array.isArray(geometry.points)) return geometry.points;
+  if ((geometry?.kind === 'multiline' || geometry?.kind === 'wireframe') && Array.isArray(geometry.segments)) {
+    return geometry.segments.flat();
+  }
+  return [];
+};

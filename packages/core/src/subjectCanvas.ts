@@ -12,6 +12,11 @@ import type {
   GraphRuntimeCapabilityDescriptor
 } from './contracts';
 import { createGraphCapabilitiesForProfile } from './capabilityModel';
+import {
+  createStandardCoordinateSystemGeometry,
+  STANDARD_COORDINATE_UI,
+  type StandardCoordinateLabelModel
+} from './standardCoordinateStyle';
 
 export const SUBJECT_CANVAS_COLOR_SEQUENCE = [
   '#4DA6FF',
@@ -193,10 +198,12 @@ export interface SubjectCoordinateSystemGeometry {
   border: readonly SubjectCanvasPoint[];
   xAxis: readonly [SubjectCanvasPoint, SubjectCanvasPoint];
   yAxis: readonly [SubjectCanvasPoint, SubjectCanvasPoint];
+  axisArrowSegments: readonly (readonly [SubjectCanvasPoint, SubjectCanvasPoint])[];
   gridSegments: readonly (readonly [SubjectCanvasPoint, SubjectCanvasPoint])[];
   /** Polyline segments used by active backends that render semantic coordinate systems through path proxies. */
   segments: readonly (readonly SubjectCanvasPoint[])[];
   tickPoints: readonly SubjectCanvasPoint[];
+  labels: readonly StandardCoordinateLabelModel[];
 }
 
 export interface SubjectCoordinateSystemScenePayload {
@@ -448,41 +455,26 @@ export const getSubjectObjectEffectiveLayer = (
 export const createSubjectCoordinateSystemGeometry = (
   system: Pick<SubjectCoordinateSystemState, 'origin' | 'unitPx' | 'xRange' | 'yRange' | 'showTicks'>
 ): SubjectCoordinateSystemGeometry => {
-  const world = (x: number, y: number): SubjectCanvasPoint => ({
-    x: system.origin.x + x * system.unitPx,
-    y: system.origin.y + y * system.unitPx
+  const geometry = createStandardCoordinateSystemGeometry({
+    origin: system.origin,
+    unitPx: system.unitPx,
+    xRange: system.xRange,
+    yRange: system.yRange,
+    showTicks: system.showTicks,
+    showLabels: true,
+    includeGrid: true,
+    includeBorder: true
   });
-  const left = Math.ceil(system.xRange.min);
-  const right = Math.floor(system.xRange.max);
-  const bottom = Math.ceil(system.yRange.min);
-  const top = Math.floor(system.yRange.max);
-  const gridSegments: Array<readonly [SubjectCanvasPoint, SubjectCanvasPoint]> = [];
-  for (let x = left; x <= right; x += 1) {
-    gridSegments.push([world(x, system.yRange.min), world(x, system.yRange.max)]);
-  }
-  for (let y = bottom; y <= top; y += 1) {
-    gridSegments.push([world(system.xRange.min, y), world(system.xRange.max, y)]);
-  }
-  const border = [
-    world(system.xRange.min, system.yRange.min),
-    world(system.xRange.max, system.yRange.min),
-    world(system.xRange.max, system.yRange.max),
-    world(system.xRange.min, system.yRange.max),
-    world(system.xRange.min, system.yRange.min)
-  ] as const;
-  const xAxis = [world(system.xRange.min, 0), world(system.xRange.max, 0)] as const;
-  const yAxis = [world(0, system.yRange.min), world(0, system.yRange.max)] as const;
   return {
-    kind: 'coordinate-system',
-    border,
-    xAxis,
-    yAxis,
-    gridSegments,
-    segments: [border, xAxis, yAxis, ...gridSegments],
-    tickPoints: system.showTicks
-      ? [...Array.from({ length: Math.max(0, right - left + 1) }, (_, index) => world(left + index, 0)),
-        ...Array.from({ length: Math.max(0, top - bottom + 1) }, (_, index) => world(0, bottom + index))]
-      : []
+    ...geometry,
+    border: geometry.border,
+    xAxis: geometry.xAxis,
+    yAxis: geometry.yAxis,
+    axisArrowSegments: geometry.axisArrowSegments,
+    gridSegments: geometry.gridSegments,
+    segments: geometry.segments,
+    tickPoints: geometry.tickPoints,
+    labels: geometry.labels
   };
 };
 
@@ -532,23 +524,19 @@ export const createSubjectCoordinateSystemSceneNode = (
     },
     kind: options.kind ?? 'shape',
     layerId: 'content',
-    capabilities: options.capabilities ?? createGraphCapabilitiesForProfile('coordinate-system', { scope: 'object', objectId: options.id ?? system.id }, {
-      'math.object.move': SUBJECT_CANVAS_DRAG_DISABLED_REASON
-    }),
+    capabilities: options.capabilities ?? createGraphCapabilitiesForProfile('coordinate-system', { scope: 'object', objectId: options.id ?? system.id }),
     renderHints: {
-      strokeColor: '#8080FF',
-      fillColor: 'rgba(128, 128, 255, 0.08)',
-      strokeWidth: 1,
+      strokeColor: STANDARD_COORDINATE_UI.axisStrokeColor,
+      fillColor: 'rgba(102, 102, 102, 0.08)',
+      strokeWidth: STANDARD_COORDINATE_UI.axisStrokeWidthPx,
       hitGroups: ['coordinate-system'],
-      draggable: false
+      draggable: true
     },
     meta: {
       subjectCanvas: true,
       ...(options.meta ?? {}),
       coordinateSystemId: system.id,
-      draggable: false,
-      dragDisabled: true,
-      dragDisabledReason: SUBJECT_CANVAS_DRAG_DISABLED_REASON
+      draggable: true
     }
   });
   if (!result.ok || !result.value) {

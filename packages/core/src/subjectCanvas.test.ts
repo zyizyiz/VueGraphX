@@ -52,11 +52,11 @@ describe('subject canvas model', () => {
       origin: { dimension: '2d', x: 30, y: 30 },
       geometry: { kind: 'coordinate-system' }
     });
-    expect(node.meta).toMatchObject({ subjectCanvas: true, coordinateSystemId: 'coord-A', draggable: false, dragDisabled: true });
-    expect(node.renderHints).toMatchObject({ draggable: false });
+    expect(node.meta).toMatchObject({ subjectCanvas: true, coordinateSystemId: 'coord-A', draggable: true });
+    expect(node.meta?.dragDisabled).toBeUndefined();
+    expect(node.renderHints).toMatchObject({ draggable: true });
     expect(node.capabilities?.find((capability) => capability.id === 'math.object.move')).toMatchObject({
-      status: 'disabled',
-      reason: SUBJECT_CANVAS_DRAG_DISABLED_REASON
+      status: 'supported'
     });
     if (node.payload.objectType !== 'coordinate-system') {
       throw new Error('expected coordinate-system payload');

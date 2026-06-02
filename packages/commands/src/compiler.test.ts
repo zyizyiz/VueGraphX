@@ -81,10 +81,11 @@ describe('renderer-free command compiler', () => {
       }
     });
     expect(result.value?.node.capabilities?.map((capability) => capability.id)).toContain('math.coordinate-system.toggle-assist');
-    expect(result.value?.node.renderHints).toMatchObject({ draggable: false });
-    expect(result.value?.node.meta).toMatchObject({ coordinateSystemId: 'cs', draggable: false, dragDisabled: true });
+    expect(result.value?.node.renderHints).toMatchObject({ draggable: true });
+    expect(result.value?.node.meta).toMatchObject({ coordinateSystemId: 'cs', draggable: true });
+    expect(result.value?.node.meta?.dragDisabled).toBeUndefined();
     expect(result.value?.node.capabilities?.find((capability) => capability.id === 'math.object.move')).toMatchObject({
-      status: 'disabled'
+      status: 'supported'
     });
 
     const store = new GraphSceneStore('coordinate-system-command');

@@ -18,8 +18,15 @@ import {
   STANDARD_COORDINATE_UI,
   formatStandardCoordinateLabel,
   isStandardZeroCoordinate,
+  createCenteredWorldBoundsForViewportGrid,
   mergeGraphObjectPatch,
-  resolveGraphTextRenderDescriptor
+  resolveGraphTextRenderDescriptor,
+  resolveGraphViewportGridOptions,
+  resolveGraphViewportGridStep,
+  resolveStandardCoordinateLabelScreenPosition,
+  type GraphViewportGridInput,
+  type ResolvedGraphViewportGridOptions,
+  type StandardCoordinateLabelModel
 } from '@vuegraphx/core';
 import type {
   BabylonBackendSupportStatus,
@@ -160,6 +167,7 @@ export interface BabylonRuntimeOptions {
   attachCameraControl?: boolean;
   canvasPointerEvents?: 'auto' | 'none';
   showAxes?: boolean;
+  grid?: GraphViewportGridInput;
 }
 
 interface Babylon2DWorldBounds {
@@ -252,6 +260,8 @@ export class BabylonRuntime implements BabylonRuntimePort {
   private visualBaselineWorldBounds: Babylon2DWorldBounds = DEFAULT_BABYLON_2D_WORLD_BOUNDS;
   private viewportSize: GraphViewportSize | null = null;
   private showAxes: boolean;
+  private gridInput?: GraphViewportGridInput;
+  private hasExplicitWorldBounds = false;
   private readonly objects = new Map<string, BabylonStoredObject>();
   private readonly helperMeshes: BabylonMeshLike[] = [];
   private readonly helperLabels: HTMLElement[] = [];
@@ -266,13 +276,18 @@ export class BabylonRuntime implements BabylonRuntimePort {
     this.canvas = options.canvas ?? null;
     this.renderMode = options.renderMode ?? '3d';
     this.showAxes = options.showAxes ?? true;
+    this.gridInput = options.grid;
   }
 
   public mount(host: HTMLElement, options: GraphBackendMountOptions = {}): void {
     this.renderMode = resolveRenderMode(options.attributes?.renderMode, this.options.renderMode ?? this.renderMode);
-    this.worldBounds = read2DWorldBounds(options.attributes?.worldBounds) ?? DEFAULT_BABYLON_2D_WORLD_BOUNDS;
+    const mountedWorldBounds = read2DWorldBounds(options.attributes?.worldBounds);
+    this.worldBounds = mountedWorldBounds ?? DEFAULT_BABYLON_2D_WORLD_BOUNDS;
     this.visualBaselineWorldBounds = { ...this.worldBounds };
+    this.hasExplicitWorldBounds = !!mountedWorldBounds;
     this.showAxes = readBoolean(options.attributes?.showAxes) ?? this.options.showAxes ?? true;
+    const mountedGridInput = readGridInput(options.attributes?.grid);
+    this.gridInput = mountedGridInput ?? this.options.grid;
     this.viewportSize = null;
     this.installLabelLayer(host);
 
@@ -289,6 +304,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
     this.canvas.style.display = 'block';
     this.canvas.style.pointerEvents = this.options.canvasPointerEvents ?? 'none';
     if (options.size) this.applyCanvasSize(options.size);
+    this.syncImplicitGridBounds();
 
     this.engine = new this.BABYLON.Engine(this.canvas, this.options.antialias ?? true, this.options.engineOptions);
     this.scene = new this.BABYLON.Scene(this.engine);
@@ -391,6 +407,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
 
   public setWorldBounds(bounds: Babylon2DWorldBounds): void {
     this.worldBounds = { ...bounds };
+    this.hasExplicitWorldBounds = true;
     if (this.renderMode === '2d') this.applyOrthographicCameraBounds();
     this.refresh2DHelperArtifacts();
     this.refresh2DObjectLabels();
@@ -399,6 +416,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
 
   public resize(size: GraphViewportSize): void {
     if (this.canvas) this.applyCanvasSize(size);
+    this.syncImplicitGridBounds();
     if (this.renderMode === '2d') this.applyOrthographicCameraBounds();
     this.refresh2DHelperArtifacts();
     this.refresh2DObjectLabels();
@@ -471,51 +489,35 @@ export class BabylonRuntime implements BabylonRuntimePort {
   private installGridAndAxes(): void {
     const scene = this.requireScene();
     const gridZ = this.renderMode === '2d' ? BABYLON_2D_GRID_Z : BABYLON_3D_GRID_Z;
+    const gridOptions = this.resolveGridOptionsForCurrentMode();
     this.disposeHelperMeshes();
-    if (!this.showAxes) {
+
+    if (!this.showAxes && !gridOptions.enabled) {
       this.disposeCoordinateLayer();
       return;
     }
 
     if (this.renderMode !== '2d') {
       this.disposeCoordinateLayer();
-      for (let coordinate = -BABYLON_WORLD_HALF_EXTENT; coordinate <= BABYLON_WORLD_HALF_EXTENT; coordinate += BABYLON_GRID_STEP) {
-        const isAxis = coordinate === 0;
-        const color = isAxis ? { r: 0.28, g: 0.33, b: 0.41, a: 0.9 } : { r: 0.58, g: 0.64, b: 0.72, a: 0.28 };
-        const thickness = isAxis ? 0.035 : 0.012;
-        this.helperMeshes.push(this.createLineBox({
-          name: `vuegraphx-grid-x-${coordinate}`,
-          start: { x: -BABYLON_WORLD_HALF_EXTENT, y: coordinate, z: gridZ },
-          end: { x: BABYLON_WORLD_HALF_EXTENT, y: coordinate, z: gridZ },
-          thickness,
-          scene,
-          color,
-          metadata: null
-        }));
-        this.helperMeshes.push(this.createLineBox({
-          name: `vuegraphx-grid-y-${coordinate}`,
-          start: { x: coordinate, y: -BABYLON_WORLD_HALF_EXTENT, z: gridZ },
-          end: { x: coordinate, y: BABYLON_WORLD_HALF_EXTENT, z: gridZ },
-          thickness,
-          scene,
-          color,
-          metadata: null
-        }));
-      }
+      this.create3DGridAndAxes(scene, gridZ, gridOptions);
       return;
     }
 
-    if (this.update2DCoordinateLayer(scene)) return;
+    if (this.update2DCoordinateLayer(scene, gridOptions)) return;
     this.disposeCoordinateLayer();
 
     const bounds = this.getVisible2DWorldBounds();
-    const xAxisVisible = bounds.bottom <= 0 && bounds.top >= 0;
-    const yAxisVisible = bounds.left <= 0 && bounds.right >= 0;
+    const xAxisVisible = this.showAxes && bounds.bottom <= 0 && bounds.top >= 0;
+    const yAxisVisible = this.showAxes && bounds.left <= 0 && bounds.right >= 0;
     const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
     const axisMetrics = createStandardCoordinateScreenMetrics(bounds, viewportSize, this.get2DVisualZoomScale());
     const xTicks = createStandardCoordinateTickModel(bounds.left, bounds.right, axisMetrics.width / axisMetrics.visualScale);
     const yTicks = createStandardCoordinateTickModel(bounds.bottom, bounds.top, axisMetrics.height / axisMetrics.visualScale);
     const axisColor = rgbaFromHex(STANDARD_COORDINATE_UI.axisStrokeColor, 1);
+
+    if (gridOptions.enabled) {
+      this.create2DGridLineBoxes(scene, bounds, axisMetrics, gridOptions, gridZ);
+    }
 
     if (xAxisVisible) {
       this.helperMeshes.push(this.createLineBox({
@@ -595,6 +597,109 @@ export class BabylonRuntime implements BabylonRuntimePort {
       }, 'plain', axisMetrics.visualScale, scene, axisMetrics, BABYLON_2D_COORDINATE_LABEL_Z);
     }
   }
+
+  private create3DGridAndAxes(
+    scene: BabylonSceneLike,
+    gridZ: number,
+    gridOptions: ResolvedGraphViewportGridOptions
+  ): void {
+    const gridColor = parseCssColorToRgba(gridOptions.lineColor, { r: 0.58, g: 0.64, b: 0.72, a: 0.28 });
+    const axisColor = { r: 0.28, g: 0.33, b: 0.41, a: 0.9 };
+    const gridThickness = Math.max(0.004, gridOptions.lineWidth * 0.012);
+    const axisThickness = 0.035;
+
+    if (gridOptions.enabled) {
+      for (let coordinate = -BABYLON_WORLD_HALF_EXTENT; coordinate <= BABYLON_WORLD_HALF_EXTENT; coordinate += BABYLON_GRID_STEP) {
+        const isAxis = coordinate === 0;
+        const color = isAxis && this.showAxes ? axisColor : gridColor;
+        const thickness = isAxis && this.showAxes ? axisThickness : gridThickness;
+        this.helperMeshes.push(this.createLineBox({
+          name: `vuegraphx-grid-x-${coordinate}`,
+          start: { x: -BABYLON_WORLD_HALF_EXTENT, y: coordinate, z: gridZ },
+          end: { x: BABYLON_WORLD_HALF_EXTENT, y: coordinate, z: gridZ },
+          thickness,
+          scene,
+          color,
+          metadata: null
+        }));
+        this.helperMeshes.push(this.createLineBox({
+          name: `vuegraphx-grid-y-${coordinate}`,
+          start: { x: coordinate, y: -BABYLON_WORLD_HALF_EXTENT, z: gridZ },
+          end: { x: coordinate, y: BABYLON_WORLD_HALF_EXTENT, z: gridZ },
+          thickness,
+          scene,
+          color,
+          metadata: null
+        }));
+      }
+      return;
+    }
+
+    if (!this.showAxes) return;
+    this.helperMeshes.push(this.createLineBox({
+      name: 'vuegraphx-grid-x-0',
+      start: { x: -BABYLON_WORLD_HALF_EXTENT, y: 0, z: gridZ },
+      end: { x: BABYLON_WORLD_HALF_EXTENT, y: 0, z: gridZ },
+      thickness: axisThickness,
+      scene,
+      color: axisColor,
+      metadata: null
+    }));
+    this.helperMeshes.push(this.createLineBox({
+      name: 'vuegraphx-grid-y-0',
+      start: { x: 0, y: -BABYLON_WORLD_HALF_EXTENT, z: gridZ },
+      end: { x: 0, y: BABYLON_WORLD_HALF_EXTENT, z: gridZ },
+      thickness: axisThickness,
+      scene,
+      color: axisColor,
+      metadata: null
+    }));
+  }
+
+  private create2DGridLineBoxes(
+    scene: BabylonSceneLike,
+    bounds: Babylon2DWorldBounds,
+    metrics: StandardCoordinateScreenMetrics,
+    gridOptions: ResolvedGraphViewportGridOptions,
+    z: number
+  ): void {
+    const pixelsPerUnitX = metrics.width / Math.max(1e-9, bounds.right - bounds.left);
+    const pixelsPerUnitY = metrics.height / Math.max(1e-9, bounds.top - bounds.bottom);
+    const stepX = resolveGraphViewportGridStep(pixelsPerUnitX, Math.abs(bounds.right - bounds.left), gridOptions);
+    const stepY = resolveGraphViewportGridStep(pixelsPerUnitY, Math.abs(bounds.top - bounds.bottom), gridOptions);
+    const startX = Math.ceil(bounds.left / stepX) * stepX;
+    const startY = Math.ceil(bounds.bottom / stepY) * stepY;
+    const thickness = Math.max(metrics.strokeWorld * 0.35, gridOptions.lineWidth * Math.max(
+      Math.abs(bounds.right - bounds.left) / metrics.width,
+      Math.abs(bounds.top - bounds.bottom) / metrics.height
+    ));
+    const color = parseCssColorToRgba(gridOptions.lineColor, { r: 0.58, g: 0.64, b: 0.72, a: 0.28 });
+
+    for (let x = startX; x <= bounds.right + 1e-9; x += stepX) {
+      this.helperMeshes.push(this.createLineBox({
+        name: `vuegraphx-coordinate-grid-x-${formatMeshCoordinate(x)}`,
+        start: { x, y: bounds.bottom, z },
+        end: { x, y: bounds.top, z },
+        thickness,
+        scene,
+        color,
+        metadata: null
+      }));
+    }
+
+    for (let y = startY; y <= bounds.top + 1e-9; y += stepY) {
+      this.helperMeshes.push(this.createLineBox({
+        name: `vuegraphx-coordinate-grid-y-${formatMeshCoordinate(y)}`,
+        start: { x: bounds.left, y, z },
+        end: { x: bounds.right, y, z },
+        thickness,
+        scene,
+        color,
+        metadata: null
+      }));
+    }
+  }
+
 
   private createMeshForSolid(node: GraphObjectNode, handle: GraphRenderHandle, scene: BabylonSceneLike): BabylonMeshLike {
     const descriptor = readSolidDescriptor(node);
@@ -870,9 +975,10 @@ export class BabylonRuntime implements BabylonRuntimePort {
   }
 
   private createLabelsForObject(node: GraphObjectNode, handle: GraphRenderHandle): HTMLElement[] {
-    if (!(node.type === 'text' || node.type === 'measurement')) return [];
     if (this.renderMode !== '2d') return [];
     if (!this.labelLayer || typeof document === 'undefined') return [];
+    if (node.type === 'coordinate-system') return this.createCoordinateSystemLabelsForObject(node, handle);
+    if (!(node.type === 'text' || node.type === 'measurement')) return [];
     const anchor = readObjectAnchor(node);
     const color = readNodeColor(node, colorForNodeType(node.type));
     const visualScale = this.get2DTextVisualZoomScale();
@@ -905,13 +1011,112 @@ export class BabylonRuntime implements BabylonRuntimePort {
     return [label];
   }
 
-  private update2DCoordinateLayer(scene: BabylonSceneLike): boolean {
+  private createCoordinateSystemLabelsForObject(node: GraphObjectNode, handle: GraphRenderHandle): HTMLElement[] {
+    if (!this.labelLayer || typeof document === 'undefined') return [];
+    const geometry = asRecord(asRecord(node.payload)?.geometry);
+    if (geometry?.kind !== 'coordinate-system') return [];
+    const labels = readStandardCoordinateLabels(geometry.labels);
+    if (labels.length === 0) return [];
+
+    const bounds = this.getVisible2DWorldBounds();
+    const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
+    const visualScale = this.get2DVisualZoomScale();
+    return labels.map((coordinateLabel) => {
+      const anchor = project2DWorldToClient(coordinateLabel.point, bounds, viewportSize);
+      const position = resolveStandardCoordinateLabelScreenPosition(coordinateLabel, anchor, visualScale);
+      const label = document.createElement('div');
+      label.textContent = coordinateLabel.text;
+      label.setAttribute('data-vuegraphx-object-id', handle.objectId);
+      label.setAttribute('data-vuegraphx-component-id', `${proxyComponentForNode(node)}:coordinate-label`);
+      label.setAttribute('data-vuegraphx-coordinate-label-role', coordinateLabel.role);
+      Object.assign(label.style, {
+        position: 'absolute',
+        left: `${formatCssNumber(position.x)}px`,
+        top: `${formatCssNumber(position.y)}px`,
+        transform: coordinateLabel.axis === 'x' ? 'translate(-50%, 0)' : 'none',
+        transformOrigin: '0 0',
+        color: STANDARD_COORDINATE_UI.tickLabelColor,
+        background: 'transparent',
+        border: '0',
+        borderRadius: '0',
+        padding: '0',
+        font: scaleCssFont(STANDARD_COORDINATE_UI.tickLabelFont, visualScale),
+        lineHeight: `${formatCssNumber(STANDARD_COORDINATE_UI.tickLabelLineHeightPx * visualScale)}px`,
+        whiteSpace: 'nowrap',
+        textAlign: coordinateLabel.axis === 'x' ? 'center' : 'left',
+        opacity: '1',
+        textShadow: 'none',
+        boxShadow: 'none',
+        contain: 'layout paint style',
+        willChange: 'left, top',
+        outline: 'none'
+      });
+      this.labelLayer?.appendChild(label);
+      return label;
+    });
+  }
+
+  private resolveGridOptionsForCurrentMode(): ResolvedGraphViewportGridOptions {
+    if (this.gridInput !== undefined) return resolveGraphViewportGridOptions(this.gridInput);
+    const inferred = resolveGraphViewportGridOptions(true);
+    return { ...inferred, enabled: this.showAxes };
+  }
+
+  private syncImplicitGridBounds(): void {
+    if (this.renderMode !== '2d' || this.hasExplicitWorldBounds || this.gridInput === undefined) return;
+    const gridOptions = this.resolveGridOptionsForCurrentMode();
+    if (!gridOptions.enabled) return;
+    const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
+    if (!viewportSize) return;
+    const bounds = createCenteredWorldBoundsForViewportGrid(viewportSize, gridOptions);
+    this.worldBounds = { ...bounds };
+    this.visualBaselineWorldBounds = { ...bounds };
+  }
+
+  private draw2DGridTexture(
+    context: CanvasRenderingContext2D,
+    bounds: Babylon2DWorldBounds,
+    metrics: StandardCoordinateScreenMetrics,
+    gridOptions: ResolvedGraphViewportGridOptions
+  ): void {
+    const pixelsPerUnitX = metrics.width / Math.max(1e-9, bounds.right - bounds.left);
+    const pixelsPerUnitY = metrics.height / Math.max(1e-9, bounds.top - bounds.bottom);
+    const stepX = resolveGraphViewportGridStep(pixelsPerUnitX, Math.abs(bounds.right - bounds.left), gridOptions);
+    const stepY = resolveGraphViewportGridStep(pixelsPerUnitY, Math.abs(bounds.top - bounds.bottom), gridOptions);
+    const startX = Math.ceil(bounds.left / stepX) * stepX;
+    const startY = Math.ceil(bounds.bottom / stepY) * stepY;
+
+    context.fillStyle = gridOptions.backgroundColor;
+    context.fillRect(0, 0, metrics.width, metrics.height);
+    context.strokeStyle = gridOptions.lineColor;
+    context.lineWidth = gridOptions.lineWidth;
+    context.lineCap = 'butt';
+    context.beginPath();
+
+    for (let x = startX; x <= bounds.right + 1e-9; x += stepX) {
+      const point = project2DWorldToClient({ x, y: 0 }, bounds, { width: metrics.width, height: metrics.height });
+      const alignedX = alignCanvasPixel(point.x, gridOptions.lineWidth);
+      context.moveTo(alignedX, 0);
+      context.lineTo(alignedX, metrics.height);
+    }
+
+    for (let y = startY; y <= bounds.top + 1e-9; y += stepY) {
+      const point = project2DWorldToClient({ x: 0, y }, bounds, { width: metrics.width, height: metrics.height });
+      const alignedY = alignCanvasPixel(point.y, gridOptions.lineWidth);
+      context.moveTo(0, alignedY);
+      context.lineTo(metrics.width, alignedY);
+    }
+
+    context.stroke();
+  }
+
+  private update2DCoordinateLayer(scene: BabylonSceneLike, gridOptions: ResolvedGraphViewportGridOptions): boolean {
     const createPlane = this.BABYLON.MeshBuilder.CreatePlane;
     if (!this.BABYLON.DynamicTexture || !createPlane || !this.BABYLON.StandardMaterial) return false;
 
     const bounds = this.getVisible2DWorldBounds();
-    const xAxisVisible = bounds.bottom <= 0 && bounds.top >= 0;
-    const yAxisVisible = bounds.left <= 0 && bounds.right >= 0;
+    const xAxisVisible = this.showAxes && bounds.bottom <= 0 && bounds.top >= 0;
+    const yAxisVisible = this.showAxes && bounds.left <= 0 && bounds.right >= 0;
     const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
     const metrics = createStandardCoordinateScreenMetrics(bounds, viewportSize, this.get2DVisualZoomScale());
     const textureScale = 2;
@@ -973,7 +1178,8 @@ export class BabylonRuntime implements BabylonRuntimePort {
       xTicks,
       yTicks,
       xAxisVisible,
-      yAxisVisible
+      yAxisVisible,
+      gridOptions
     });
 
     // Babylon DynamicTexture's default/invertY=true upload matches Canvas 2D's
@@ -997,7 +1203,11 @@ export class BabylonRuntime implements BabylonRuntimePort {
         kind: 'stable-texture',
         z: BABYLON_2D_GRID_Z,
         visualScale: metrics.visualScale,
-        labels
+        labels,
+        grid: {
+          enabled: gridOptions.enabled,
+          cellSizePx: gridOptions.cellSizePx
+        }
       }
     };
     return true;
@@ -1015,6 +1225,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
       yTicks: ReturnType<typeof createStandardCoordinateTickModel>;
       xAxisVisible: boolean;
       yAxisVisible: boolean;
+      gridOptions: ResolvedGraphViewportGridOptions;
     }
   ): Babylon2DCoordinateLabelMetadata[] {
     const { metrics } = options;
@@ -1027,6 +1238,9 @@ export class BabylonRuntime implements BabylonRuntimePort {
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, options.textureWidth, options.textureHeight);
     context.setTransform(options.textureScale, 0, 0, options.textureScale, 0, 0);
+    if (options.gridOptions.enabled) {
+      this.draw2DGridTexture(context, options.bounds, metrics, options.gridOptions);
+    }
     context.strokeStyle = STANDARD_COORDINATE_UI.axisStrokeColor;
     context.fillStyle = STANDARD_COORDINATE_UI.axisStrokeColor;
     context.lineWidth = axisStrokeWidth;
@@ -1408,7 +1622,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
       1,
       readFiniteNumber(renderHints?.strokeWidth) ?? BABYLON_PROXY_BASE_STROKE_WIDTH
     );
-    const visualStrokeWidth = isSelectedNode(node) ? strokeWidth * 2 : strokeWidth;
+    const visualStrokeWidth = isSelectedNode(node) && node.type !== 'coordinate-system' ? strokeWidth * 2 : strokeWidth;
     if (this.renderMode === '2d') {
       return Math.max(0.001, visualStrokeWidth * this.get2DBaselineWorldUnitsPerPixel());
     }
@@ -2105,6 +2319,9 @@ const distanceTo2DNode = (node: GraphObjectNode, point: { x: number; y: number }
     return Math.hypot(point.x - anchor.x, point.y - anchor.y);
   }
 
+  const coordinateSystemDistance = distanceToCoordinateSystemRegion3D(geometry, point);
+  if (coordinateSystemDistance !== null) return coordinateSystemDistance;
+
   const pathSegments = readRenderablePathSegments(payload, geometry);
   if (pathSegments.length > 0) {
     let minDistance = Number.POSITIVE_INFINITY;
@@ -2121,6 +2338,51 @@ const distanceTo2DNode = (node: GraphObjectNode, point: { x: number; y: number }
 
   const anchor = readObjectAnchor(node);
   return Math.hypot(point.x - anchor.x, point.y - anchor.y);
+};
+
+
+const distanceToCoordinateSystemRegion3D = (
+  geometry: Record<string, unknown> | null,
+  point: { x: number; y: number }
+): number | null => {
+  if (geometry?.kind !== 'coordinate-system') return null;
+  const border = readPointList3D(geometry.border);
+  if (border.length >= 3 && pointInPolygon2D(point, border)) return 0;
+
+  const segments = readCoordinateSystemSegments3D(geometry);
+  const bounds = boundsForVectorGroups(segments);
+  if (bounds && point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY) return 0;
+
+  let minDistance = Number.POSITIVE_INFINITY;
+  for (const segmentPoints of segments) {
+    for (let index = 1; index < segmentPoints.length; index += 1) {
+      minDistance = Math.min(minDistance, distanceTo2DSegment(point, segmentPoints[index - 1], segmentPoints[index]));
+    }
+  }
+  return Number.isFinite(minDistance) ? minDistance : null;
+};
+
+const boundsForVectorGroups = (groups: BabylonVector3Like[][]): { minX: number; maxX: number; minY: number; maxY: number } | null => {
+  const points = groups.flat();
+  if (points.length === 0) return null;
+  return {
+    minX: Math.min(...points.map((entry) => entry.x)),
+    maxX: Math.max(...points.map((entry) => entry.x)),
+    minY: Math.min(...points.map((entry) => entry.y)),
+    maxY: Math.max(...points.map((entry) => entry.y))
+  };
+};
+
+const pointInPolygon2D = (point: { x: number; y: number }, polygon: readonly BabylonVector3Like[]): boolean => {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index, index += 1) {
+    const currentPoint = polygon[index];
+    const previousPoint = polygon[previous];
+    const crosses = (currentPoint.y > point.y) !== (previousPoint.y > point.y)
+      && point.x < ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)) / ((previousPoint.y - currentPoint.y) || Number.EPSILON) + currentPoint.x;
+    if (crosses) inside = !inside;
+  }
+  return inside;
 };
 
 const distanceTo2DSegment = (
@@ -2173,6 +2435,21 @@ const parseCssHexColor = (value: string): RgbaColor | null => {
     g: values[1] / 255,
     b: values[2] / 255,
     a: Math.max(0.35, values[3] / 255)
+  };
+};
+
+const parseCssColorToRgba = (value: string, fallback: RgbaColor): RgbaColor => {
+  const hex = parseCssHexColor(value);
+  if (hex) return hex;
+  const match = value.trim().match(/^rgba?\(([^)]+)\)$/i);
+  if (!match) return fallback;
+  const parts = match[1].split(',').map((part) => Number(part.trim()));
+  if (parts.length < 3 || parts.some((entry) => Number.isNaN(entry))) return fallback;
+  return {
+    r: clampNumber(parts[0] / 255, 0, 1),
+    g: clampNumber(parts[1] / 255, 0, 1),
+    b: clampNumber(parts[2] / 255, 0, 1),
+    a: clampNumber(parts[3] ?? fallback.a, 0, 1)
   };
 };
 
@@ -2431,6 +2708,14 @@ const readFiniteNumber = (value: unknown): number | undefined => (
   typeof value === 'number' && Number.isFinite(value) ? value : undefined
 );
 
+const alignCanvasPixel = (value: number, lineWidth: number): number => (
+  Number.isFinite(value) ? Math.round(value) + (Math.round(lineWidth) % 2 === 1 ? 0.5 : 0) : 0
+);
+
+const formatMeshCoordinate = (value: number): string => (
+  Number.isFinite(value) ? Number(value.toFixed(6)).toString() : '0'
+);
+
 const clampNumber = (value: number, min: number, max: number): number => (
   Math.min(max, Math.max(min, value))
 );
@@ -2442,6 +2727,12 @@ const resolveRenderMode = (value: unknown, fallback: BabylonRenderMode): Babylon
 const readBoolean = (value: unknown): boolean | null => (
   typeof value === 'boolean' ? value : null
 );
+
+const readGridInput = (value: unknown): GraphViewportGridInput | undefined => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) return value as GraphViewportGridInput;
+  return undefined;
+};
 
 const read2DWorldBounds = (value: unknown): Babylon2DWorldBounds | null => {
   const record = asRecord(value);
@@ -2456,6 +2747,21 @@ const read2DWorldBounds = (value: unknown): Babylon2DWorldBounds | null => {
 
 const asRecord = (value: unknown): Record<string, unknown> | null => (
   typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
+);
+
+const readStandardCoordinateLabels = (value: unknown): StandardCoordinateLabelModel[] => (
+  Array.isArray(value)
+    ? value.filter((entry): entry is StandardCoordinateLabelModel => {
+      const record = asRecord(entry) as Partial<StandardCoordinateLabelModel> | null;
+      const point = asRecord(record?.point);
+      return !!record
+        && typeof record.text === 'string'
+        && (record.axis === 'x' || record.axis === 'y' || record.axis === 'plain')
+        && (record.role === 'x-tick' || record.role === 'y-tick' || record.role === 'x-axis' || record.role === 'y-axis' || record.role === 'origin')
+        && readFiniteNumber(point?.x) !== undefined
+        && readFiniteNumber(point?.y) !== undefined;
+    })
+    : []
 );
 
 const disposeMaterialLike = (material: unknown): void => {

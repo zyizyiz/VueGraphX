@@ -212,7 +212,7 @@ const dragDisabledCapabilities = (
   const meta = node.meta as Record<string, unknown> | undefined;
   const coordinateSystemId = typeof meta?.coordinateSystemId === 'string' ? meta.coordinateSystemId : null;
   const configuredReason = typeof meta?.dragDisabledReason === 'string' ? meta.dragDisabledReason : null;
-  if (coordinateSystemId) {
+  if (coordinateSystemId && node.type !== 'coordinate-system') {
     return {
       'math.object.move': configuredReason ?? `对象属于坐标系 ${coordinateSystemId}，不支持自由拖拽移动。`
     };

@@ -101,6 +101,46 @@ export const sampleFunctionSegments = (
   return segments;
 };
 
+export const clipSegmentsToBounds2D = (
+  segments: readonly (readonly SceneSamplePoint2D[])[],
+  bounds: SceneSamplingBounds2D
+): SceneSamplePoint2D[][] => {
+  const normalized = normalizeSamplingBounds(bounds);
+  const clippedSegments: SceneSamplePoint2D[][] = [];
+  let current: SceneSamplePoint2D[] = [];
+
+  const flush = () => {
+    if (current.length >= 2) clippedSegments.push(current);
+    current = [];
+  };
+
+  for (const segment of segments) {
+    flush();
+    for (let index = 1; index < segment.length; index += 1) {
+      const clipped = clipLineSegmentToBounds2D(segment[index - 1], segment[index], normalized);
+      if (!clipped) {
+        flush();
+        continue;
+      }
+      const [start, end] = clipped;
+      const previous = current[current.length - 1];
+      if (!previous) {
+        current.push(start, end);
+        continue;
+      }
+      if (areSceneSamplePointsClose(previous, start)) {
+        current.push(end);
+      } else {
+        flush();
+        current.push(start, end);
+      }
+    }
+    flush();
+  }
+
+  return clippedSegments;
+};
+
 export const sampleFunctionExpressionSegments = (
   expression: string,
   variable = 'x',
@@ -119,7 +159,7 @@ export const sampleImplicitEquationSegments = (
   options: SampleImplicitEquationOptions
 ): SceneSamplePoint2D[][] => {
   const circle = sampleCircleEquationSegments(expression);
-  if (circle.length > 0) return circle;
+  if (circle.length > 0) return clipSegmentsToBounds2D(circle, options.bounds);
 
   const parts = expression.split('=');
   if (parts.length !== 2) return [];
@@ -180,6 +220,97 @@ export const sampleImplicitEquationSegments = (
 
   return stitchLineSegments(cellSegments, options.stitchEpsilon ?? 1e-3);
 };
+
+const normalizeSamplingBounds = (bounds: SceneSamplingBounds2D): SceneSamplingBounds2D => ({
+  left: Math.min(bounds.left, bounds.right),
+  right: Math.max(bounds.left, bounds.right),
+  top: Math.max(bounds.top, bounds.bottom),
+  bottom: Math.min(bounds.top, bounds.bottom)
+});
+
+const INSIDE = 0;
+const LEFT = 1;
+const RIGHT = 2;
+const BOTTOM = 4;
+const TOP = 8;
+
+const pointOutCode = (point: SceneSamplePoint2D, bounds: SceneSamplingBounds2D): number => {
+  let code = INSIDE;
+  if (point.x < bounds.left) code |= LEFT;
+  else if (point.x > bounds.right) code |= RIGHT;
+  if (point.y < bounds.bottom) code |= BOTTOM;
+  else if (point.y > bounds.top) code |= TOP;
+  return code;
+};
+
+const clipLineSegmentToBounds2D = (
+  start: SceneSamplePoint2D,
+  end: SceneSamplePoint2D,
+  bounds: SceneSamplingBounds2D
+): [SceneSamplePoint2D, SceneSamplePoint2D] | null => {
+  let x0 = start.x;
+  let y0 = start.y;
+  let x1 = end.x;
+  let y1 = end.y;
+  let code0 = pointOutCode({ x: x0, y: y0 }, bounds);
+  let code1 = pointOutCode({ x: x1, y: y1 }, bounds);
+
+  for (let guard = 0; guard < 8; guard += 1) {
+    if ((code0 | code1) === 0) {
+      return [
+        clampPointToSamplingBounds({ x: x0, y: y0 }, bounds),
+        clampPointToSamplingBounds({ x: x1, y: y1 }, bounds)
+      ];
+    }
+    if ((code0 & code1) !== 0) return null;
+
+    const codeOut = code0 || code1;
+    let x = 0;
+    let y = 0;
+    if (codeOut & TOP) {
+      if (Math.abs(y1 - y0) <= 1e-12) return null;
+      x = x0 + ((x1 - x0) * (bounds.top - y0)) / (y1 - y0);
+      y = bounds.top;
+    } else if (codeOut & BOTTOM) {
+      if (Math.abs(y1 - y0) <= 1e-12) return null;
+      x = x0 + ((x1 - x0) * (bounds.bottom - y0)) / (y1 - y0);
+      y = bounds.bottom;
+    } else if (codeOut & RIGHT) {
+      if (Math.abs(x1 - x0) <= 1e-12) return null;
+      y = y0 + ((y1 - y0) * (bounds.right - x0)) / (x1 - x0);
+      x = bounds.right;
+    } else if (codeOut & LEFT) {
+      if (Math.abs(x1 - x0) <= 1e-12) return null;
+      y = y0 + ((y1 - y0) * (bounds.left - x0)) / (x1 - x0);
+      x = bounds.left;
+    }
+
+    if (codeOut === code0) {
+      x0 = x;
+      y0 = y;
+      code0 = pointOutCode({ x: x0, y: y0 }, bounds);
+    } else {
+      x1 = x;
+      y1 = y;
+      code1 = pointOutCode({ x: x1, y: y1 }, bounds);
+    }
+  }
+
+  return null;
+};
+
+const clampPointToSamplingBounds = (
+  point: SceneSamplePoint2D,
+  bounds: SceneSamplingBounds2D
+): SceneSamplePoint2D => ({
+  x: Math.min(bounds.right, Math.max(bounds.left, point.x)),
+  y: Math.min(bounds.top, Math.max(bounds.bottom, point.y))
+});
+
+const areSceneSamplePointsClose = (
+  left: SceneSamplePoint2D,
+  right: SceneSamplePoint2D
+): boolean => Math.hypot(left.x - right.x, left.y - right.y) < 1e-7;
 
 export const sampleCircleEquationSegments = (expression: string): SceneSamplePoint2D[][] => {
   const normalized = expression.replace(/\s+/g, '').replace(/\*\*/g, '^');

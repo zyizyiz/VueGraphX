@@ -2,6 +2,8 @@ export * from './contracts';
 export * from './sceneObjectIr';
 export * from './relationSnapshot';
 export * from './viewportCoordinate';
+export * from './viewportGrid';
+export * from './gridSnapping';
 export * from './backendRegistry';
 export * from './packages';
 export * from './sceneDocument';

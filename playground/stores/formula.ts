@@ -13,12 +13,31 @@ export interface CommandItem {
   options?: any;       // 开放拓展透传给底层绘图引擎的自定义配置项（例如 fillColor）
 }
 
+export interface CommandInput {
+  expr: string;
+  options?: any;
+}
+
+const commandColors = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#10b981', '#f59e0b'];
+
+let nextCommandSequence = 1;
+
+const createCommandId = (existingCommands: readonly CommandItem[]): string => {
+  const existingIds = new Set(existingCommands.map((command) => command.id));
+  let id = '';
+  do {
+    id = `cmd_${nextCommandSequence++}`;
+  } while (existingIds.has(id));
+  return id;
+};
+
 export const useFormulaStore = defineStore('formula', () => {
   // 分别维护三个模式下的独立状态表
   const commandsMap = ref<Record<PlaygroundMode, CommandItem[]>>({
     '2d': [{ id: 'init_2d', expression: 'sin(x)', color: '#0ea5e9', visible: true }],
     '3d': [{ id: 'init_3d', expression: 'z = sin(x)*cos(y)', color: '#f43f5e', visible: true }],
-    'geometry': [{ id: 'init_geom1', expression: 'A=(-2,0)', color: '#8b5cf6', visible: true }]
+    'geometry': [{ id: 'init_geom1', expression: 'A=(-2,0)', color: '#8b5cf6', visible: true }],
+    'operation': []
   });
   
   const activeMode = ref<PlaygroundMode>('2d');
@@ -27,12 +46,10 @@ export const useFormulaStore = defineStore('formula', () => {
   const commands = computed(() => commandsMap.value[activeMode.value]);
 
   const addCommand = (expression: string = '') => {
-    const id = `cmd_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const colors = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#10b981', '#f59e0b'];
-    
     // 从当前激活态的数组里取长度进行递进颜色分配
     const list = commandsMap.value[activeMode.value];
-    const color = colors[list.length % colors.length];
+    const id = createCommandId(list);
+    const color = commandColors[list.length % commandColors.length];
     
     list.push({
       id,
@@ -41,6 +58,19 @@ export const useFormulaStore = defineStore('formula', () => {
       visible: true
     });
     return id;
+  };
+
+  const appendCommands = (items: readonly CommandInput[]) => {
+    const list = commandsMap.value[activeMode.value];
+    items.forEach((item) => {
+      list.push({
+        id: createCommandId(list),
+        expression: item.expr,
+        color: commandColors[list.length % commandColors.length],
+        visible: true,
+        options: item.options
+      });
+    });
   };
 
   const removeCommand = (id: string) => {
@@ -69,13 +99,12 @@ export const useFormulaStore = defineStore('formula', () => {
   const injectDemo = (mode: PlaygroundMode, demoCommands: readonly (string | { expr: string, options?: any })[]) => {
     commandsMap.value[mode] = [];
     demoCommands.forEach((cmdRaw, idx) => {
-      const colors = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#10b981', '#f59e0b'];
       const expr = typeof cmdRaw === 'string' ? cmdRaw : cmdRaw.expr;
       const opts = typeof cmdRaw === 'string' ? undefined : cmdRaw.options;
       commandsMap.value[mode].push({
         id: `demo_${mode}_${idx}`,
         expression: expr,
-        color: colors[idx % colors.length],
+        color: commandColors[idx % commandColors.length],
         visible: true,
         options: opts
       });
@@ -83,12 +112,10 @@ export const useFormulaStore = defineStore('formula', () => {
   };
 
   const replaceCommandsFromScene = (mode: PlaygroundMode, sceneCommands: GraphSceneCommandNode[]) => {
-    const colors = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#10b981', '#f59e0b'];
-
     commandsMap.value[mode] = sceneCommands.map((command, index) => ({
       id: command.id,
       expression: command.expression,
-      color: command.color ?? colors[index % colors.length],
+      color: command.color ?? commandColors[index % commandColors.length],
       visible: true,
       options: command.options
     }));
@@ -98,6 +125,7 @@ export const useFormulaStore = defineStore('formula', () => {
     commands,
     activeMode,
     addCommand,
+    appendCommands,
     removeCommand,
     updateCommand,
     setCommandError,

@@ -7,7 +7,11 @@ import {
   type GraphOperationResult,
   type GraphRuntimeTargetRef
 } from './contracts';
-import { createGraphDragPatch, type GraphDragDelta } from './dragOperations';
+import {
+  createGraphCoordinateSystemDragPatches,
+  createGraphDragPatch,
+  type GraphDragDelta
+} from './dragOperations';
 import { GraphSceneStore } from './sceneDocument';
 
 export interface GraphCapabilityExecutionInput {
@@ -95,6 +99,26 @@ export const executeGraphCapability = (
     case 'math.object.lock':
       return patchObject(input.scene, node, lockPatch(node, input.payload));
     case 'math.object.move': {
+      if (node.type === 'coordinate-system') {
+        const delta = asDragDelta(asRecord(input.payload)?.delta ?? input.payload);
+        if (!delta) {
+          return errorResult('capability.invalid-delta', 'Move capability requires a 2D or 3D drag delta.', input.target);
+        }
+        const patches = createGraphCoordinateSystemDragPatches(input.scene.listObjects(), node, {
+          delta,
+          dragPhase: readDragPhase(input.payload)
+        });
+        if (!patches.ok || !patches.value) return { ok: false, diagnostics: patches.diagnostics };
+        let movedObject: GraphObjectNode | null = null;
+        for (const scopedPatch of patches.value) {
+          const result = input.scene.updateObject(scopedPatch.objectId, scopedPatch.patch);
+          if (!result.ok || !result.value) return { ok: false, diagnostics: result.diagnostics };
+          if (scopedPatch.objectId === node.id) movedObject = result.value;
+        }
+        return movedObject
+          ? okResult({ action: 'update', object: movedObject })
+          : errorResult('capability.missing-object', `Graph object ${node.id} does not exist.`, input.target);
+      }
       const patch = dragPatch(node, input.payload);
       return patch.ok && patch.value
         ? patchObject(input.scene, node, patch.value)
@@ -314,7 +338,12 @@ const dragPatch = (node: GraphObjectNode, payload: unknown): GraphOperationResul
       objectId: node.id
     });
   }
-  return createGraphDragPatch(node, { delta });
+  return createGraphDragPatch(node, { delta, dragPhase: readDragPhase(payload) });
+};
+
+const readDragPhase = (payload: unknown): 'move' | 'end' | undefined => {
+  const phase = asRecord(payload)?.dragPhase;
+  return phase === 'move' || phase === 'end' ? phase : undefined;
 };
 
 const parameterPatch = (node: GraphObjectNode, payload: unknown): GraphObjectPatch => {

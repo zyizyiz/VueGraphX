@@ -1086,6 +1086,125 @@ describe('renderer-neutral core runtime contracts', () => {
       code: 'drag.disabled-object',
       message: SUBJECT_CANVAS_DRAG_DISABLED_REASON
     });
+
+    const coordinateSystemPatch = createGraphDragPatch({
+      id: 'coord-A',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        objectType: 'coordinate-system',
+        dimension: 'plane',
+        origin: { dimension: '2d', x: 0, y: 0 },
+        size: { width: 12, height: 12 },
+        unitPx: 1,
+        xRange: { min: -6, max: 6 },
+        yRange: { min: -6, max: 6 },
+        geometry: {
+          kind: 'coordinate-system',
+          xAxis: [{ x: -6, y: 0 }, { x: 6, y: 0 }],
+          yAxis: [{ x: 0, y: -6 }, { x: 0, y: 6 }],
+          segments: [
+            [{ x: -6, y: 0 }, { x: 6, y: 0 }],
+            [{ x: 0, y: -6 }, { x: 0, y: 6 }]
+          ],
+          labels: [{ text: 'O', axis: 'plain', role: 'origin', point: { x: 0, y: 0 } }]
+        }
+      },
+      meta: { coordinateSystemId: 'coord-A', draggable: true, snapToGrid: true }
+    }, {
+      delta: { dimension: '2d', dx: 2, dy: 3 }
+    });
+    expect(coordinateSystemPatch.ok).toBe(true);
+    expect(coordinateSystemPatch.value?.payload).toMatchObject({
+      origin: { dimension: '2d', x: 2, y: 3 },
+      geometry: {
+        xAxis: [{ x: -4, y: 3 }, { x: 8, y: 3 }],
+        yAxis: [{ x: 2, y: -3 }, { x: 2, y: 9 }],
+        labels: [expect.objectContaining({ point: { x: 2, y: 3 } })]
+      }
+    });
+
+    const snappedCoordinateSystemPatch = createGraphDragPatch({
+      id: 'coord-snap',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        objectType: 'coordinate-system',
+        origin: { dimension: '2d', x: 0, y: 0 },
+        geometry: {
+          kind: 'coordinate-system',
+          xAxis: [{ x: -6, y: 0 }, { x: 6, y: 0 }],
+          yAxis: [{ x: 0, y: -6 }, { x: 0, y: 6 }],
+          labels: [{ text: 'O', axis: 'plain', role: 'origin', point: { x: 0, y: 0 } }]
+        }
+      },
+      meta: { coordinateSystemId: 'coord-snap', draggable: true, snapToGrid: true }
+    }, {
+      delta: { dimension: '2d', dx: 2.35, dy: -1.55 }
+    });
+    expect(snappedCoordinateSystemPatch.ok).toBe(true);
+    expect(snappedCoordinateSystemPatch.value?.payload).toMatchObject({
+      origin: { dimension: '2d', x: 2, y: -2 },
+      geometry: {
+        xAxis: [{ x: -4, y: -2 }, { x: 8, y: -2 }],
+        yAxis: [{ x: 2, y: -8 }, { x: 2, y: 4 }],
+        labels: [expect.objectContaining({ point: { x: 2, y: -2 } })]
+      }
+    });
+
+    const snapOnEndNode = {
+      id: 'coord-snap-end',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        objectType: 'coordinate-system',
+        origin: { dimension: '2d', x: 0, y: 0 },
+        geometry: {
+          kind: 'coordinate-system',
+          xAxis: [{ x: -6, y: 0 }, { x: 6, y: 0 }],
+          yAxis: [{ x: 0, y: -6 }, { x: 0, y: 6 }]
+        }
+      },
+      meta: { coordinateSystemId: 'coord-snap-end', draggable: true, snapToGrid: { enabled: true, phase: 'end' } }
+    } satisfies GraphObjectNode;
+    const snapOnEndMovePatch = createGraphDragPatch(snapOnEndNode, {
+      delta: { dimension: '2d', dx: 2.35, dy: -1.55 },
+      dragPhase: 'move'
+    });
+    expect(snapOnEndMovePatch.value?.payload).toMatchObject({
+      origin: { dimension: '2d', x: 2.35, y: -1.55 }
+    });
+    const snapOnEndReleasePatch = createGraphDragPatch(snapOnEndNode, {
+      delta: { dimension: '2d', dx: 2.35, dy: -1.55 },
+      dragPhase: 'end'
+    });
+    expect(snapOnEndReleasePatch.value?.payload).toMatchObject({
+      origin: { dimension: '2d', x: 2, y: -2 }
+    });
+
+    const snapOnEndSettledNode = {
+      ...snapOnEndNode,
+      payload: {
+        objectType: 'coordinate-system',
+        origin: { dimension: '2d', x: 2.35, y: -1.55 },
+        geometry: {
+          kind: 'coordinate-system',
+          xAxis: [{ x: -3.65, y: -1.55 }, { x: 8.35, y: -1.55 }],
+          yAxis: [{ x: 2.35, y: -7.55 }, { x: 2.35, y: 4.45 }]
+        }
+      }
+    } satisfies GraphObjectNode;
+    const snapOnEndSettledReleasePatch = createGraphDragPatch(snapOnEndSettledNode, {
+      delta: { dimension: '2d', dx: 0, dy: 0 },
+      dragPhase: 'end'
+    });
+    expect(snapOnEndSettledReleasePatch.value?.payload).toMatchObject({
+      origin: { dimension: '2d', x: 2, y: -2 },
+      geometry: {
+        xAxis: [{ x: -4, y: -2 }, { x: 8, y: -2 }],
+        yAxis: [{ x: 2, y: -8 }, { x: 2, y: 4 }]
+      }
+    });
   });
 
   it('explains drag success, constrained clamps, and relation-driven failures', () => {
@@ -1389,6 +1508,78 @@ describe('renderer-neutral core runtime contracts', () => {
     expect(runtime.scene.getObject('A')?.payload).toMatchObject({ objectType: 'point', position: { dimension: '2d', x: 15, y: 8 } });
     expect(backend.pick({ x: 15, y: 8 })?.target.objectId).toBe('A');
     expect(runtime.snapshot().handles).toHaveLength(1);
+  });
+
+  it('moves coordinate systems with their scoped graph objects and clip bounds', () => {
+    const backend = createCoreOnlyTestBackend('runtime-coordinate-drag');
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+
+    runtime.addObject({
+      id: 'coord-A',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        objectType: 'coordinate-system',
+        dimension: 'plane',
+        origin: { dimension: '2d', x: 0, y: 0 },
+        size: { width: 12, height: 12 },
+        unitPx: 1,
+        xRange: { min: -6, max: 6 },
+        yRange: { min: -6, max: 6 },
+        geometry: {
+          kind: 'coordinate-system',
+          xAxis: [{ x: -6, y: 0 }, { x: 6, y: 0 }],
+          yAxis: [{ x: 0, y: -6 }, { x: 0, y: 6 }],
+          segments: [
+            [{ x: -6, y: 0 }, { x: 6, y: 0 }],
+            [{ x: 0, y: -6 }, { x: 0, y: 6 }]
+          ],
+          labels: []
+        }
+      },
+      renderHints: { draggable: true },
+      meta: { coordinateSystemId: 'coord-A', draggable: true, snapToGrid: true }
+    });
+    runtime.addObject({
+      id: 'f',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        objectType: 'function',
+        expression: 'x',
+        geometry: { kind: 'polyline', points: [{ x: -1, y: -1 }, { x: 1, y: 1 }] }
+      },
+      renderHints: {
+        draggable: false,
+        clipWorldBounds: { left: -6, right: 6, top: 6, bottom: -6 }
+      },
+      meta: {
+        coordinateSystemId: 'coord-A',
+        draggable: false,
+        dragDisabled: true
+      }
+    });
+
+    const moved = runtime.applyDragToObject('coord-A', {
+      delta: { dimension: '2d', dx: 4.35, dy: -1.6 }
+    });
+
+    expect(moved.ok).toBe(true);
+    expect(runtime.scene.getObject('coord-A')?.payload).toMatchObject({
+      origin: { dimension: '2d', x: 4, y: -2 },
+      geometry: {
+        xAxis: [{ x: -2, y: -2 }, { x: 10, y: -2 }],
+        yAxis: [{ x: 4, y: -8 }, { x: 4, y: 4 }]
+      }
+    });
+    expect(runtime.scene.getObject('f')?.payload).toMatchObject({
+      geometry: { points: [{ x: 3, y: -3 }, { x: 5, y: -1 }] }
+    });
+    expect(runtime.scene.getObject('f')?.renderHints).toMatchObject({
+      draggable: false,
+      clipWorldBounds: { left: -2, right: 10, top: 4, bottom: -8 }
+    });
   });
 
   it('removes old backend resources before switching GraphSceneRuntime backends', () => {

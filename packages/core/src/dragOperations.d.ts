@@ -15,6 +15,13 @@ export interface GraphCreateDragPatchOptions {
     delta?: GraphDragDelta;
     startWorldPoint?: GraphWorldPoint;
     currentWorldPoint?: GraphWorldPoint;
+    dragPhase?: 'move' | 'end';
+    /**
+     * Internal group-drag escape hatch: coordinate-scoped children are normally
+     * not freely draggable, but they must move when their owning coordinate
+     * system moves.
+     */
+    allowCoordinateScoped?: boolean;
 }
 export type GraphDragOperationStatus = 'success' | 'clamped' | 'failure';
 export interface GraphDragBounds2D {
@@ -29,5 +36,10 @@ export interface GraphDragOperation {
     patch?: GraphObjectPatch;
     explanation: GraphOperationDiagnostic;
 }
+export interface GraphScopedDragPatch {
+    objectId: string;
+    patch: GraphObjectPatch;
+}
 export declare const createGraphDragPatch: (node: GraphObjectNode, options: GraphCreateDragPatchOptions) => GraphOperationResult<GraphObjectPatch>;
 export declare const resolveGraphDragOperation: (node: GraphObjectNode, options: GraphCreateDragPatchOptions) => GraphOperationResult<GraphDragOperation>;
+export declare const createGraphCoordinateSystemDragPatches: (nodes: readonly GraphObjectNode[], coordinateSystemNode: GraphObjectNode, options: GraphCreateDragPatchOptions) => GraphOperationResult<GraphScopedDragPatch[]>;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { GraphSceneRuntime, type GraphRenderHandle } from '@vuegraphx/core';
+import { GraphSceneRuntime, createStandardCoordinateSystemGeometry, type GraphRenderHandle } from '@vuegraphx/core';
 import { createBabylonGraphBackend, createBabylonRuntime, type BabylonMeshLike, type BabylonNamespaceLike } from './index';
 
 class FakeVector3 {
@@ -117,6 +117,7 @@ class FakeCanvasContext {
   public restore = vi.fn();
   public setTransform = vi.fn();
   public clearRect = vi.fn();
+  public fillRect = vi.fn();
   public beginPath = vi.fn();
   public moveTo = vi.fn();
   public lineTo = vi.fn();
@@ -342,6 +343,37 @@ describe('BabylonRuntime', () => {
     runtime.destroy();
   });
 
+
+
+  it('derives a 30px-per-unit 2D coordinate texture grid without helper axes', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), {
+      renderMode: '2d',
+      attachCameraControl: false,
+      showAxes: false,
+      grid: true
+    });
+    const host = document.createElement('div');
+
+    runtime.mount(host, {
+      size: { width: 600, height: 420 },
+      attributes: { renderMode: '2d', showAxes: false, grid: true }
+    });
+
+    expect(FakeCamera.last).toMatchObject({
+      orthoLeft: -10,
+      orthoRight: 10,
+      orthoTop: 7,
+      orthoBottom: -7
+    });
+    const coordinateLayer = FakeMeshBuilder.meshes.get('vuegraphx-coordinate-layer');
+    const metadata = coordinateLayer?.metadata?.vuegraphxCoordinateLayer as { grid?: { enabled?: boolean; cellSizePx?: number }; labels?: unknown[] } | undefined;
+    expect(metadata?.grid).toEqual({ enabled: true, cellSizePx: 30 });
+    expect(metadata?.labels).toEqual([]);
+    expect(FakeDynamicTexture.instances[0]?.context.fillRect).toHaveBeenCalledWith(0, 0, 600, 420);
+
+    runtime.destroy();
+  });
+
   it('keeps 2D helper coordinate axes behind projected content and foreground labels', () => {
     const runtime = createBabylonRuntime(createFakeBabylon(), {
       renderMode: '2d',
@@ -393,6 +425,54 @@ describe('BabylonRuntime', () => {
     runtime.destroy();
   });
 
+  it('renders semantic coordinate-system labels through the 2D object label layer', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), {
+      renderMode: '2d',
+      attachCameraControl: false,
+      showAxes: false,
+      grid: false
+    });
+    const host = document.createElement('div');
+
+    runtime.mount(host, {
+      size: { width: 360, height: 360 },
+      attributes: { renderMode: '2d', showAxes: false, grid: false, worldBounds: { left: -6, right: 6, top: 6, bottom: -6 } }
+    });
+    runtime.createObject({
+      id: 'coord-local',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: createStandardCoordinateSystemGeometry({
+          origin: { x: 0, y: 0 },
+          unitPx: 1,
+          xRange: { min: -6, max: 6 },
+          yRange: { min: -6, max: 6 },
+          includeGrid: false,
+          includeBorder: false
+        })
+      }
+    }, {
+      id: 'babylon:coord-local',
+      objectId: 'coord-local',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'coord-local', backendId: 'babylon', layerId: 'content' }
+    });
+
+    const originLabel = host.querySelector('[data-vuegraphx-coordinate-label-role="origin"]') as HTMLElement | null;
+    const yAxisLabel = Array.from(host.querySelectorAll('[data-vuegraphx-coordinate-label-role="y-axis"]')).at(0) as HTMLElement | undefined;
+    expect(originLabel?.textContent).toBe('O');
+    expect(originLabel?.style.left).toBe('168px');
+    expect(originLabel?.style.top).toBe('180px');
+    expect(yAxisLabel?.textContent).toBe('y');
+    expect(yAxisLabel?.style.left).toBe('170px');
+    expect(yAxisLabel?.style.top).toBe('-7px');
+    expect(yAxisLabel?.style.font).toContain('12px');
+
+    runtime.destroy();
+  });
+
   it('expands square 2D world bounds to preserve circular point geometry on rectangular canvases', () => {
     const runtime = createBabylonRuntime(createFakeBabylon(), {
       renderMode: '2d',
@@ -430,7 +510,7 @@ describe('BabylonRuntime', () => {
     expect(hasLabelAt('2', 230, 150, 'x')).toBe(true);
     expect(hasLabelAt('2', 190, 111, 'y')).toBe(true);
     expect(hasLabelAt('x', 394, 150, 'plain')).toBe(true);
-    expect(hasLabelAt('y', 190, 0, 'plain')).toBe(true);
+    expect(hasLabelAt('y', 190, -7, 'plain')).toBe(true);
     expect(hasLabelAt('O', 188, 150, 'plain')).toBe(true);
     expect(FakeDynamicTexture.instances[0]?.context.fill).toHaveBeenCalled();
     expect(FakeMeshBuilder.meshes.has('vuegraphx-axis-x-arrow-1')).toBe(false);
@@ -483,7 +563,7 @@ describe('BabylonRuntime', () => {
     const xAxisLabel = coordinateLabels.find((label) => label.text === 'x' && label.visualScale === 2);
     const yAxisLabel = coordinateLabels.find((label) => label.text === 'y' && label.visualScale === 2);
     expect(xAxisLabel).toMatchObject({ left: 388, top: 150, visualScale: 2 });
-    expect(yAxisLabel).toMatchObject({ left: 180, top: 0, visualScale: 2 });
+    expect(yAxisLabel).toMatchObject({ left: 180, top: -14, visualScale: 2 });
     expect(initialCoordinateLayer?.position?.z).toBeGreaterThan(0);
     const zoomedLabel = host.querySelector('[data-vuegraphx-object-id="text-zoom"]') as HTMLElement | null;
     expect(zoomedLabel?.getAttribute('style')).toContain('14px');
@@ -661,6 +741,86 @@ describe('BabylonRuntime', () => {
     expect(FakeMeshBuilder.meshes.get('babylon:selected-path:segment-1')?.material).toMatchObject({
       diffuseColor: { r: expect.closeTo(0.0549), g: expect.closeTo(0.647), b: expect.closeTo(0.914) }
     });
+
+    runtime.destroy();
+  });
+
+
+  it('picks Babylon 2D coordinate systems from the whole coordinate region', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
+    const host = document.createElement('div');
+    runtime.mount(host, { size: { width: 320, height: 240 } });
+
+    runtime.createObject({
+      id: 'coord',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: createStandardCoordinateSystemGeometry({
+          origin: { x: 0, y: 0 },
+          unitPx: 1,
+          xRange: { min: -6, max: 6 },
+          yRange: { min: -6, max: 6 },
+          includeGrid: false,
+          includeBorder: true
+        })
+      }
+    }, {
+      id: 'babylon:coord',
+      objectId: 'coord',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'coord', backendId: 'babylon', layerId: 'content' }
+    });
+
+    expect(runtime.pick({ x: 200, y: 80 }, { tolerancePx: 0.1 })).toMatchObject({
+      objectId: 'coord',
+      meta: { pickMode: '2d-tolerance' }
+    });
+
+    runtime.destroy();
+  });
+
+  it('does not thicken selected Babylon coordinate-system axes', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon());
+    const host = document.createElement('div');
+    runtime.mount(host, { size: { width: 320, height: 240 } });
+    clearMeshBuilderCalls();
+
+    const createCoordinateSystem = (id: string, selected: boolean): void => {
+      runtime.createObject({
+        id,
+        kind: 'shape',
+        type: 'coordinate-system',
+        payload: {
+          geometry: createStandardCoordinateSystemGeometry({
+            origin: { x: 0, y: 0 },
+            unitPx: 1,
+            xRange: { min: -6, max: 6 },
+            yRange: { min: -6, max: 6 },
+            includeGrid: false,
+            includeBorder: false
+          })
+        },
+        meta: selected ? { selected: true } : undefined,
+        renderHints: { strokeColor: '#64748b', strokeWidth: 3 }
+      }, {
+        id: `babylon:${id}`,
+        objectId: id,
+        backendId: 'babylon',
+        layerId: 'content',
+        target: { scope: 'object', objectId: id, backendId: 'babylon', layerId: 'content' }
+      });
+    };
+
+    createCoordinateSystem('normal-coord', false);
+    createCoordinateSystem('selected-coord', true);
+
+    const normalRadius = Number(FakeMeshBuilder.meshes.get('babylon:normal-coord:segment-1')?.options?.radius);
+    const selectedRadius = Number(FakeMeshBuilder.meshes.get('babylon:selected-coord:segment-1')?.options?.radius);
+
+    expect(normalRadius).toBeGreaterThan(0);
+    expect(selectedRadius).toBeCloseTo(normalRadius);
 
     runtime.destroy();
   });

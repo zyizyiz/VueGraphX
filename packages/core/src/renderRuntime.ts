@@ -12,7 +12,11 @@ import {
   type GraphRenderBackend,
   type GraphRenderHandle
 } from './contracts';
-import { createGraphDragPatch, type GraphCreateDragPatchOptions } from './dragOperations';
+import {
+  createGraphCoordinateSystemDragPatches,
+  createGraphDragPatch,
+  type GraphCreateDragPatchOptions
+} from './dragOperations';
 import { GraphInteractionRouter } from './eventRouter';
 import { GraphSceneStore, type GraphSceneStoreSnapshot } from './sceneDocument';
 
@@ -130,6 +134,25 @@ export class GraphSceneRuntime {
         scope: 'object',
         objectId
       });
+    }
+    if (node.type === 'coordinate-system') {
+      const patches = createGraphCoordinateSystemDragPatches(this.scene.listObjects(), node, drag);
+      if (!patches.ok || !patches.value) return { ok: false, diagnostics: patches.diagnostics };
+
+      let targetResult: GraphOperationResult<GraphObjectNode> | null = null;
+      for (const scopedPatch of patches.value) {
+        const result = this.updateObject(scopedPatch.objectId, scopedPatch.patch);
+        if (!result.ok) return result;
+        if (scopedPatch.objectId === objectId) targetResult = result;
+      }
+      if (targetResult) return targetResult;
+      const updated = this.scene.getObject(objectId);
+      return updated
+        ? { ok: true, value: updated, diagnostics: [] }
+        : errorResult('runtime.missing-object', `Graph object ${objectId} does not exist.`, {
+          scope: 'object',
+          objectId
+        });
     }
     const patch = createGraphDragPatch(node, drag);
     return patch.ok && patch.value

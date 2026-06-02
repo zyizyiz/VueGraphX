@@ -1,4 +1,5 @@
 import JXG from 'jsxgraph';
+import type { GraphViewportGridInput } from '@vuegraphx/core';
 import type { GraphHiddenLineOptions } from '../rendering/hiddenLine/contracts';
 import type { GraphRelationAssistOptions } from '../relation/contracts';
 
@@ -45,6 +46,11 @@ export interface GraphXOptions {
    * JSXGraph 拖拽 move 事件的监听目标。默认会在支持拖拽时使用 document。
    */
   moveTarget?: Document | HTMLElement | null;
+
+  /**
+   * 初始化时是否绘制无限背景网格。默认不改变既有画板背景；传 true 使用 30px 单位格。
+   */
+  grid?: GraphViewportGridInput;
 
   /**
    * JSXGraph 画板级拖拽开关。

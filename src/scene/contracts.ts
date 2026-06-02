@@ -1,3 +1,4 @@
+import type { GraphViewportGridInput } from '@vuegraphx/core';
 import type { EngineMode } from '../types/engine';
 import type { GraphSceneRelationNode } from '../relation/contracts';
 
@@ -8,6 +9,7 @@ export interface GraphSceneSettings {
   axis?: boolean;
   showNavigation?: boolean;
   keepaspectratio?: boolean;
+  grid?: GraphViewportGridInput;
   view3D?: {
     hiddenLine?: {
       enabled?: boolean;

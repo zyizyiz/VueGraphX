@@ -1,5 +1,6 @@
 import * as math from 'mathjs';
 import {
+  clipSegmentsToBounds2D,
   sampleFunctionSegments,
   sampleImplicitEquationSegments,
   sampleParametricClosedCurve,
@@ -387,15 +388,18 @@ export const sampleSubjectFunctionDescriptor = (
   descriptor: SubjectFunctionFamilyDescriptor,
   options: SubjectFunctionSampleOptions = {}
 ): SceneSamplePoint2D[][] => {
+  const bounds = subjectSampleBounds(options);
   if (descriptor.kind === 'circle-equation') {
     const { h, k, r } = circleParameters(descriptor);
-    return [sampleParametricClosedCurve((theta) => ({ x: h + r * Math.cos(theta), y: k + r * Math.sin(theta) }))];
+    return clipSegmentsToBounds2D([
+      sampleParametricClosedCurve((theta) => ({ x: h + r * Math.cos(theta), y: k + r * Math.sin(theta) }))
+    ], bounds);
   }
 
   const min = options.min ?? DEFAULT_SAMPLE_WINDOW.min;
   const max = options.max ?? DEFAULT_SAMPLE_WINDOW.max;
   const clipped = clipSubjectDomainToWindow(descriptor.domain, [min, max]);
-  return clipped.intervals.flatMap((interval) => {
+  const segments = clipped.intervals.flatMap((interval) => {
     const intervalMin = interval.min ?? min;
     const intervalMax = interval.max ?? max;
     if (intervalMax <= intervalMin) return [];
@@ -410,6 +414,7 @@ export const sampleSubjectFunctionDescriptor = (
       }
     );
   });
+  return clipSegmentsToBounds2D(segments, bounds);
 };
 
 export const sampleSubjectEquationDescriptor = (
@@ -418,14 +423,16 @@ export const sampleSubjectEquationDescriptor = (
 ): SceneSamplePoint2D[][] => {
   if (descriptor.kind === 'circle-equation') return sampleSubjectFunctionDescriptor(descriptor, options);
   return sampleImplicitEquationSegments(descriptor.expression, {
-    bounds: {
-      left: options.min ?? DEFAULT_SAMPLE_WINDOW.min,
-      right: options.max ?? DEFAULT_SAMPLE_WINDOW.max,
-      top: options.yMax ?? DEFAULT_SAMPLE_WINDOW.yMax,
-      bottom: options.yMin ?? DEFAULT_SAMPLE_WINDOW.yMin
-    }
+    bounds: subjectSampleBounds(options)
   });
 };
+
+const subjectSampleBounds = (options: SubjectFunctionSampleOptions): { left: number; right: number; top: number; bottom: number } => ({
+  left: options.min ?? DEFAULT_SAMPLE_WINDOW.min,
+  right: options.max ?? DEFAULT_SAMPLE_WINDOW.max,
+  top: options.yMax ?? DEFAULT_SAMPLE_WINDOW.yMax,
+  bottom: options.yMin ?? DEFAULT_SAMPLE_WINDOW.yMin
+});
 
 export const computeSubjectFunctionProperties = (
   descriptor: SubjectFunctionFamilyDescriptor
