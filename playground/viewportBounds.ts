@@ -20,11 +20,7 @@ export const classifyCoreRendererWheelGesture = (
   const absY = Math.abs(event.deltaY);
   if (absX < 1 && absY < 1) return 'ignore';
 
-  // Large vertical-only wheel steps are the common mouse-wheel zoom shape.
-  // Smaller pixel-mode deltas, including vertical-only trackpad scroll, stay as pan.
-  if (absX === 0) return absY >= 40 ? 'zoom' : 'pan';
-  if (absX < 1 && absY >= 1) return 'pan';
-  return absX > absY * 0.35 ? 'pan' : 'zoom';
+  return 'pan';
 };
 
 export const fitBoundsToViewportAspect = (

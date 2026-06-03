@@ -19,14 +19,14 @@ const project = (world: { x: number; y: number }, worldBounds: CanvasWorldBounds
 });
 
 describe('playground viewport bounds helpers', () => {
-  it('classifies core renderer wheel gestures so mouse wheels zoom and trackpads pan', () => {
+  it('classifies core renderer wheel gestures so pixel-mode trackpad movement pans', () => {
     expect(classifyCoreRendererWheelGesture({
       ctrlKey: false,
       metaKey: false,
       deltaMode: 0,
       deltaX: 0,
       deltaY: 120
-    })).toBe('zoom');
+    })).toBe('pan');
     expect(classifyCoreRendererWheelGesture({
       ctrlKey: true,
       metaKey: false,
@@ -48,6 +48,13 @@ describe('playground viewport bounds helpers', () => {
       deltaX: 40,
       deltaY: 10
     })).toBe('pan');
+    expect(classifyCoreRendererWheelGesture({
+      ctrlKey: false,
+      metaKey: false,
+      deltaMode: 1,
+      deltaX: 0,
+      deltaY: 3
+    })).toBe('zoom');
     expect(classifyCoreRendererWheelGesture({
       ctrlKey: false,
       metaKey: false,

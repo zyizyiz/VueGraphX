@@ -271,8 +271,8 @@
                   <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Interaction diagnostics</p>
                   <ul class="mt-1 space-y-1">
                     <li
-                      v-for="item in coreInteractionDiagnostics.slice(0, 5)"
-                      :key="item"
+                      v-for="(item, index) in coreInteractionDiagnostics.slice(0, 5)"
+                      :key="`core-diagnostic-${index}-${item}`"
                       class="text-[11px] leading-5 text-slate-700"
                     >
                       {{ item }}
@@ -331,6 +331,36 @@
             @pointerup.capture="handleCoreRendererPointerUp"
             @pointercancel.capture="handleCoreRendererPointerUp"
           ></div>
+          <div class="pointer-events-none absolute inset-0 z-[12]">
+            <div
+              v-if="businessOverlayPosition"
+              class="business-overlay-anchor"
+              :class="{ 'business-overlay-anchor-hidden': !businessOverlayPosition.visible }"
+              :style="{
+                transform: `translate3d(${businessOverlayPosition.x}px, ${businessOverlayPosition.y}px, 0) translate(-50%, -100%)`
+              }"
+            >
+              <div class="business-overlay-card pointer-events-auto">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">业务浮窗</p>
+                    <p class="mt-1 text-sm font-bold text-slate-900">世界坐标 (0, 0)</p>
+                  </div>
+                  <span class="business-overlay-status">Live</span>
+                </div>
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                  <div class="business-overlay-metric">
+                    <span>screen x</span>
+                    <strong>{{ Math.round(businessOverlayPosition.anchor.x) }}</strong>
+                  </div>
+                  <div class="business-overlay-metric">
+                    <span>screen y</span>
+                    <strong>{{ Math.round(businessOverlayPosition.anchor.y) }}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <ExternalCircleDesigner
           v-if="store.activeMode === 'geometry' && !isCoreRendererActive"
@@ -355,6 +385,7 @@ import { GraphXEngine, type EngineMode } from 'vuegraphx';
 import {
   GraphSceneRuntime,
   createCenteredWorldBoundsForViewportGrid,
+  resolveGraphOverlayPosition,
   resolveGraphViewportGridOptions,
   resolveGraphGridSnapOptions,
   snapPointToGraphGrid,
@@ -473,6 +504,10 @@ const isSidebarBottomResizing = ref(false);
 const coreViewportBounds = ref<CanvasWorldBounds>({ ...PLAYGROUND_CANVAS_WORLD_BOUNDS });
 const coreInteractionDiagnostics = ref<string[]>([]);
 const coreSelectedObjectId = ref<string>('');
+const businessOverlayRefreshKey = ref(0);
+
+const BUSINESS_OVERLAY_ANCHOR = { dimension: '2d', x: 0, y: 0 } as const;
+const BUSINESS_OVERLAY_OFFSET = { x: 0, y: -18 } as const;
 
 interface CorePanSession {
   pointerId: number;
@@ -498,6 +533,7 @@ let corePanSession: CorePanSession | null = null;
 let corePinchSession: CorePinchSession | null = null;
 let coordinateSystemDragSession: CoordinateSystemDragSession | null = null;
 const corePointers = new Map<number, GraphClientPoint>();
+let disposeViewportChangeSubscription: (() => void) | null = null;
 
 // 当前模式且当前后端可用的 Demo 列表
 const currentDemos = computed(() => (
@@ -510,6 +546,27 @@ const supportsBabylonRenderer = computed(() => isBackendSelectableForMode(store.
 const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'canvas2d' && supportsCanvasRenderer.value);
 const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
 const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
+const businessOverlayPosition = computed(() => {
+  businessOverlayRefreshKey.value;
+  if (store.activeMode === '3d') return null;
+
+  if (isCoreRendererActive.value) {
+    void coreViewportBounds.value;
+    const backend = canvasBackendRef.value;
+    if (!backend) return null;
+    return resolveGraphOverlayPosition({
+      point: BUSINESS_OVERLAY_ANCHOR,
+      viewport: getGraphViewportSize(),
+      project: (point) => point.dimension === '2d' ? backend.project(point) : null,
+      offset: BUSINESS_OVERLAY_OFFSET
+    });
+  }
+
+  return engineRef.value?.getOverlayPosition({
+    point: [BUSINESS_OVERLAY_ANCHOR.x, BUSINESS_OVERLAY_ANCHOR.y],
+    offset: BUSINESS_OVERLAY_OFFSET
+  }) ?? null;
+});
 const rendererBackendHint = computed(() => {
   if (isBabylonRendererActive.value) return babylonRuntimeError.value || '3D 使用 Babylon canvas，2D 标注使用独立 Canvas2D overlay';
   if (isCanvasRendererActive.value) return '2D / 几何 / 操作区使用 Canvas2D Core';
@@ -607,6 +664,10 @@ const waitForUiPaint = async () => {
   });
 };
 
+const refreshBusinessOverlayPosition = () => {
+  businessOverlayRefreshKey.value += 1;
+};
+
 const getBoardOptionsForCurrentMode = (mode: PlaygroundMode) => getBoardOptionsForPlaygroundMode(mode, getGraphViewportSize());
 
 const cloneBounds = (bounds: CanvasWorldBounds): CanvasWorldBounds => ({ ...bounds });
@@ -630,6 +691,7 @@ const setCoreViewportBounds = (bounds: CanvasWorldBounds, reason: string) => {
 const applyCoreViewportBounds = () => {
   canvasBackendRef.value?.setWorldBounds(coreViewportBounds.value);
   babylonBackendRef.value?.setWorldBounds(coreViewportBounds.value);
+  refreshBusinessOverlayPosition();
 };
 
 const getActiveCoreRuntime = () => (
@@ -1204,6 +1266,11 @@ const stopSidebarResizeObserver = () => {
   sidebarResizeObserver = null;
 };
 
+const stopViewportChangeSubscription = () => {
+  disposeViewportChangeSubscription?.();
+  disposeViewportChangeSubscription = null;
+};
+
 const startResizeObserver = () => {
   stopResizeObserver();
   if (!graphContainerRef.value || (!engineRef.value && !canvasBackendRef.value && !babylonBackendRef.value)) return;
@@ -1218,6 +1285,7 @@ const startResizeObserver = () => {
       if (canvasBackendRef.value) canvasBackendRef.value.resize(getGraphViewportSize());
       if (babylonBackendRef.value) babylonBackendRef.value.resize(getGraphViewportSize());
       if (engineRef.value) engineRef.value.resize();
+      refreshBusinessOverlayPosition();
     });
   });
   modeResizeObserver.observe(graphContainerRef.value);
@@ -1278,6 +1346,7 @@ const destroyPrimaryRenderer = () => {
   corePinchSession = null;
   coordinateSystemDragSession = null;
   corePointers.clear();
+  stopViewportChangeSubscription();
   if (engineRef.value) {
     engineRef.value.destroy();
     engineRef.value = null;
@@ -1330,6 +1399,7 @@ const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
     syncAllToEngine();
   }
   startResizeObserver();
+  refreshBusinessOverlayPosition();
 };
 
 const createCoreRenderLayer = (
@@ -1435,6 +1505,7 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
     syncAllToEngine();
   }
   startResizeObserver();
+  refreshBusinessOverlayPosition();
 };
 
 const getBabylonRenderModeForCurrentMode = (): BabylonRenderMode => (
@@ -1450,11 +1521,16 @@ const initJsxGraphRenderer = (options: { syncCommands?: boolean } = {}) => {
   engineRef.value = new GraphXEngine('vuegraphx-mount', getBoardOptionsForCurrentMode(store.activeMode));
   engineRef.value.setMode(getEngineModeForPlayground(store.activeMode));
   registerPlaygroundShapes(engineRef.value);
+  stopViewportChangeSubscription();
+  disposeViewportChangeSubscription = engineRef.value.subscribeViewportChange(() => {
+    refreshBusinessOverlayPosition();
+  });
 
   if (options.syncCommands !== false) {
     syncAllToEngine();
   }
   startResizeObserver();
+  refreshBusinessOverlayPosition();
 };
 
 const initEngines = async (options: { syncCommands?: boolean } = {}) => {
@@ -1766,6 +1842,75 @@ body.sidebar-resize-active {
 #graph-container .JXG_navigation,
 #graph-container foreignObject {
   pointer-events: none;
+}
+
+.business-overlay-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 220px;
+  max-width: min(260px, calc(100vw - 2rem));
+  transition: opacity 120ms ease;
+  will-change: transform;
+}
+
+.business-overlay-anchor::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 12px;
+  height: 12px;
+  border-right: 1px solid rgba(16, 185, 129, 0.28);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.28);
+  background: rgba(255, 255, 255, 0.96);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.business-overlay-anchor-hidden {
+  opacity: 0.35;
+}
+
+.business-overlay-card {
+  position: relative;
+  border: 1px solid rgba(16, 185, 129, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 0.8rem;
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.business-overlay-status {
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.business-overlay-metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 0.45rem 0.55rem;
+}
+
+.business-overlay-metric span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.business-overlay-metric strong {
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.76rem;
 }
 
 </style>

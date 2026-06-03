@@ -45,6 +45,37 @@ describe('GraphXEngine.projectPoint3D', () => {
   });
 });
 
+describe('GraphXEngine overlay positioning', () => {
+  it('resolves overlay screen position through the public projection helpers', () => {
+    const projectUserPoint = vi.fn().mockImplementation(([x, y]: [number, number]) => ({
+      x: x * 10 + 100,
+      y: 80 - y * 10
+    }));
+    const fakeEngine = {
+      getViewport: () => ({ width: 300, height: 200 }),
+      projectUserPoint,
+      projectPoint3D: vi.fn(),
+      projectGraphWorldPoint(point: unknown) {
+        return (GraphXEngine.prototype as any).projectGraphWorldPoint.call(this, point);
+      }
+    };
+
+    const position = GraphXEngine.prototype.getOverlayPosition.call(fakeEngine as any, {
+      point: [2, 3],
+      offset: { x: 6, y: -18 }
+    });
+
+    expect(projectUserPoint).toHaveBeenCalledWith([2, 3]);
+    expect(position).toMatchObject({
+      anchor: { x: 120, y: 50 },
+      x: 126,
+      y: 32,
+      offset: { x: 6, y: -18 },
+      visible: true
+    });
+  });
+});
+
 describe('GraphXEngine relation assist options', () => {
   it('returns defaults and lets callers override thresholds', () => {
     const fakeEngine = {
@@ -207,6 +238,7 @@ describe('GraphXEngine board option cloning', () => {
       commandNumericScope: new Map(),
       clearVariables: vi.fn(),
       setupGlobalEvents: vi.fn(),
+      notifyViewportChange: vi.fn(),
       currentOptions: undefined,
       relationAssistOptions: undefined
     };

@@ -11,7 +11,25 @@ import jsxgraphCssText from '../../node_modules/jsxgraph/distrib/jsxgraph.css?in
 type View3DRect = NonNullable<NonNullable<GraphXOptions['view3D']>['rect']>;
 type WheelGestureKind = 'zoom' | 'pan' | 'ignore';
 type WheelGestureLikeEvent = Pick<WheelEvent, 'ctrlKey' | 'metaKey' | 'deltaMode'>;
+type TwoFingerGestureKind = 'zoom' | 'pan' | 'ignore';
+type ScreenPoint = { x: number; y: number };
+type TwoFingerTouchFrame = {
+  center: ScreenPoint;
+  distance: number;
+};
+type TwoFingerGestureMode = 'pending' | 'pan' | 'zoom';
+type TwoFingerGestureState = {
+  mode: TwoFingerGestureMode;
+  startFrame: TwoFingerTouchFrame;
+  previousFrame: TwoFingerTouchFrame;
+};
+type TouchGesturePoint = ScreenPoint & { identifier: number };
+type PointerGesturePoint = ScreenPoint & { pointerId: number };
 const WHEEL_DELTA_PIXEL = 0;
+const TOUCH_PINCH_DISTANCE_THRESHOLD_PX = 10;
+const TOUCH_PINCH_SCALE_THRESHOLD = 0.06;
+const TOUCH_PINCH_DOMINANCE_RATIO = 1.25;
+const TOUCH_PAN_DISTANCE_THRESHOLD_PX = 2;
 const JSXGRAPH_STANDARD_DASH_INDEX = 2;
 const JSXGRAPH_STANDARD_DASH_PATTERN = [4, 8] as const;
 
@@ -28,6 +46,11 @@ const scaleRangeAroundCenter = ([min, max]: [number, number], scale: number): [n
   const halfSpan = ((max - min) / 2) * scale;
   return [center - halfSpan, center + halfSpan];
 };
+
+const resolvePinchDistanceThreshold = (distance: number): number => Math.max(
+  TOUCH_PINCH_DISTANCE_THRESHOLD_PX,
+  distance * TOUCH_PINCH_SCALE_THRESHOLD
+);
 
 export const buildAdaptiveView3DRect = (
   boardBoundingBox: [number, number, number, number],
@@ -78,6 +101,45 @@ export const classifyWheelGesture = (
   return 'ignore';
 };
 
+export const createTwoFingerTouchFrame = (
+  first: ScreenPoint,
+  second: ScreenPoint
+): TwoFingerTouchFrame => {
+  const deltaX = second.x - first.x;
+  const deltaY = second.y - first.y;
+  return {
+    center: {
+      x: (first.x + second.x) / 2,
+      y: (first.y + second.y) / 2
+    },
+    distance: Math.hypot(deltaX, deltaY)
+  };
+};
+
+export const classifyTwoFingerTouchGesture = (
+  previous: TwoFingerTouchFrame,
+  current: TwoFingerTouchFrame
+): TwoFingerGestureKind => {
+  const distanceDelta = Math.abs(current.distance - previous.distance);
+  const centerDelta = Math.hypot(current.center.x - previous.center.x, current.center.y - previous.center.y);
+  const pinchDistanceThreshold = resolvePinchDistanceThreshold(previous.distance);
+  if (
+    distanceDelta >= pinchDistanceThreshold
+    && (
+      centerDelta < TOUCH_PAN_DISTANCE_THRESHOLD_PX
+      || distanceDelta >= centerDelta * TOUCH_PINCH_DOMINANCE_RATIO
+    )
+  ) {
+    return 'zoom';
+  }
+
+  if (centerDelta >= TOUCH_PAN_DISTANCE_THRESHOLD_PX) {
+    return 'pan';
+  }
+
+  return 'ignore';
+};
+
 /**
  * 供公共引擎门面调用的底层画板生命周期管理器。
  */
@@ -90,6 +152,12 @@ export class BoardManager {
   private globalOptions?: GraphXOptions;
   private baseView3DRect: View3DRect = cloneView3DRect(DEFAULT_VIEW3D_RECT);
   private disposeTrackpadGestureBridge: (() => void) | null = null;
+  private touchGestureState: TwoFingerGestureState | null = null;
+  private activeTouchPoints = new Map<number, TouchGesturePoint>();
+  private movedTouchIdentifiers = new Set<number>();
+  private pointerGestureState: TwoFingerGestureState | null = null;
+  private activeTouchPointers = new Map<number, PointerGesturePoint>();
+  private movedTouchPointers = new Set<number>();
   private disposeGridSync: (() => void) | null = null;
 
   /**
@@ -189,7 +257,8 @@ export class BoardManager {
     if (shouldUseTrackpadGestureBridge(this.globalOptions) && boardOptions.zoom) {
       boardOptions.zoom = {
         ...boardOptions.zoom,
-        wheel: false
+        wheel: false,
+        pinch: false
       };
     }
 
@@ -385,7 +454,7 @@ export class BoardManager {
       const action = classifyWheelGesture(event, this.globalOptions);
       if (action === 'ignore') return;
 
-      event.preventDefault();
+      this.consumeGestureEvent(event);
       if (action === 'pan') {
         this.panBoardByWheel(event);
         return;
@@ -393,9 +462,176 @@ export class BoardManager {
       this.zoomBoardByWheel(event);
     };
 
-    container.addEventListener('wheel', onWheel, { passive: false });
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 2) {
+        this.resetTouchGesture();
+        return;
+      }
+
+      this.syncActiveTouchPoints(event.touches);
+      const frame = this.createActiveTouchFrame();
+      if (!frame) return;
+
+      this.touchGestureState = this.createTwoFingerGestureState(frame);
+      this.movedTouchIdentifiers.clear();
+      this.consumeGestureEvent(event);
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length !== 2) {
+        this.resetTouchGesture();
+        return;
+      }
+
+      this.updateChangedTouchPoints(event.changedTouches ?? event.touches);
+      const currentFrame = this.createActiveTouchFrame();
+      if (!currentFrame) return;
+
+      const gesture = this.touchGestureState ?? this.createTwoFingerGestureState(currentFrame);
+      this.touchGestureState = gesture;
+
+      if (gesture.mode === 'pending' && this.movedTouchIdentifiers.size < 2) {
+        this.consumeGestureEvent(event);
+        return;
+      }
+
+      const previousFrame = gesture.previousFrame;
+      const action = this.resolveTwoFingerGestureAction(gesture, currentFrame);
+      this.movedTouchIdentifiers.clear();
+      this.consumeGestureEvent(event);
+
+      if (action === 'ignore') {
+        gesture.previousFrame = currentFrame;
+        return;
+      }
+
+      if (action === 'pan') {
+        this.moveBoardOriginByScreenDelta(
+          currentFrame.center.x - previousFrame.center.x,
+          currentFrame.center.y - previousFrame.center.y
+        );
+        gesture.previousFrame = currentFrame;
+        return;
+      }
+
+      this.zoomBoardByTouchFrames(previousFrame, currentFrame);
+      gesture.previousFrame = currentFrame;
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length !== 2) {
+        this.resetTouchGesture();
+        return;
+      }
+
+      this.syncActiveTouchPoints(event.touches);
+      const frame = this.createActiveTouchFrame();
+      this.touchGestureState = frame ? this.createTwoFingerGestureState(frame) : null;
+      this.movedTouchIdentifiers.clear();
+    };
+
+    const onPointerDown: EventListener = (event) => {
+      const pointerEvent = event as PointerEvent;
+      if (pointerEvent.pointerType !== 'touch') return;
+
+      this.activeTouchPointers.set(pointerEvent.pointerId, this.createPointerPoint(pointerEvent));
+      this.capturePointer(container, pointerEvent.pointerId);
+      const frame = this.createPointerFrame();
+      if (!frame) return;
+
+      this.pointerGestureState = this.createTwoFingerGestureState(frame);
+      this.movedTouchPointers.clear();
+      this.consumeGestureEvent(pointerEvent);
+    };
+
+    const onPointerMove: EventListener = (event) => {
+      const pointerEvent = event as PointerEvent;
+      if (pointerEvent.pointerType !== 'touch' || !this.activeTouchPointers.has(pointerEvent.pointerId)) return;
+
+      this.activeTouchPointers.set(pointerEvent.pointerId, this.createPointerPoint(pointerEvent));
+      this.movedTouchPointers.add(pointerEvent.pointerId);
+      const currentFrame = this.createPointerFrame();
+      if (!currentFrame) return;
+
+      const gesture = this.pointerGestureState ?? this.createTwoFingerGestureState(currentFrame);
+      this.pointerGestureState = gesture;
+
+      if (gesture.mode === 'pending' && this.movedTouchPointers.size < 2) {
+        this.consumeGestureEvent(pointerEvent);
+        return;
+      }
+
+      const previousFrame = gesture.previousFrame;
+      const action = this.resolveTwoFingerGestureAction(gesture, currentFrame);
+      this.movedTouchPointers.clear();
+      this.consumeGestureEvent(pointerEvent);
+
+      if (action === 'ignore') {
+        gesture.previousFrame = currentFrame;
+        return;
+      }
+
+      if (action === 'pan') {
+        this.moveBoardOriginByScreenDelta(
+          currentFrame.center.x - previousFrame.center.x,
+          currentFrame.center.y - previousFrame.center.y
+        );
+        gesture.previousFrame = currentFrame;
+        return;
+      }
+
+      this.zoomBoardByTouchFrames(previousFrame, currentFrame);
+      gesture.previousFrame = currentFrame;
+    };
+
+    const onPointerEnd: EventListener = (event) => {
+      const pointerEvent = event as PointerEvent;
+      if (pointerEvent.pointerType !== 'touch') return;
+
+      const hadPointer = this.activeTouchPointers.delete(pointerEvent.pointerId);
+      if (!hadPointer) return;
+
+      const frame = this.createPointerFrame();
+      this.pointerGestureState = frame ? this.createTwoFingerGestureState(frame) : null;
+      this.movedTouchPointers.delete(pointerEvent.pointerId);
+      this.releasePointer(container, pointerEvent.pointerId);
+      if (this.activeTouchPointers.size > 0) {
+        this.consumeGestureEvent(pointerEvent);
+      }
+    };
+
+    const listenerOptions = { passive: false, capture: true };
+    const pointerMoveTarget = ((this.board as any)?.attr?.movetarget as EventTarget | null | undefined) ?? container;
+    const usePointerGestureEvents = this.shouldUsePointerGestureEvents();
+    container.addEventListener('wheel', onWheel, listenerOptions);
+    if (usePointerGestureEvents) {
+      container.addEventListener('pointerdown', onPointerDown, listenerOptions);
+      pointerMoveTarget.addEventListener('pointermove', onPointerMove, listenerOptions);
+      pointerMoveTarget.addEventListener('pointerup', onPointerEnd, listenerOptions);
+      pointerMoveTarget.addEventListener('pointercancel', onPointerEnd, listenerOptions);
+    } else {
+      container.addEventListener('touchstart', onTouchStart, listenerOptions);
+      container.addEventListener('touchmove', onTouchMove, listenerOptions);
+      container.addEventListener('touchend', onTouchEnd, listenerOptions);
+      container.addEventListener('touchcancel', onTouchEnd, listenerOptions);
+    }
     this.disposeTrackpadGestureBridge = () => {
-      container.removeEventListener('wheel', onWheel);
+      container.removeEventListener('wheel', onWheel, listenerOptions);
+      if (usePointerGestureEvents) {
+        container.removeEventListener('pointerdown', onPointerDown, listenerOptions);
+        pointerMoveTarget.removeEventListener('pointermove', onPointerMove, listenerOptions);
+        pointerMoveTarget.removeEventListener('pointerup', onPointerEnd, listenerOptions);
+        pointerMoveTarget.removeEventListener('pointercancel', onPointerEnd, listenerOptions);
+      } else {
+        container.removeEventListener('touchstart', onTouchStart, listenerOptions);
+        container.removeEventListener('touchmove', onTouchMove, listenerOptions);
+        container.removeEventListener('touchend', onTouchEnd, listenerOptions);
+        container.removeEventListener('touchcancel', onTouchEnd, listenerOptions);
+      }
+      this.resetTouchGesture();
+      this.pointerGestureState = null;
+      this.activeTouchPointers.clear();
+      this.movedTouchPointers.clear();
     };
   }
 
@@ -404,10 +640,144 @@ export class BoardManager {
     this.disposeTrackpadGestureBridge = null;
   }
 
+  private consumeGestureEvent(event: Event): void {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  private shouldUsePointerGestureEvents(): boolean {
+    return typeof window !== 'undefined' && typeof window.PointerEvent !== 'undefined';
+  }
+
+  private createTwoFingerGestureState(frame: TwoFingerTouchFrame): TwoFingerGestureState {
+    return {
+      mode: 'pending',
+      startFrame: frame,
+      previousFrame: frame
+    };
+  }
+
+  private resolveTwoFingerGestureAction(
+    gesture: TwoFingerGestureState,
+    currentFrame: TwoFingerTouchFrame
+  ): TwoFingerGestureKind {
+    if (gesture.mode === 'pending') {
+      const action = classifyTwoFingerTouchGesture(gesture.startFrame, currentFrame);
+      if (action !== 'ignore') {
+        gesture.mode = action;
+      }
+      return action;
+    }
+
+    return gesture.mode === 'pan' ? 'pan' : 'zoom';
+  }
+
   private panBoardByWheel(event: WheelEvent): void {
+    this.moveBoardOriginByScreenDelta(-event.deltaX, -event.deltaY);
+  }
+
+  private moveBoardOriginByScreenDelta(deltaX: number, deltaY: number): void {
     const origin = (this.board as any)?.origin?.scrCoords;
     if (!origin) return;
-    this.board.moveOrigin(origin[1] - event.deltaX, origin[2] - event.deltaY);
+    this.board.moveOrigin(origin[1] + deltaX, origin[2] + deltaY);
+    this.syncGridToBoard();
+  }
+
+  private createTouchPoint(touch: Touch): TouchGesturePoint {
+    return {
+      identifier: touch.identifier,
+      x: touch.clientX,
+      y: touch.clientY
+    };
+  }
+
+  private syncActiveTouchPoints(touches: TouchList): void {
+    this.activeTouchPoints.clear();
+    for (const touch of Array.from(touches)) {
+      this.activeTouchPoints.set(touch.identifier, this.createTouchPoint(touch));
+    }
+  }
+
+  private updateChangedTouchPoints(touches: TouchList): void {
+    if (this.activeTouchPoints.size < 2) {
+      this.syncActiveTouchPoints(touches);
+      return;
+    }
+
+    for (const touch of Array.from(touches)) {
+      if (!this.activeTouchPoints.has(touch.identifier)) continue;
+      this.activeTouchPoints.set(touch.identifier, this.createTouchPoint(touch));
+      this.movedTouchIdentifiers.add(touch.identifier);
+    }
+  }
+
+  private createActiveTouchFrame(): TwoFingerTouchFrame | null {
+    if (this.activeTouchPoints.size < 2) return null;
+    const [first, second] = [...this.activeTouchPoints.values()].slice(0, 2);
+    return createTwoFingerTouchFrame(first, second);
+  }
+
+  private resetTouchGesture(): void {
+    this.touchGestureState = null;
+    this.activeTouchPoints.clear();
+    this.movedTouchIdentifiers.clear();
+  }
+
+  private createPointerPoint(event: PointerEvent): PointerGesturePoint {
+    return {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY
+    };
+  }
+
+  private createPointerFrame(): TwoFingerTouchFrame | null {
+    if (this.activeTouchPointers.size < 2) return null;
+    const [first, second] = [...this.activeTouchPointers.values()].slice(0, 2);
+    return createTwoFingerTouchFrame(first, second);
+  }
+
+  private capturePointer(container: HTMLElement, pointerId: number): void {
+    try {
+      container.setPointerCapture?.(pointerId);
+    } catch {
+    }
+  }
+
+  private releasePointer(container: HTMLElement, pointerId: number): void {
+    try {
+      container.releasePointerCapture?.(pointerId);
+    } catch {
+    }
+  }
+
+  private zoomBoardByTouchFrames(previous: TwoFingerTouchFrame, current: TwoFingerTouchFrame): void {
+    const zoomOptions = this.globalOptions?.zoom;
+    if (!this.board || !zoomOptions || zoomOptions.enabled === false || zoomOptions.pinch === false) return;
+
+    const centerEvent = {
+      clientX: current.center.x,
+      clientY: current.center.y
+    } as MouseEvent;
+
+    const zoomingIn = current.distance > previous.distance;
+    if (zoomOptions?.center === 'board') {
+      if (zoomingIn) {
+        this.board.zoomIn();
+      } else {
+        this.board.zoomOut();
+      }
+      this.syncGridToBoard();
+      return;
+    }
+
+    const position = this.board.getMousePosition(centerEvent);
+    const userPoint = new JXG.Coords(JXG.COORDS_BY_SCREEN, position, this.board).usrCoords;
+    if (zoomingIn) {
+      this.board.zoomIn(userPoint[1], userPoint[2]);
+    } else {
+      this.board.zoomOut(userPoint[1], userPoint[2]);
+    }
     this.syncGridToBoard();
   }
 

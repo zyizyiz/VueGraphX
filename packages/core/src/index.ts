@@ -3,6 +3,7 @@ export * from './sceneObjectIr';
 export * from './relationSnapshot';
 export * from './viewportCoordinate';
 export * from './viewportGrid';
+export * from './overlayPosition';
 export * from './gridSnapping';
 export * from './backendRegistry';
 export * from './packages';

@@ -11,8 +11,12 @@ import {
   GraphSceneStore,
   createStandardCoordinateSystemGeometry,
   executeGraphCapability,
+  resolveGraphOverlayPosition,
   resolveGraphGridSnapOptions,
   snapPointToGraphGrid,
+  type GraphOverlayPosition,
+  type GraphOverlayPositionOffset,
+  type GraphOverlayViewportPadding,
   type GraphObjectNode,
   type GraphObjectPatch,
   type GraphOperationDiagnostic,
@@ -20,7 +24,8 @@ import {
   type GraphRuntimeSceneDocument,
   type GraphRuntimeTargetRef,
   type GraphSceneStoreSnapshot,
-  type GraphViewportGridInput
+  type GraphViewportGridInput,
+  type GraphWorldPoint
 } from '@vuegraphx/core';
 import { compileGraphExpression, type GraphCommandSymbolTable } from '@vuegraphx/commands';
 import {
@@ -138,6 +143,24 @@ export type { ShapeCapabilityTarget } from '../architecture/capabilities/contrac
 export interface GraphCreateShapeOptions {
   select?: boolean;
 }
+
+export interface GraphXOverlayPositionOptions {
+  point: [number, number] | GraphWorldPoint;
+  offset?: GraphOverlayPositionOffset;
+  padding?: GraphOverlayViewportPadding;
+  clamp?: boolean;
+}
+
+export interface GraphViewportSnapshot extends GraphViewport {
+  boundingBox: [number, number, number, number] | null;
+  pixelsPerUnit: {
+    x: number;
+    y: number;
+  };
+  scale: number;
+}
+
+export type GraphViewportChangeListener = (snapshot: GraphViewportSnapshot) => void;
 
 interface CommandCoordinateSystemRuntimeOptions {
   id: string;
@@ -257,6 +280,22 @@ const isEngineMode = (value: unknown): value is EngineMode => value === '2d' || 
 
 const readFiniteNumber = (value: unknown): number | null => (
   typeof value === 'number' && Number.isFinite(value) ? value : null
+);
+
+const normalizeGraphOverlayWorldPoint = (point: [number, number] | GraphWorldPoint): GraphWorldPoint => (
+  Array.isArray(point)
+    ? { dimension: '2d', x: point[0], y: point[1] }
+    : point.dimension === '3d'
+      ? { dimension: '3d', x: point.x, y: point.y, z: point.z }
+      : { dimension: '2d', x: point.x, y: point.y }
+);
+
+const cloneRuntimeBoundingBox = (boundingBox: unknown): [number, number, number, number] | null => (
+  Array.isArray(boundingBox)
+    && boundingBox.length >= 4
+    && boundingBox.slice(0, 4).every((entry) => typeof entry === 'number' && Number.isFinite(entry))
+    ? [boundingBox[0], boundingBox[1], boundingBox[2], boundingBox[3]]
+    : null
 );
 
 const readCommandCoordinateSystemOptions = (value: unknown): CommandCoordinateSystemRuntimeOptions | null => {
@@ -725,6 +764,7 @@ export class GraphXEngine {
   private isClickingObject = false;
   private capabilityListeners: GraphCapabilityListener[] = [];
   private relationListeners: GraphRelationListener[] = [];
+  private viewportListeners: GraphViewportChangeListener[] = [];
   private mutationBatchDepth = 0;
   private pendingCapabilityNotification = false;
 
@@ -893,6 +933,15 @@ export class GraphXEngine {
     listener(this.getRelationStateSnapshot());
     return () => {
       this.relationListeners = this.relationListeners.filter((current) => current !== listener);
+    };
+  }
+
+  /** 订阅画板视口变化。缩放、平移、resize 或重建画板后会收到新的视口快照。 */
+  public subscribeViewportChange(listener: GraphViewportChangeListener): () => void {
+    this.viewportListeners.push(listener);
+    listener(this.getViewportSnapshot());
+    return () => {
+      this.viewportListeners = this.viewportListeners.filter((current) => current !== listener);
     };
   }
 
@@ -1259,6 +1308,14 @@ export class GraphXEngine {
     const board = this.boardMgr.board;
     if (!board) return;
 
+    board.on('boundingbox', () => {
+      this.notifyViewportChange();
+    });
+
+    board.on('resize', () => {
+      this.notifyViewportChange();
+    });
+
     board.on('down', (e: any) => {
       const objs = board.getAllObjectsUnderMouse(e) || [];
       const clickableObjects = objs.filter((o: any) => o.elType !== 'image');
@@ -1288,6 +1345,7 @@ export class GraphXEngine {
       this.applyRelationAssistForActiveDrag();
       this.hiddenLineMgr.update();
       this.refreshRelationState();
+      this.notifyViewportChange();
     });
   }
 
@@ -1337,6 +1395,7 @@ export class GraphXEngine {
       this.commandRenderPath?.clear();
       this.clearVariables();
       this.setupGlobalEvents();
+      this.notifyViewportChange();
     }
   }
 
@@ -1365,6 +1424,7 @@ export class GraphXEngine {
     this.commandRenderPath?.clear();
     this.clearVariables();
     this.setupGlobalEvents();
+    this.notifyViewportChange();
   }
 
   /** 清空共享数学作用域中的变量。 */
@@ -2535,6 +2595,7 @@ export class GraphXEngine {
       this.boardMgr.syncView3DToBoard();
       this.boardMgr.syncGridToBoard();
       board.update();
+      this.notifyViewportChange();
     }
   }
 
@@ -2550,6 +2611,45 @@ export class GraphXEngine {
       width: board?.canvasWidth || 1000,
       height: board?.canvasHeight || 700
     };
+  }
+
+  /** 返回当前画板视口快照，包含像素尺寸、世界坐标包围盒与像素/单位比例。 */
+  public getViewportSnapshot(): GraphViewportSnapshot {
+    const viewport = this.getViewport();
+    const board = this.getBoard();
+    const boundingBox = cloneRuntimeBoundingBox(board?.getBoundingBox?.());
+    const worldWidth = boundingBox ? Math.abs(boundingBox[2] - boundingBox[0]) : 0;
+    const worldHeight = boundingBox ? Math.abs(boundingBox[1] - boundingBox[3]) : 0;
+    const pixelsPerUnit = {
+      x: worldWidth > 1e-9 ? viewport.width / worldWidth : 1,
+      y: worldHeight > 1e-9 ? viewport.height / worldHeight : 1
+    };
+
+    return {
+      ...viewport,
+      boundingBox,
+      pixelsPerUnit,
+      scale: Math.min(pixelsPerUnit.x, pixelsPerUnit.y)
+    };
+  }
+
+  /** 根据当前画板投影计算业务浮层锚点位置。返回值是屏幕像素坐标，不包含任何 DOM 尺寸或缩放样式。 */
+  public getOverlayPosition(options: GraphXOverlayPositionOptions): GraphOverlayPosition | null {
+    const point = normalizeGraphOverlayWorldPoint(options.point);
+    return resolveGraphOverlayPosition({
+      point,
+      viewport: this.getViewport(),
+      project: (worldPoint) => this.projectGraphWorldPoint(worldPoint),
+      offset: options.offset,
+      padding: options.padding,
+      clamp: options.clamp
+    });
+  }
+
+  private projectGraphWorldPoint(point: GraphWorldPoint): GraphScreenPoint | null {
+    return point.dimension === '3d'
+      ? this.projectPoint3D([point.x, point.y, point.z])
+      : this.projectUserPoint([point.x, point.y]);
   }
 
   /** 将二维用户坐标点投影到屏幕坐标系。若当前无法完成投影，则返回 null。 */
@@ -2659,6 +2759,13 @@ export class GraphXEngine {
   private dispatchCapabilityChange(): void {
     const snapshot = this.getCapabilitySnapshot();
     this.capabilityListeners.forEach(listener => listener(snapshot));
+  }
+
+  private notifyViewportChange(): void {
+    const listeners = this.viewportListeners ?? [];
+    if (listeners.length === 0) return;
+    const snapshot = this.getViewportSnapshot();
+    listeners.forEach(listener => listener(snapshot));
   }
 
   private runInMutationBatch<T>(operation: () => T): T {
