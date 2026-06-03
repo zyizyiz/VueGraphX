@@ -387,6 +387,7 @@ import OperationPanel from './components/OperationPanel.vue';
 import RelationPanel from './components/RelationPanel.vue';
 import {
   OPERATION_COMMANDS_MIME,
+  alignOperationCoordinateSystemOriginToGrid,
   clampOperationCoordinateSystemOrigin,
   createOperationScopedCommands,
   resolveOperationCommandOrigin,
@@ -691,12 +692,19 @@ const getJsxGraphCoordinateSystemObjectAtEvent = (event: PointerEvent): string |
   const scene = engineRef.value?.exportRuntimeScene().scene;
   if (!board || !scene) return null;
   const objects = board.getAllObjectsUnderMouse?.(event) ?? [];
+  let coordinateSystemObjectId: string | null = null;
   for (const object of objects) {
     const objectId = readCoreObjectIdFromJsxGraphObject(object);
     if (!objectId) continue;
     const node = scene.objects.find((entry) => entry.id === objectId);
-    if (isCoordinateSystemDraggableNode(node)) return objectId;
+    if (!node) continue;
+    if (isCoordinateSystemDraggableNode(node)) {
+      coordinateSystemObjectId ??= objectId;
+      continue;
+    }
+    return null;
   }
+  if (coordinateSystemObjectId) return coordinateSystemObjectId;
 
   const localPoint = getCoreLocalPoint(event);
   if (!localPoint) return null;
@@ -832,11 +840,15 @@ const applyOperationCoordinateSystemDragDelta = (
     y: coordinateSystem.origin.y + delta.dy
   };
   nextOrigin = applyOperationCoordinateSystemSnap(nextOrigin, coordinateSystem, dragPhase);
-  nextOrigin = clampOperationCoordinateSystemOrigin(nextOrigin, getOperationPlacementBounds(), {
+  const bounds = getOperationPlacementBounds();
+  const originOptions = {
     unitScale: coordinateSystem.unitScale,
     xRange: coordinateSystem.xRange,
     yRange: coordinateSystem.yRange
-  });
+  };
+  nextOrigin = dragPhase === 'end' && isOperationCoordinateSystemSnapEnabled(coordinateSystem)
+    ? alignOperationCoordinateSystemOriginToGrid(nextOrigin, bounds, originOptions)
+    : clampOperationCoordinateSystemOrigin(nextOrigin, bounds, originOptions);
 
   const updatedCount = updateOperationCoordinateSystemOrigin(store.commands, session.objectId, nextOrigin);
   if (updatedCount <= 0) return false;
@@ -883,6 +895,10 @@ const applyOperationCoordinateSystemSnap = (
   if (!snapOptions.enabled || (snapOptions.phase === 'end' && dragPhase === 'move')) return origin;
   return snapPointToGraphGrid(origin, snapOptions);
 };
+
+const isOperationCoordinateSystemSnapEnabled = (coordinateSystem: OperationCoordinateSystemRuntimeOptions): boolean => (
+  resolveGraphGridSnapOptions(coordinateSystem.snapToGrid, { enabled: false, step: coordinateSystem.unitScale }).enabled
+);
 
 const clampCoordinateSystemDragDelta = (
   session: CoordinateSystemDragSession,

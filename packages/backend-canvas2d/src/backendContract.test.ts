@@ -1262,6 +1262,49 @@ describe('shared backend contract adapters', () => {
     backend.destroy();
   });
 
+  it('prioritizes Canvas2D objects over coordinate-system fallback hits', () => {
+    const host = document.createElement('div');
+    const backend = createCanvas2DGraphBackend({ id: 'canvas-coordinate-region-priority-test' });
+    backend.mount(host, { size: { width: 200, height: 200 } });
+
+    backend.create({
+      id: 'inside-function',
+      kind: 'shape',
+      type: 'function',
+      payload: { geometry: { kind: 'polyline', points: [{ x: -8, y: 5 }, { x: 8, y: 5 }] } },
+      layerId: 'content'
+    });
+    backend.create({
+      id: 'axis-function',
+      kind: 'shape',
+      type: 'function',
+      payload: { geometry: { kind: 'polyline', points: [{ x: -8, y: 0 }, { x: 8, y: 0 }] } },
+      layerId: 'content'
+    });
+    backend.create({
+      id: 'coord',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: {
+          kind: 'coordinate-system',
+          border: [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }],
+          segments: [
+            [{ x: -10, y: 0 }, { x: 10, y: 0 }],
+            [{ x: 0, y: -10 }, { x: 0, y: 10 }]
+          ]
+        }
+      },
+      layerId: 'content'
+    });
+
+    expect(backend.pick({ x: 4, y: 5 }, { tolerancePx: 0.1 })?.target.objectId).toBe('inside-function');
+    expect(backend.pick({ x: 4, y: 0 }, { tolerancePx: 0.1 })?.target.objectId).toBe('axis-function');
+    expect(backend.pick({ x: 5, y: 4 }, { tolerancePx: 0.1 })?.target.objectId).toBe('coord');
+
+    backend.destroy();
+  });
+
   it('wraps JSXGraph as an adapter without leaking JSXGraph objects into core handles', () => {
     const runtime: JsxGraphRuntimePort = {
       mount: vi.fn(),

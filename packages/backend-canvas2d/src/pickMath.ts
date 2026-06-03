@@ -122,10 +122,32 @@ export const pickGraphObjectNode = (
 
   const coordinateSystem = readCoordinateSystemHitGeometry(node);
   if (coordinateSystem) {
-    const distancePx = pointInCoordinateSystemRegion(point, coordinateSystem)
-      ? 0
-      : Math.min(...coordinateSystem.segments.map((segment) => distanceToPolyline(point, segment)));
-    return distancePx <= tolerancePx ? { target, backendId, layerId, clientPoint: { ...clientPoint }, worldPoint: { dimension: '2d', ...point }, distancePx } : null;
+    const segmentDistancePx = coordinateSystem.segments.length > 0
+      ? Math.min(...coordinateSystem.segments.map((segment) => distanceToPolyline(point, segment)))
+      : Number.POSITIVE_INFINITY;
+    if (segmentDistancePx <= tolerancePx) {
+      return {
+        target,
+        backendId,
+        layerId,
+        clientPoint: { ...clientPoint },
+        worldPoint: { dimension: '2d', ...point },
+        distancePx: segmentDistancePx,
+        meta: { coordinateSystemHitMode: 'fallback' }
+      };
+    }
+    if (pointInCoordinateSystemRegion(point, coordinateSystem)) {
+      return {
+        target,
+        backendId,
+        layerId,
+        clientPoint: { ...clientPoint },
+        worldPoint: { dimension: '2d', ...point },
+        distancePx: 0,
+        meta: { coordinateSystemHitMode: 'fallback' }
+      };
+    }
+    return null;
   }
 
   const arc = readArcLikeGeometry(node);

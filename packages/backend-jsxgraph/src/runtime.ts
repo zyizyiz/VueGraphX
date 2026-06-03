@@ -189,23 +189,30 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     const tolerance = this.toWorldTolerance(tolerancePx);
     const world = this.unproject(point);
     const testPoint = world?.dimension === '2d' ? { x: world.x, y: world.y } : point;
+    let coordinateSystemFallback: GraphPickResult | null = null;
     for (const stored of [...this.objects.values()].reverse()) {
       const layerId = stored.handle.layerId;
       if (stored.node.renderHints?.visible === false) continue;
       if (options.layerOrder && !options.layerOrder.includes(layerId)) continue;
-      const distance = distanceToNode(stored.node, testPoint);
-      if (distance !== null && distance <= tolerance) {
-        return {
+      const hit = distanceToNode(stored.node, testPoint, tolerance);
+      if (hit && hit.distance <= tolerance) {
+        const result: GraphPickResult = {
           target: { scope: 'object', objectId: stored.handle.objectId, backendId: stored.handle.backendId, layerId },
           backendId: stored.handle.backendId,
           layerId,
           clientPoint: { ...point },
           worldPoint: world ?? undefined,
-          distancePx: distance
+          distancePx: hit.distance,
+          ...(hit.coordinateSystemHitMode ? { meta: { coordinateSystemHitMode: hit.coordinateSystemHitMode } } : {})
         };
+        if (hit.coordinateSystemHitMode === 'fallback') {
+          coordinateSystemFallback ??= result;
+          continue;
+        }
+        return result;
       }
     }
-    return null;
+    return coordinateSystemFallback;
   }
 
   public project(point: GraphWorldPoint, _viewport?: GraphViewportRef): GraphClientPoint | null {
@@ -1065,69 +1072,82 @@ const directionForNode = (node: GraphObjectNode | null): Point2D | null => {
   return null;
 };
 
-const distanceToNode = (node: GraphObjectNode, point: Point2D): number | null => {
+type NodeDistanceHit = {
+  distance: number;
+  coordinateSystemHitMode?: 'fallback';
+};
+
+const distanceHit = (distance: number | null): NodeDistanceHit | null => (
+  distance === null ? null : { distance }
+);
+
+const distanceToNode = (node: GraphObjectNode, point: Point2D, tolerance: number): NodeDistanceHit | null => {
   const payload = asRecord(node.payload);
   const geometry = asRecord(payload?.geometry);
   const payloadPoint = readPayloadPoint2D(payload);
-  if (payloadPoint) return Math.hypot(payloadPoint.x - point.x, payloadPoint.y - point.y);
-  const coordinateSystemDistance = distanceToCoordinateSystemRegion(geometry, point);
+  if (payloadPoint) return distanceHit(Math.hypot(payloadPoint.x - point.x, payloadPoint.y - point.y));
+  const coordinateSystemDistance = distanceToCoordinateSystemRegion(geometry, point, tolerance);
   if (coordinateSystemDistance !== null) return coordinateSystemDistance;
   if (geometry?.kind === 'circle' && isPoint2D(geometry.center) && typeof geometry.radius === 'number') {
-    return Math.abs(Math.hypot(point.x - geometry.center.x, point.y - geometry.center.y) - geometry.radius);
+    return distanceHit(Math.abs(Math.hypot(point.x - geometry.center.x, point.y - geometry.center.y) - geometry.radius));
   }
   if (geometry && (geometry.kind === 'segment' || node.type === 'vector') && isPoint2D(geometry.start) && isPoint2D(geometry.end)) {
-    return distanceToSegment(point, geometry.start, geometry.end);
+    return distanceHit(distanceToSegment(point, geometry.start, geometry.end));
   }
-  if (isPoint2D(payload?.start) && isPoint2D(payload.end)) return distanceToSegment(point, payload.start, payload.end);
+  if (isPoint2D(payload?.start) && isPoint2D(payload.end)) return distanceHit(distanceToSegment(point, payload.start, payload.end));
   if ((geometry?.kind === 'line' || geometry?.kind === 'ray') && isPoint2D(geometry.point ?? geometry.origin) && isPoint2D(geometry.direction)) {
     const origin = (geometry.point ?? geometry.origin) as Point2D;
     if (geometry.kind === 'ray') {
       const projection = projectionParameter(point, origin, geometry.direction);
-      if (projection < 0) return Math.hypot(point.x - origin.x, point.y - origin.y);
+      if (projection < 0) return distanceHit(Math.hypot(point.x - origin.x, point.y - origin.y));
     }
-    return distanceToInfiniteLine(point, origin, geometry.direction);
+    return distanceHit(distanceToInfiniteLine(point, origin, geometry.direction));
   }
   if (geometry?.kind === 'polygon' && Array.isArray(geometry.vertices)) {
     const points = geometry.vertices.filter(isPoint2D);
-    return points.length >= 2 ? Math.min(...points.map((vertex, index) => distanceToSegment(point, vertex, points[(index + 1) % points.length]))) : null;
+    return distanceHit(points.length >= 2 ? Math.min(...points.map((vertex, index) => distanceToSegment(point, vertex, points[(index + 1) % points.length]))) : null);
   }
   if (geometry?.kind === 'polyline' && Array.isArray(geometry.points)) {
     const points = geometry.points.filter(isPoint2D);
     if (points.length < 2) return null;
     const distances: number[] = [];
     for (let index = 0; index < points.length - 1; index += 1) distances.push(distanceToSegment(point, points[index], points[index + 1]));
-    return Math.min(...distances);
+    return distanceHit(Math.min(...distances));
   }
   const arcGeometry = readArcLikeGeometry(geometry);
   if (arcGeometry) {
-    return distanceToArcLike(point, arcGeometry);
+    return distanceHit(distanceToArcLike(point, arcGeometry));
   }
   if (isPoint2D(payload?.point) && typeof payload?.text === 'string') {
-    return Math.hypot(payload.point.x - point.x, payload.point.y - point.y);
+    return distanceHit(Math.hypot(payload.point.x - point.x, payload.point.y - point.y));
   }
   const anglePoints = readAnglePoints(payload);
   if (anglePoints) {
-    return distanceToAngle(point, anglePoints);
+    return distanceHit(distanceToAngle(point, anglePoints));
   }
   return null;
 };
 
 
-const distanceToCoordinateSystemRegion = (geometry: Record<string, unknown> | null, point: Point2D): number | null => {
+const distanceToCoordinateSystemRegion = (geometry: Record<string, unknown> | null, point: Point2D, tolerance: number): NodeDistanceHit | null => {
   if (geometry?.kind !== 'coordinate-system') return null;
-  const border = readPointList2D(geometry.border);
-  if (border.length >= 3 && pointInPolygon2D(point, border)) return 0;
-
   const segments = readCoordinateSystemSegments2D(geometry);
-  if (segments.length === 0) return null;
-  const bounds = boundsForPointGroups(segments);
-  if (bounds && point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY) return 0;
-
   const distances: number[] = [];
   for (const segment of segments) {
     for (let index = 1; index < segment.length; index += 1) distances.push(distanceToSegment(point, segment[index - 1], segment[index]));
   }
-  return distances.length > 0 ? Math.min(...distances) : null;
+  const segmentDistance = distances.length > 0 ? Math.min(...distances) : Number.POSITIVE_INFINITY;
+  if (segmentDistance <= tolerance) return { distance: segmentDistance, coordinateSystemHitMode: 'fallback' };
+
+  const border = readPointList2D(geometry.border);
+  if (border.length >= 3 && pointInPolygon2D(point, border)) return { distance: 0, coordinateSystemHitMode: 'fallback' };
+
+  const bounds = boundsForPointGroups(segments);
+  if (bounds && point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY) {
+    return { distance: 0, coordinateSystemHitMode: 'fallback' };
+  }
+
+  return distances.length > 0 ? { distance: segmentDistance } : null;
 };
 
 const boundsForPointGroups = (groups: Point2D[][]): { minX: number; maxX: number; minY: number; maxY: number } | null => {

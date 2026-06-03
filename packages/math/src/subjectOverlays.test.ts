@@ -8,6 +8,7 @@ import {
   createSubjectOverlayCache,
   createSubjectOverlayModel,
   point2D,
+  SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS,
   SUBJECT_OVERLAY_DASH_PATTERN,
   SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
   SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
@@ -167,6 +168,55 @@ describe('subject overlay model', () => {
       strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH
     });
     expect(median?.style?.lineDash).toEqual(SUBJECT_OVERLAY_DASH_PATTERN);
+  });
+
+  it('uses default function annotation colors while keeping per-kind overrides configurable', () => {
+    const quadratic = createQuadraticSubjectFunction({ id: 'q-style', a: 1, b: -2, c: -3, domain: [-4, 5] });
+    const defaultModel = createSubjectOverlayModel({
+      id: 'q-style-target',
+      kind: 'function',
+      descriptor: quadratic,
+      sampleWindow: { minX: -4, maxX: 5, minY: -5, maxY: 5 },
+      strokeColor: '#2563EB'
+    }, {
+      annotations: { includeKinds: ['vertex', 'intercept'] }
+    });
+
+    const vertex = defaultModel.annotations.find((annotation) => annotation.kind === 'vertex');
+    const intercept = defaultModel.annotations.find((annotation) => annotation.kind === 'intercept');
+    expect(vertex?.style).toMatchObject({
+      strokeColor: SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.vertex
+    });
+    expect(intercept?.style).toMatchObject({
+      strokeColor: SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.intercept
+    });
+    expect(vertex?.style?.textColor).toBeUndefined();
+    expect(intercept?.style?.textColor).toBeUndefined();
+
+    const configuredModel = createSubjectOverlayModel({
+      id: 'q-style-configured-target',
+      kind: 'function',
+      descriptor: quadratic,
+      sampleWindow: { minX: -4, maxX: 5, minY: -5, maxY: 5 },
+      strokeColor: '#2563EB'
+    }, {
+      annotations: {
+        includeKinds: ['vertex', 'intercept'],
+        styles: {
+          vertex: { strokeColor: '#111827' },
+          intercept: { textColor: '#0F766E' }
+        }
+      }
+    });
+
+    expect(configuredModel.annotations.find((annotation) => annotation.kind === 'vertex')?.style).toMatchObject({
+      strokeColor: '#111827'
+    });
+    expect(configuredModel.annotations.find((annotation) => annotation.kind === 'vertex')?.style?.textColor).toBeUndefined();
+    expect(configuredModel.annotations.find((annotation) => annotation.kind === 'intercept')?.style).toMatchObject({
+      strokeColor: SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.intercept,
+      textColor: '#0F766E'
+    });
   });
 
   it('caches overlay computation by target version and config', () => {

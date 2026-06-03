@@ -100,6 +100,7 @@ export class MemoryGraphBackend implements GraphRenderBackend {
     if (options.targetScopes && !options.targetScopes.includes('object')) return null;
     const allowedLayers = options.layerOrder ? new Set(options.layerOrder) : null;
     const candidates = sortNodesByRenderOrder([...this.nodes.values()]).reverse();
+    let coordinateSystemFallback: GraphPickResult | null = null;
     for (const node of candidates) {
       if (node.renderHints?.visible === false) continue;
       if (allowedLayers && !allowedLayers.has(node.layerId ?? 'content')) continue;
@@ -107,7 +108,7 @@ export class MemoryGraphBackend implements GraphRenderBackend {
       if (options.hitGroups && !hitGroups.some((group) => options.hitGroups?.includes(group))) continue;
       const result = pickGraphObjectNode(node, point, this.id, options.tolerancePx ?? 8);
       if (result) {
-        return {
+        const decorated = {
           ...result,
           hitGroup: hitGroups[0],
           meta: {
@@ -115,9 +116,14 @@ export class MemoryGraphBackend implements GraphRenderBackend {
             hitGroups
           }
         };
+        if (isCoordinateSystemFallback(decorated)) {
+          coordinateSystemFallback ??= decorated;
+          continue;
+        }
+        return decorated;
       }
     }
-    return null;
+    return coordinateSystemFallback;
   }
 
   public project(point: GraphWorldPoint, _viewport?: GraphViewportRef): GraphClientPoint | null {
@@ -164,6 +170,10 @@ const readNodeHitGroups = (node: GraphObjectNode): string[] => {
   ];
   return groups.length > 0 ? [...new Set(groups)] : [node.type, node.kind];
 };
+
+const isCoordinateSystemFallback = (pick: GraphPickResult): boolean => (
+  pick.meta?.coordinateSystemHitMode === 'fallback'
+);
 
 const isSelectedNode = (node: GraphObjectNode): boolean => (
   node.meta?.selected === true || node.renderHints?.selected === true

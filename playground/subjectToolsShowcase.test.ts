@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import {
+  SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS,
+  SUBJECT_OVERLAY_DASH_PATTERN,
+  SUBJECT_OVERLAY_DASH_STROKE_WIDTH
+} from '@vuegraphx/math';
 import { getSubjectToolsBackendStatusRows, subjectToolsRepresentativeDemos } from './subjectToolsShowcase';
 
 describe('subject tools representative playground demos', () => {
@@ -27,5 +32,23 @@ describe('subject tools representative playground demos', () => {
     expect(rows.find((row) => row.backendId === 'babylon')?.reason).toContain('native 3D');
     expect(rows.filter((row) => !row.active).map((row) => row.backendId)).toEqual(['babylon', 'pixi', 'konva', 'three', 'fabric']);
     expect(rows.filter((row) => !row.active).every((row) => Object.values(row.categories).every((status) => status === 'unsupported'))).toBe(true);
+  });
+
+  it('uses core annotation defaults and target-colored symmetry axis in the function annotation demo', () => {
+    const annotationDemo = subjectToolsRepresentativeDemos.find((demo) => demo.category === 'annotation');
+    expect(annotationDemo).toBeDefined();
+    const commands = annotationDemo!.commands.filter((command): command is { expr: string; options?: Record<string, unknown> } => typeof command !== 'string');
+
+    const symmetryAxis = commands.find((command) => command.expr.startsWith('q_aux_1 = Segment'));
+    expect(symmetryAxis?.options).toMatchObject({
+      strokeColor: '#2563EB',
+      strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+      lineDash: SUBJECT_OVERLAY_DASH_PATTERN
+    });
+
+    const vertex = commands.find((command) => command.expr.includes('"顶点:'));
+    const intercept = commands.find((command) => command.expr.includes('"x 轴交点:'));
+    expect(vertex?.options?.strokeColor).toBe(SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.vertex);
+    expect(intercept?.options?.strokeColor).toBe(SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.intercept);
   });
 });

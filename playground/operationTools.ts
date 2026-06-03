@@ -1,4 +1,4 @@
-import { STANDARD_COORDINATE_UI } from '@vuegraphx/core';
+import { STANDARD_COORDINATE_UI, snapPointToGraphGrid } from '@vuegraphx/core';
 import {
   createFreeSubjectAuxiliaryLine,
   createQuadraticSubjectFunction,
@@ -61,6 +61,7 @@ export interface OperationToolGroup {
 }
 
 const OPERATION_COORDINATE_RANGE = { min: -6, max: 6 } as const;
+const OPERATION_COORDINATE_SNAP = { enabled: true, phase: 'end' } as const;
 
 export const resolveOperationCommandOrigin = (
   point: { x: number; y: number } | null,
@@ -86,11 +87,11 @@ export const createOperationScopedCommands = (
   const yRange = { ...OPERATION_COORDINATE_RANGE };
   const coordinateSystem: OperationCoordinateSystemRuntimeOptions = {
     id: coordinateSystemId,
-    origin: clampOperationCoordinateSystemOrigin(origin, bounds, { unitScale: 1, xRange, yRange }),
+    origin: alignOperationCoordinateSystemOriginToGrid(origin, bounds, { unitScale: 1, xRange, yRange }),
     unitScale: 1,
     xRange,
     yRange,
-    snapToGrid: { enabled: true, phase: 'end' }
+    snapToGrid: OPERATION_COORDINATE_SNAP
   };
 
   return [
@@ -133,6 +134,29 @@ export const clampOperationCoordinateSystemOrigin = (
   };
 };
 
+export const alignOperationCoordinateSystemOriginToGrid = (
+  origin: { x: number; y: number },
+  bounds?: OperationWorldBounds,
+  options: Pick<OperationCoordinateSystemRuntimeOptions, 'unitScale' | 'xRange' | 'yRange'> = {
+    unitScale: 1,
+    xRange: OPERATION_COORDINATE_RANGE,
+    yRange: OPERATION_COORDINATE_RANGE
+  }
+): { x: number; y: number } => {
+  const unitScale = Number.isFinite(options.unitScale) && options.unitScale > 0 ? options.unitScale : 1;
+  const snapped = snapPointToGraphGrid(origin, OPERATION_COORDINATE_SNAP, { enabled: true, step: unitScale });
+  if (!bounds) return snapped;
+
+  const minOriginX = bounds.left - options.xRange.min * unitScale;
+  const maxOriginX = bounds.right - options.xRange.max * unitScale;
+  const minOriginY = bounds.bottom - options.yRange.min * unitScale;
+  const maxOriginY = bounds.top - options.yRange.max * unitScale;
+  return {
+    x: clampGridValueToFitRange(snapped.x, minOriginX, maxOriginX, unitScale),
+    y: clampGridValueToFitRange(snapped.y, minOriginY, maxOriginY, unitScale)
+  };
+};
+
 export const updateOperationCoordinateSystemOrigin = <T extends OperationCommandWithOptions>(
   commands: readonly T[],
   coordinateSystemId: string,
@@ -172,6 +196,24 @@ const clampToFitRange = (value: number, min: number, max: number): number => {
   if (min <= max) return Math.max(min, Math.min(max, value));
   return (min + max) / 2;
 };
+
+const clampGridValueToFitRange = (value: number, min: number, max: number, step: number): number => {
+  if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(step) || step <= 0) {
+    return clampToFitRange(value, min, max);
+  }
+  if (min > max) return normalizeGridValue((min + max) / 2);
+
+  const lowerIndex = Math.ceil(min / step - 1e-9);
+  const upperIndex = Math.floor(max / step + 1e-9);
+  if (lowerIndex > upperIndex) return clampToFitRange(value, min, max);
+
+  const desiredIndex = Math.round(value / step);
+  return normalizeGridValue(clampToFitRange(desiredIndex, lowerIndex, upperIndex) * step);
+};
+
+const normalizeGridValue = (value: number): number => (
+  Math.abs(value) < 1e-9 ? 0 : Number(value.toFixed(10))
+);
 
 const operationGeometryOverlayTarget: SubjectOverlayTarget = {
   id: 'operation-geometry-overlay-triangle',
@@ -235,18 +277,11 @@ const operationQuadraticOverlay = createSubjectOverlayModel({
   strokeColor: '#2563EB'
 }, {
   annotations: {
-    includeKinds: ['vertex', 'intercept', 'axis'],
-    styles: {
-      vertex: { strokeColor: '#EF4444' },
-      intercept: { strokeColor: '#16A34A' }
-    }
+    includeKinds: ['vertex', 'intercept', 'axis']
   },
   auxiliaryLines: {
     includeKinds: ['symmetry-axis'],
-    defaultVisibleKinds: ['symmetry-axis'],
-    styles: {
-      'symmetry-axis': { strokeColor: '#EF4444' }
-    }
+    defaultVisibleKinds: ['symmetry-axis']
   }
 });
 
@@ -366,7 +401,7 @@ function operationOverlayLineCommands(
       if (options.labels !== false) {
         commands.push({
           expr: `Text(${operationPointText(operationLineMidpoint(line))}, "${escapeOperationText(line.label)}")`,
-          options: operationOverlayStyleOptions(line.style, '#64748B')
+          options: operationOverlayTextStyleOptions(line.style, '#64748B')
         });
       }
       return commands;
@@ -388,7 +423,7 @@ function operationOverlayAnnotationCommands(
     .slice(0, options.limit ?? Infinity)
     .map((annotation) => ({
       expr: `Text(${operationPointText(annotation.anchor!)}, "${escapeOperationText(annotation.text)}")`,
-      options: operationOverlayStyleOptions(annotation.style, '#0F172A')
+      options: operationOverlayTextStyleOptions(annotation.style, '#0F172A')
     }));
 }
 
@@ -412,6 +447,12 @@ function operationOverlayStyleOptions(style: SubjectOverlayStyle | undefined, fa
   if (typeof style?.strokeWidth === 'number') options.strokeWidth = style.strokeWidth;
   if (style?.fillColor) options.fillColor = style.fillColor;
   if (style?.lineDash?.length) options.lineDash = [...style.lineDash];
+  return options;
+}
+
+function operationOverlayTextStyleOptions(style: SubjectOverlayStyle | undefined, fallbackColor: string): Record<string, unknown> {
+  const options = operationOverlayStyleOptions(style, fallbackColor);
+  options.strokeColor = style?.textColor ?? style?.strokeColor ?? fallbackColor;
   return options;
 }
 

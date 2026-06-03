@@ -66,18 +66,11 @@ const annotationOverlay = createSubjectOverlayModel({
   strokeColor: '#2563EB'
 }, {
   annotations: {
-    includeKinds: ['expression', 'vertex', 'axis', 'intercept'],
-    styles: {
-      vertex: { strokeColor: '#EF4444' },
-      intercept: { strokeColor: '#16A34A' }
-    }
+    includeKinds: ['expression', 'vertex', 'axis', 'intercept']
   },
   auxiliaryLines: {
     includeKinds: ['symmetry-axis'],
-    defaultVisibleKinds: ['symmetry-axis'],
-    styles: {
-      'symmetry-axis': { strokeColor: '#EF4444' }
-    }
+    defaultVisibleKinds: ['symmetry-axis']
   }
 });
 const geometryOverlayTarget: SubjectOverlayTarget = {
@@ -301,7 +294,7 @@ function overlayLineCommands(
     if (options.labels !== false) {
       commands.push({
         expr: `${id}_label = Text(${formatPoint(lineMidpoint(line))}, "${escapeCommandText(line.label)}")`,
-        options: overlayStyleOptions(line.style, '#64748B')
+        options: overlayTextStyleOptions(line.style, '#64748B')
       });
     }
     return commands;
@@ -324,7 +317,7 @@ function overlayAnnotationCommands(
     .slice(0, options.limit ?? Infinity)
     .map((annotation, index) => ({
       expr: `${options.prefix}_${index + 1} = Text(${formatPoint(annotation.anchor!)}, "${escapeCommandText(annotation.text)}")`,
-      options: overlayStyleOptions(annotation.style, '#0F172A')
+      options: overlayTextStyleOptions(annotation.style, '#0F172A')
     }));
 }
 
@@ -348,6 +341,12 @@ function overlayStyleOptions(style: SubjectOverlayStyle | undefined, fallbackCol
   if (typeof style?.strokeWidth === 'number') options.strokeWidth = style.strokeWidth;
   if (style?.fillColor) options.fillColor = style.fillColor;
   if (style?.lineDash?.length) options.lineDash = [...style.lineDash];
+  return options;
+}
+
+function overlayTextStyleOptions(style: SubjectOverlayStyle | undefined, fallbackColor: string): Record<string, unknown> {
+  const options = overlayStyleOptions(style, fallbackColor);
+  options.strokeColor = style?.textColor ?? style?.strokeColor ?? fallbackColor;
   return options;
 }
 

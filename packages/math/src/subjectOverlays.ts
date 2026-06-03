@@ -159,6 +159,10 @@ export interface SubjectOverlayConfig {
 export const SUBJECT_OVERLAY_DASH_PATTERN = [4, 8] as const;
 export const SUBJECT_OVERLAY_DASH_STROKE_WIDTH = 1;
 export const SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR = 'rgba(102, 102, 102, 1)';
+export const SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS = {
+  vertex: '#EF4444',
+  intercept: '#16A34A'
+} as const satisfies Record<string, string>;
 
 export interface SubjectOverlayTargetBase {
   id: string;
@@ -1067,7 +1071,7 @@ const applyAnnotationConfig = (
 ): SubjectOverlayAnnotation => {
   const feature = effectiveAnnotationConfig(context.config, context.shapeKind);
   const label = feature.labels?.[annotation.id] ?? feature.labels?.[annotation.kind] ?? annotation.label;
-  const style = mergeStyle(annotation.style, feature.styles?.[annotation.kind], feature.styles?.[annotation.id]);
+  const style = mergeStyle(defaultAnnotationStyle(annotation.kind), annotation.style, feature.styles?.[annotation.kind], feature.styles?.[annotation.id]);
   const configured = {
     ...annotation,
     label,
@@ -1314,6 +1318,11 @@ const dashedStyle = (
     lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
     strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH
   };
+};
+
+const defaultAnnotationStyle = (kind: SubjectAnnotationKind): SubjectOverlayStyle | undefined => {
+  const strokeColor = SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS[kind as keyof typeof SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS];
+  return strokeColor ? { strokeColor } : undefined;
 };
 
 const mergeStyle = (...styles: Array<SubjectOverlayStyle | undefined>): SubjectOverlayStyle | undefined => {

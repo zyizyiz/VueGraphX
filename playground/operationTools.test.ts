@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS,
+  SUBJECT_OVERLAY_DASH_PATTERN,
+  SUBJECT_OVERLAY_DASH_STROKE_WIDTH
+} from '@vuegraphx/math';
+import {
+  alignOperationCoordinateSystemOriginToGrid,
   clampOperationCoordinateSystemOrigin,
   createOperationScopedCommands,
+  operationToolGroups,
   resolveOperationCommandOrigin,
   updateOperationCoordinateSystemOrigin
 } from './operationTools';
@@ -36,6 +43,31 @@ describe('resolveOperationCommandOrigin', () => {
 });
 
 describe('updateOperationCoordinateSystemOrigin', () => {
+  it('snaps initial operation coordinate-system origins to the operation grid', () => {
+    const commands = createOperationScopedCommands([
+      { expr: 'Function("x", -5, 5)' }
+    ], { x: 2.25, y: -1.6 }, 'coord_snap');
+
+    expect(commands.map((command) => (command.options?.coordinateSystem as any)?.origin)).toEqual([
+      { x: 2, y: -2 },
+      { x: 2, y: -2 }
+    ]);
+    expect((commands[0].options?.coordinateSystem as any)?.snapToGrid).toEqual({ enabled: true, phase: 'end' });
+  });
+
+  it('keeps bounded operation coordinate-system origins on the nearest valid grid point', () => {
+    const bounds = { left: -9.5, right: 10.5, top: 10.5, bottom: -9.5 };
+
+    expect(alignOperationCoordinateSystemOriginToGrid({ x: 4.7, y: 0.2 }, bounds)).toEqual({ x: 4, y: 0 });
+    expect(createOperationScopedCommands([
+      { expr: 'Function("x", -5, 5)' }
+    ], { x: 4.7, y: 0.2 }, 'coord_bounded', bounds)
+      .map((command) => (command.options?.coordinateSystem as any)?.origin)).toEqual([
+      { x: 4, y: 0 },
+      { x: 4, y: 0 }
+    ]);
+  });
+
   it('persists dragged operation coordinate-system origins across every scoped command', () => {
     const commands = createOperationScopedCommands([
       { expr: 'Function("x", -5, 5)', options: { strokeColor: '#4DA6FF' } },
@@ -65,5 +97,24 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     expect((commands[1].options?.coordinateSystem as any).origin).toEqual({ x: 1, y: 2 });
     expect((commands[2].options?.coordinateSystem as any).origin).toEqual({ x: 4, y: 5 });
     expect((commands[3].options?.coordinateSystem as any).origin).toEqual({ x: 4, y: 5 });
+  });
+
+  it('uses core annotation defaults and target-colored symmetry axis in operation tools', () => {
+    const tool = operationToolGroups
+      .flatMap((group) => group.tools)
+      .find((entry) => entry.id === 'quadratic-overlay-tools');
+    expect(tool).toBeDefined();
+
+    const symmetryAxis = tool!.commands.find((command) => command.expr.startsWith('Segment('));
+    expect(symmetryAxis?.options).toMatchObject({
+      strokeColor: '#2563EB',
+      strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+      lineDash: SUBJECT_OVERLAY_DASH_PATTERN
+    });
+
+    const vertex = tool!.commands.find((command) => command.expr.includes('"顶点:'));
+    const intercept = tool!.commands.find((command) => command.expr.includes('"x 轴交点:'));
+    expect(vertex?.options?.strokeColor).toBe(SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.vertex);
+    expect(intercept?.options?.strokeColor).toBe(SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.intercept);
   });
 });

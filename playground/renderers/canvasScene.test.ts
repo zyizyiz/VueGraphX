@@ -404,22 +404,22 @@ describe('buildPlaygroundCanvasScene', () => {
       expect(coordinateSystems[0]).toMatchObject({
         meta: { coordinateSystemId: 'coord_left', independentCoordinateSystem: true, draggable: true, snapToGrid: { enabled: true, phase: 'end' } },
         payload: {
-          origin: { x: 2.3, y: -2.7 }
+          origin: { x: 2, y: -3 }
         }
       });
       expectCoordinateSystemAxes(coordinateSystems[0], {
-        xAxis: [{ x: -3.7, y: -2.7 }, { x: 8.3, y: -2.7 }],
-        yAxis: [{ x: 2.3, y: -8.7 }, { x: 2.3, y: 3.3 }]
+        xAxis: [{ x: -4, y: -3 }, { x: 8, y: -3 }],
+        yAxis: [{ x: 2, y: -9 }, { x: 2, y: 3 }]
       });
       expect(coordinateSystems[1]).toMatchObject({
         meta: { coordinateSystemId: 'coord_right', independentCoordinateSystem: true, draggable: true, snapToGrid: { enabled: true, phase: 'end' } },
         payload: {
-          origin: { x: -4.2, y: 5.1 }
+          origin: { x: -4, y: 5 }
         }
       });
       expectCoordinateSystemAxes(coordinateSystems[1], {
-        xAxis: [{ x: -10.2, y: 5.1 }, { x: 1.8, y: 5.1 }],
-        yAxis: [{ x: -4.2, y: -0.9 }, { x: -4.2, y: 11.1 }]
+        xAxis: [{ x: -10, y: 5 }, { x: 2, y: 5 }],
+        yAxis: [{ x: -4, y: -1 }, { x: -4, y: 11 }]
       });
 
       const scopedGraphs = result.nodes.filter((node) => node.type === 'function' || node.type === 'equation');
@@ -441,7 +441,7 @@ describe('buildPlaygroundCanvasScene', () => {
     for (const backend of twoDParityBackends) {
       const result = builders[backend.id](toCommands(commands));
       expect(result.diagnostics, backend.id).toEqual([]);
-      const bounds = { left: -3.75, right: 8.25, top: 4.5, bottom: -7.5 };
+      const bounds = { left: -4, right: 8, top: 5, bottom: -7 };
       const scoped = result.nodes.filter((node) => node.meta?.coordinateSystemId === 'coord_triangle' && node.type !== 'coordinate-system');
       expect(scoped.length, backend.id).toBeGreaterThan(8);
       for (const node of scoped) {
@@ -546,7 +546,7 @@ describe('buildPlaygroundCanvasScene', () => {
         top: 5,
         bottom: -7
       });
-      expect((rebuilt.nodes.find((node) => node.id === 'coord_new')?.payload as any)?.origin).toMatchObject({ x: -4.2, y: 5.1 });
+      expect((rebuilt.nodes.find((node) => node.id === 'coord_new')?.payload as any)?.origin).toMatchObject({ x: -4, y: 5 });
     }
   });
 

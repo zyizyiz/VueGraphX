@@ -307,6 +307,69 @@ describe('JsxGraphRuntime', () => {
     expect(runtime.pick({ x: 12, y: 12 }, { tolerancePx: 0.1 })).toBeNull();
   });
 
+  it('prioritizes objects over coordinate-system fallback hits', () => {
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create: vi.fn((type: string) => ({ id: `${type}-1` })),
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      id: 'inside-function',
+      kind: 'shape',
+      type: 'function',
+      payload: { geometry: { kind: 'polyline', points: [{ x: -8, y: 5 }, { x: 8, y: 5 }] } },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:inside-function',
+      objectId: 'inside-function',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'inside-function', backendId: 'jsxgraph', layerId: 'content' }
+    });
+    runtime.createObject({
+      id: 'axis-function',
+      kind: 'shape',
+      type: 'function',
+      payload: { geometry: { kind: 'polyline', points: [{ x: -8, y: 0 }, { x: 8, y: 0 }] } },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:axis-function',
+      objectId: 'axis-function',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'axis-function', backendId: 'jsxgraph', layerId: 'content' }
+    });
+    runtime.createObject({
+      id: 'coord',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        geometry: {
+          kind: 'coordinate-system',
+          border: [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }],
+          segments: [
+            [{ x: -10, y: 0 }, { x: 10, y: 0 }],
+            [{ x: 0, y: -10 }, { x: 0, y: 10 }]
+          ]
+        }
+      },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:coord',
+      objectId: 'coord',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'coord', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(runtime.pick({ x: 4, y: 5 }, { tolerancePx: 0.1 })?.target.objectId).toBe('inside-function');
+    expect(runtime.pick({ x: 4, y: 0 }, { tolerancePx: 0.1 })?.target.objectId).toBe('axis-function');
+    expect(runtime.pick({ x: 5, y: 4 }, { tolerancePx: 0.1 })?.target.objectId).toBe('coord');
+  });
+
   it('renders selected JSXGraph objects by doubling stroke width without changing color', () => {
     const create = vi.fn((type: string) => ({ id: `${type}-1` }));
     const runtime = createJsxGraphRuntime({} as any, {
