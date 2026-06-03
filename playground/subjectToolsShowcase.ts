@@ -76,7 +76,7 @@ const annotationOverlay = createSubjectOverlayModel({
     includeKinds: ['symmetry-axis'],
     defaultVisibleKinds: ['symmetry-axis'],
     styles: {
-      'symmetry-axis': { strokeColor: '#EF4444', strokeWidth: 2, lineDash: [5, 4] }
+      'symmetry-axis': { strokeColor: '#EF4444' }
     }
   }
 });
@@ -111,9 +111,9 @@ const geometryOverlayConfig: SubjectOverlayConfig = {
       'angle-bisector': '角平分线'
     },
     styles: {
-      altitude: { strokeColor: '#EF4444', strokeWidth: 2, lineDash: [4, 3] },
-      median: { strokeColor: '#16A34A', strokeWidth: 2, lineDash: [6, 3] },
-      free: { strokeColor: '#7C3AED', strokeWidth: 2, lineDash: [5, 4] }
+      altitude: { strokeColor: '#EF4444' },
+      median: { strokeColor: '#16A34A' },
+      free: { strokeColor: '#7C3AED' }
     }
   },
   shapes: {
@@ -347,7 +347,7 @@ function overlayStyleOptions(style: SubjectOverlayStyle | undefined, fallbackCol
   };
   if (typeof style?.strokeWidth === 'number') options.strokeWidth = style.strokeWidth;
   if (style?.fillColor) options.fillColor = style.fillColor;
-  if (style?.lineDash?.[0]) options.dash = style.lineDash[0];
+  if (style?.lineDash?.length) options.lineDash = [...style.lineDash];
   return options;
 }
 

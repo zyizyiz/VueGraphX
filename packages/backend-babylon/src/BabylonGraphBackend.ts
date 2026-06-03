@@ -57,42 +57,9 @@ export interface BabylonGraphBackendOptions {
 
 export type BabylonBackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
 
-const BABYLON_SUPPORTED_TYPES = new Set([
-  'point',
-  'text',
-  'angle',
-  'circle',
-  'arc',
-  'sector',
-  'semicircle',
-  'polygon',
-  'segment',
-  'line',
-  'ray',
-  'polyline',
-  'function',
-  'derivative',
-  'vector',
-  'measurement',
-  'midpoint',
-  'intersection',
-  'perpendicular-line',
-  'parallel-line',
-  'tangent',
-  'translated',
-  'rotated',
-  'conic',
-  'equation',
-  'solid',
-  'coordinate-system'
-]);
-
 const getBabylonSupportStatus = (node: GraphObjectNode): BabylonBackendSupportStatus => {
-  if (node.type === 'coordinate-system') return hasRenderableProxyGeometry(node) ? 'success' : 'partial-support';
-  if (node.type === 'implicit') return hasRenderableProxyGeometry(node) ? 'success' : 'unsupported';
   if (node.type === 'solid') return 'success';
-  if (!BABYLON_SUPPORTED_TYPES.has(node.type)) return 'unsupported';
-  return isDrawableBabylonProxyNode(node) ? 'success' : 'partial-support';
+  return 'unsupported';
 };
 
 const createBackendSupportDiagnosticResult = (
@@ -131,22 +98,22 @@ export class BabylonGraphBackend implements GraphRenderBackend {
       unproject: true,
       drag: true,
       layers: true,
-      dimensions: ['2d', '3d'],
+      dimensions: ['3d'],
       mathInteractions: createGraphBackendMathInteractionCapabilities({
         'viewport.zoom': createGraphBackendInteractionCapability('supported', {
-          mechanism: '2D orthographic bounds bridge; 3D ArcRotateCamera controls'
+          mechanism: '3D ArcRotateCamera controls'
         }),
         'viewport.gestureZoom': createGraphBackendInteractionCapability('partial-support', {
-          mechanism: 'native 3D camera controls plus playground pointer-pinch bridge for 2D',
+          mechanism: 'native 3D camera controls',
           native: true,
-          reason: 'Babylon supports native camera gestures in 3D; 2D mode uses VueGraphX host gesture bridging instead of Babylon-native pinch.'
+          reason: 'Planar annotations are rendered by the independent Canvas2D overlay, not the Babylon backend.'
         }),
         'viewport.pan': createGraphBackendInteractionCapability('supported', {
-          mechanism: '2D orthographic bounds bridge; 3D ArcRotateCamera controls'
+          mechanism: '3D ArcRotateCamera controls'
         }),
         'object.pick': createGraphBackendInteractionCapability('supported', { mechanism: 'runtime scene.pick metadata' }),
         'object.select': createGraphBackendInteractionCapability('supported', { mechanism: 'core-meta-selected' }),
-        'object.highlight': createGraphBackendInteractionCapability('supported', { mechanism: 'selected proxy thickness scale' }),
+        'object.highlight': createGraphBackendInteractionCapability('supported', { mechanism: 'selected 3D material state' }),
         project: createGraphBackendInteractionCapability('supported', { mechanism: 'runtime project adapter' }),
         unproject: createGraphBackendInteractionCapability('supported', { mechanism: 'runtime unproject adapter' }),
         diagnostics: createGraphBackendInteractionCapability('supported', { mechanism: 'GraphOperationDiagnostic' })
@@ -270,62 +237,3 @@ const combineBabylonSupportStatus = (
   if (staticStatus === 'partial-support' || runtimeStatus === 'partial-support') return 'partial-support';
   return 'success';
 };
-
-const hasRenderableProxyGeometry = (node: GraphObjectNode): boolean => {
-  const payload = asRecord(node.payload);
-  const geometry = asRecord(payload?.geometry);
-  if (Array.isArray(geometry?.points) && geometry.points.length >= 2) return true;
-  if (Array.isArray(geometry?.vertices) && geometry.vertices.length >= 2) return true;
-  if (Array.isArray(geometry?.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.length >= 2)) return true;
-  if (typeof geometry?.kind === 'string' && geometry.kind === 'coordinate-system') {
-    if (Array.isArray(geometry.gridSegments) && geometry.gridSegments.some((segment) => Array.isArray(segment) && segment.length >= 2)) return true;
-    if (Array.isArray(geometry.border) && geometry.border.length >= 2) return true;
-  }
-  return ['circle', 'ellipse', 'hyperbola', 'arc', 'sector', 'semicircle', 'segment', 'line', 'ray', 'polyline', 'polygon', 'multiline', 'wireframe'].includes(
-    typeof geometry?.kind === 'string' ? geometry.kind : ''
-  );
-};
-
-const isDrawableBabylonProxyNode = (node: GraphObjectNode): boolean => {
-  const payload = asRecord(node.payload);
-  if (!payload) return false;
-  if (isPointLike(payload.point) || isPointLike(payload.position)) return true;
-  if (node.type === 'text' && isPointLike(payload.anchor)) return true;
-  if (node.type === 'measurement' || node.type === 'angle') {
-    return Array.isArray(payload.points) && payload.points.filter(isPointLike).length >= 3;
-  }
-  if (isPointLike(payload.start) && isPointLike(payload.end)) return true;
-
-  const geometry = asRecord(payload.geometry);
-  if (!geometry?.kind) return false;
-  if (geometry.kind === 'coordinate-system') return hasRenderableProxyGeometry(node);
-  if (geometry.kind === 'circle') return isPointLike(geometry.center) && isFiniteNumber(geometry.radius);
-  if (geometry.kind === 'ellipse' || geometry.kind === 'hyperbola') {
-    return isPointLike(geometry.center) && isFiniteNumber(geometry.radiusX) && isFiniteNumber(geometry.radiusY);
-  }
-  if (geometry.kind === 'arc' || geometry.kind === 'sector' || geometry.kind === 'semicircle') {
-    return isPointLike(geometry.center) && isPointLike(geometry.start) && isPointLike(geometry.end);
-  }
-  if (geometry.kind === 'polygon') return Array.isArray(geometry.vertices) && geometry.vertices.filter(isPointLike).length >= 2;
-  if (geometry.kind === 'polyline') return Array.isArray(geometry.points) && geometry.points.filter(isPointLike).length >= 2;
-  if (geometry.kind === 'multiline' || geometry.kind === 'wireframe') {
-    return Array.isArray(geometry.segments) && geometry.segments.some((segment) => Array.isArray(segment) && segment.filter(isPointLike).length >= 2);
-  }
-  if (geometry.kind === 'segment') return isPointLike(geometry.start) && isPointLike(geometry.end);
-  if (geometry.kind === 'line') return isPointLike(geometry.point) && isPointLike(geometry.direction);
-  if (geometry.kind === 'ray') return isPointLike(geometry.origin ?? geometry.point) && isPointLike(geometry.direction);
-  return false;
-};
-
-const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-
-const isPointLike = (value: unknown): boolean => {
-  const point = asRecord(value);
-  const coordinates = asRecord(point?.coordinates);
-  const source = coordinates ?? point;
-  return isFiniteNumber(source?.x) && isFiniteNumber(source?.y);
-};
-
-const asRecord = (value: unknown): Record<string, unknown> | null => (
-  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
-);

@@ -46,6 +46,7 @@ type CanvasDrawOp =
   | { name: 'fillRect'; x: number; y: number; width: number; height: number; fillStyle: string }
   | { name: 'fillText' | 'strokeText'; text: string; x: number; y: number; font: string; fillStyle?: string; strokeStyle?: string }
   | { name: 'translate' | 'scale'; x: number; y: number }
+  | { name: 'setLineDash'; pattern: number[] }
   | { name: string; [key: string]: unknown };
 
 const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; ops: CanvasDrawOp[] } => {
@@ -139,7 +140,9 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
       ops.push({ name: 'scale', x, y });
     },
     setTransform() {},
-    setLineDash() {}
+    setLineDash(pattern: number[]) {
+      ops.push({ name: 'setLineDash', pattern: [...pattern] });
+    }
   };
   return { context: context as CanvasRenderingContext2D, ops };
 };
@@ -174,7 +177,7 @@ const backendCapabilityExpectations: Record<BackendContractBackendId, BackendCap
   memory: { dimensions: ['2d'], pick: true, project: true, unproject: true, drag: true, layers: true },
   canvas2d: { dimensions: ['2d'], pick: true, project: true, unproject: true, drag: true, layers: true },
   jsxgraph: { dimensions: ['2d', '3d'], pick: true, project: true, unproject: true, drag: true, layers: true },
-  babylon: { dimensions: ['2d', '3d'], pick: true, project: true, unproject: true, drag: true, layers: true }
+  babylon: { dimensions: ['3d'], pick: true, project: true, unproject: true, drag: true, layers: true }
 };
 
 const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
@@ -185,7 +188,7 @@ const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
       memory: 'success',
       canvas2d: 'success',
       jsxgraph: 'success',
-      babylon: 'success'
+      babylon: 'unsupported'
     }
   },
   {
@@ -205,7 +208,7 @@ const backendContractFixtures: readonly DeclarativeBackendContractFixture[] = [
       memory: 'success',
       canvas2d: 'success',
       jsxgraph: 'success',
-      babylon: 'success'
+      babylon: 'unsupported'
     }
   },
   {
@@ -456,7 +459,7 @@ describe('shared backend contract adapters', () => {
     }
   });
 
-  it('runs one declarative backend contract fixture matrix across memory, Canvas2D, JSXGraph, and Babylon', () => {
+  it('runs one declarative backend contract fixture matrix across 2D adapters and Babylon 3D', () => {
     const { backends, jsxGraphRuntime, babylonRuntime } = createBackendContractMatrix();
 
     for (const backend of backends) {
@@ -486,7 +489,7 @@ describe('shared backend contract adapters', () => {
     }
 
     expect(jsxGraphRuntime.createObject).toHaveBeenCalledTimes(3);
-    expect(babylonRuntime.createObject).toHaveBeenCalledTimes(3);
+    expect(babylonRuntime.createObject).toHaveBeenCalledTimes(1);
 
     for (const backend of backends) {
       backend.destroy();
@@ -674,7 +677,7 @@ describe('shared backend contract adapters', () => {
     backend.destroy();
   });
 
-  it('reports Babylon partial support for proxy nodes without drawable geometry instead of drawing placeholders', () => {
+  it('rejects Babylon 2D proxy nodes at the backend boundary', () => {
     const runtime: BabylonRuntimePort = {
       mount: vi.fn(),
       createObject: vi.fn(),
@@ -703,12 +706,14 @@ describe('shared backend contract adapters', () => {
 
     expect(backend.create(rawFunction)).toEqual({
       ok: false,
-      diagnostics: [createBackendContractDiagnostic(backend, { id: 'raw-function', node: rawFunction, expectations: backendContractFixtures[0].expectations }, 'partial-support')]
+      diagnostics: [createBackendContractDiagnostic(backend, { id: 'raw-function', node: rawFunction, expectations: backendContractFixtures[0].expectations }, 'unsupported')]
     });
     const drawable = backend.create(drawableFunction);
-    expect(drawable.ok).toBe(true);
-    expect(runtime.createObject).toHaveBeenCalledTimes(1);
-    backend.remove(drawable.value!);
+    expect(drawable).toEqual({
+      ok: false,
+      diagnostics: [createBackendContractDiagnostic(backend, { id: 'sampled-function', node: drawableFunction, expectations: backendContractFixtures[0].expectations }, 'unsupported')]
+    });
+    expect(runtime.createObject).not.toHaveBeenCalled();
     backend.destroy();
   });
 
@@ -784,6 +789,43 @@ describe('shared backend contract adapters', () => {
     expect(ops.some((op) => op.name === 'fill' && op.fillStyle === 'rgba(255, 255, 255, 0.96)')).toBe(false);
     expect(ops.some((op) => op.name === 'stroke' && op.strokeStyle === 'rgba(255, 255, 255, 0.96)')).toBe(false);
     expect(ops.some((op) => op.name === 'strokeText' && op.text === 'distance: 4')).toBe(false);
+
+    backend.destroy();
+  });
+
+  it('renders Canvas2D dashed paths with the standard 4/8 pattern and 1px width', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-dash',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, right: 10, bottom: -10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      id: 'helper-line',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: -4, y: 0 }, { x: 4, y: 0 }]
+        }
+      },
+      renderHints: { strokeColor: 'rgba(102, 102, 102, 1)', lineDash: [4, 8] },
+      layerId: 'content'
+    }).ok).toBe(true);
+
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'setLineDash', pattern: [4, 8] }),
+      expect.objectContaining({ name: 'stroke', strokeStyle: 'rgba(102, 102, 102, 1)', lineWidth: 1 })
+    ]));
 
     backend.destroy();
   });

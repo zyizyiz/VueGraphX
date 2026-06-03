@@ -1,5 +1,5 @@
 import type { GraphObjectNode } from './contracts';
-export type CurriculumBackendId = 'jsxgraph' | 'canvas2d' | 'babylon';
+export type CurriculumBackendId = 'jsxgraph' | 'canvas2d';
 export type CurriculumEducationStage = 'junior-high' | 'senior-high' | 'common';
 export type CurriculumKnowledgeArea = 'number-and-algebra' | 'functions' | 'inequalities' | 'plane-geometry' | 'analytic-geometry' | 'trigonometry' | 'solid-geometry' | 'vectors' | 'complex-numbers' | 'linear-algebra' | 'sequences' | 'probability-statistics' | 'calculus-basics' | 'logic-and-sets';
 export interface CurriculumStandardRef {
@@ -67,7 +67,7 @@ export interface NormalizeParityContext {
     backendIds?: readonly CurriculumBackendId[];
     curriculumRowIds?: readonly string[];
 }
-export declare const CURRICULUM_PARITY_BACKENDS: readonly ["jsxgraph", "canvas2d", "babylon"];
+export declare const CURRICULUM_PARITY_BACKENDS: readonly ["jsxgraph", "canvas2d"];
 export declare const DEFAULT_PARITY_EPSILON = 0.000001;
 export declare const DEFAULT_PARITY_VISUAL_EPSILON = 0.001;
 export declare const curriculumParityRows: readonly CurriculumParityRow[];

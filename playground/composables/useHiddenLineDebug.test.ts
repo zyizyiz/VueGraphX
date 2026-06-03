@@ -30,7 +30,7 @@ describe('useHiddenLineDebug', () => {
         strategy: 'overlay2d',
         debug: false,
         visibleStyle: {},
-        hiddenStyle: { dash: 2, strokeOpacity: 0.8 },
+        hiddenStyle: { strokeColor: 'rgba(102, 102, 102, 1)', strokeWidth: 1, strokeOpacity: 1, lineDash: [4, 8] },
         sampling: {
           curveSegments: 64,
           surfaceStepsU: 24,

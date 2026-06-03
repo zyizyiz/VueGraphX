@@ -218,7 +218,7 @@ export const cubeShapeDefinition = createComposedShapeDefinition<CubePayload, Cu
         api.board.update();
 
         const hiddenLineVisible = initialPayload.hiddenLine?.visible ?? { strokeColor: '#1e293b', strokeWidth: 1.5 };
-        const hiddenLineHidden = initialPayload.hiddenLine?.hidden ?? { strokeColor: '#1e293b', strokeWidth: 1.2, dash: 2, dashScale: true };
+        const hiddenLineHidden = initialPayload.hiddenLine?.hidden ?? { strokeColor: '#1e293b', strokeWidth: 1, lineDash: [4, 8] };
 
         hiddenLineHandle = api.registerHiddenLineSource({
           debugLabel: 'shape:cube',

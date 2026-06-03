@@ -17,7 +17,7 @@ export type MathKnowledgeArea =
   | 'logic-and-sets';
 
 export type MathKnowledgeSupportLevel = 'computed' | 'semantic-model' | 'expression-engine';
-export type MathKnowledgeBackendId = 'jsxgraph' | 'canvas2d' | 'babylon';
+export type MathKnowledgeBackendId = 'jsxgraph' | 'canvas2d';
 
 export interface MathKnowledgeSourceRef {
   document: '义务教育数学课程标准2022' | '普通高中数学课程标准2017-2020';
@@ -124,8 +124,7 @@ const createBackendEvidence = (
   visualObjectTypes: readonly string[]
 ): Record<MathKnowledgeBackendId, MathKnowledgeBackendEvidence> => ({
   jsxgraph: { status: backendEvidenceStatus('jsxgraph', visualObjectTypes), demoIds: [demoId], visualObjectTypes: [...visualObjectTypes] },
-  canvas2d: { status: backendEvidenceStatus('canvas2d', visualObjectTypes), demoIds: [demoId], visualObjectTypes: [...visualObjectTypes] },
-  babylon: { status: backendEvidenceStatus('babylon', visualObjectTypes), demoIds: [demoId], visualObjectTypes: [...visualObjectTypes] }
+  canvas2d: { status: backendEvidenceStatus('canvas2d', visualObjectTypes), demoIds: [demoId], visualObjectTypes: [...visualObjectTypes] }
 });
 
 const backendEvidenceStatus = (
@@ -136,11 +135,6 @@ const backendEvidenceStatus = (
   if (backendId === 'canvas2d') {
     if (types.has('solid') || types.has('surface') || types.has('parametric')) return 'projected';
     if (types.has('function') || types.has('conic') || types.has('equation')) return 'sampled';
-    return 'native';
-  }
-  if (backendId === 'babylon') {
-    if (types.has('surface') || types.has('parametric') || types.has('function') || types.has('conic')) return 'sampled';
-    if (types.has('text') || types.has('measurement')) return 'dom-overlay';
     return 'native';
   }
   if (types.has('equation') || types.has('surface')) return 'sampled';
@@ -180,8 +174,7 @@ const cloneKnowledgePoint = (item: MathKnowledgePoint): MathKnowledgePoint => ({
   demoIds: [...item.demoIds],
   backendEvidence: {
     jsxgraph: cloneBackendEvidence(item.backendEvidence.jsxgraph),
-    canvas2d: cloneBackendEvidence(item.backendEvidence.canvas2d),
-    babylon: cloneBackendEvidence(item.backendEvidence.babylon)
+    canvas2d: cloneBackendEvidence(item.backendEvidence.canvas2d)
   }
 });
 

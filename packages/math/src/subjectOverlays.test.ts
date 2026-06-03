@@ -8,6 +8,9 @@ import {
   createSubjectOverlayCache,
   createSubjectOverlayModel,
   point2D,
+  SUBJECT_OVERLAY_DASH_PATTERN,
+  SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+  SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
   type SubjectOverlayProvider,
   type SubjectOverlayTarget
 } from './index';
@@ -141,6 +144,31 @@ describe('subject overlay model', () => {
     expect(model.auxiliaryLines.every((line) => line.kind === 'diagonal')).toBe(true);
   });
 
+  it('uses the standard dashed-line style and keeps per-kind colors configurable', () => {
+    const model = createSubjectOverlayModel(rightTriangle, {
+      auxiliaryLines: {
+        includeKinds: ['altitude', 'median'],
+        styles: {
+          median: { strokeColor: '#16A34A' }
+        }
+      }
+    });
+
+    const altitude = model.auxiliaryLines.find((line) => line.kind === 'altitude');
+    const median = model.auxiliaryLines.find((line) => line.kind === 'median');
+    expect(altitude?.style).toMatchObject({
+      strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
+      textColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
+      strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH
+    });
+    expect(altitude?.style?.lineDash).toEqual(SUBJECT_OVERLAY_DASH_PATTERN);
+    expect(median?.style).toMatchObject({
+      strokeColor: '#16A34A',
+      strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH
+    });
+    expect(median?.style?.lineDash).toEqual(SUBJECT_OVERLAY_DASH_PATTERN);
+  });
+
   it('caches overlay computation by target version and config', () => {
     const cache = createSubjectOverlayCache();
     const registry = createDefaultSubjectOverlayRegistry();
@@ -190,7 +218,8 @@ describe('subject overlay model', () => {
       id: 'q-target',
       kind: 'function',
       descriptor: quadratic,
-      sampleWindow: { minX: -4, maxX: 5, minY: -5, maxY: 5 }
+      sampleWindow: { minX: -4, maxX: 5, minY: -5, maxY: 5 },
+      strokeColor: '#2563EB'
     }, {
       annotations: { includeKinds: ['expression', 'vertex', 'axis'] },
       auxiliaryLines: { includeKinds: ['symmetry-axis'] }
@@ -204,6 +233,11 @@ describe('subject overlay model', () => {
       start: { x: 1, y: -5 },
       end: { x: 1, y: 5 }
     });
+    expect(quadraticModel.auxiliaryLines[0].style).toMatchObject({
+      strokeColor: '#2563EB',
+      strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH
+    });
+    expect(quadraticModel.auxiliaryLines[0].style?.lineDash).toEqual(SUBJECT_OVERLAY_DASH_PATTERN);
 
     const circleModel = createSubjectOverlayModel({
       id: 'circle-equation-target',

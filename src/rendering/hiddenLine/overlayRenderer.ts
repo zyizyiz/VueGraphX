@@ -2,16 +2,8 @@ import type { GraphHiddenLineEdgeStyle, GraphHiddenLineNativeTargetSpec } from '
 import type { GraphHiddenLineRenderedPath } from './solver';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-
-const DASH_MAP: Record<number, number[]> = {
-  1: [2, 6],
-  2: [6, 6],
-  3: [10, 8],
-  4: [16, 10],
-  5: [10, 6, 18, 6],
-  6: [10, 4, 18, 4],
-  7: [1, 6]
-};
+const HIDDEN_LINE_DASH_STROKE_WIDTH = 1;
+const HIDDEN_LINE_DEFAULT_DASH_STROKE_COLOR = 'rgba(102, 102, 102, 1)';
 
 const round = (value: number): string => Number(value.toFixed(2)).toString();
 
@@ -20,11 +12,9 @@ const buildPathData = (points: GraphHiddenLineRenderedPath['points']): string =>
   .join(' ');
 
 const toDashArray = (style: GraphHiddenLineEdgeStyle | undefined): string | null => {
-  const dash = style?.dash;
-  if (!dash || dash <= 0) return null;
-  const basePattern = DASH_MAP[dash] ?? DASH_MAP[2];
-  const scale = style?.dashScale ? Math.max(1, (style.strokeWidth ?? 1) / 2) : 1;
-  return basePattern.map((value) => value * scale).join(' ');
+  const lineDash = style?.lineDash;
+  if (!lineDash?.length || !lineDash.every((value) => Number.isFinite(value) && value > 0)) return null;
+  return lineDash.join(' ');
 };
 
 const sanitizeDomId = (value: string): string => value.replace(/[^a-zA-Z0-9_-]+/g, '-');
@@ -330,11 +320,12 @@ export class GraphHiddenLineOverlayRenderer {
 
   private createPathNode(path: GraphHiddenLineRenderedPath): SVGPathElement {
     const node = document.createElementNS(SVG_NS, 'path');
+    const dashArray = toDashArray(path.style);
     node.setAttribute('d', buildPathData(path.points));
     node.setAttribute('fill', 'none');
     node.setAttribute('vector-effect', 'non-scaling-stroke');
-    node.setAttribute('stroke', path.style?.strokeColor ?? '#475569');
-    node.setAttribute('stroke-width', `${path.style?.strokeWidth ?? 2}`);
+    node.setAttribute('stroke', path.style?.strokeColor ?? (dashArray ? HIDDEN_LINE_DEFAULT_DASH_STROKE_COLOR : '#475569'));
+    node.setAttribute('stroke-width', `${path.style?.strokeWidth ?? (dashArray ? HIDDEN_LINE_DASH_STROKE_WIDTH : 2)}`);
     node.setAttribute('stroke-opacity', `${path.style?.strokeOpacity ?? 1}`);
     node.setAttribute('stroke-linecap', path.style?.lineCap ?? 'round');
     node.setAttribute('stroke-linejoin', 'round');
@@ -342,7 +333,6 @@ export class GraphHiddenLineOverlayRenderer {
     node.setAttribute('data-source-id', path.sourceId);
     node.setAttribute('data-hidden', path.hidden ? 'true' : 'false');
 
-    const dashArray = toDashArray(path.style);
     if (dashArray) {
       node.setAttribute('stroke-dasharray', dashArray);
       const calibration = this.resolveDashCalibration(path);

@@ -152,6 +152,12 @@ describe('GraphHiddenLineManager', () => {
       enabled: true,
       profile: 'quality',
       precision: 'high',
+      hiddenStyle: expect.objectContaining({
+        strokeColor: 'rgba(102, 102, 102, 1)',
+        strokeWidth: 1,
+        strokeOpacity: 1,
+        lineDash: [4, 8]
+      }),
       sampling: expect.objectContaining({
         curveSegments: 80,
         surfaceStepsU: 32,

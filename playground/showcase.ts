@@ -280,7 +280,7 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
       desc: '四点对称作菱形',
       commands: [
         'A = (0, 2)', 'B = (2, 0)', 'C = (0, -2)', 'D = (-2, 0)',
-        { expr: 'Polygon(A, B, C, D)', options: { fillColor: '#f43f5e', fillOpacity: 0.3, strokeWidth: 3, dash: 2 } }
+        { expr: 'Polygon(A, B, C, D)', options: { fillColor: '#f43f5e', fillOpacity: 0.3, strokeWidth: 1, lineDash: [4, 8] } }
       ]
     },
     {

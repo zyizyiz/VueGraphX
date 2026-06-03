@@ -19,6 +19,10 @@ import { resolveHiddenLineSceneSourceData, type GraphHiddenLineResolvedSceneSour
 import { solveHiddenLineScene } from './solver';
 import { GraphHiddenLineOverlayRenderer } from './overlayRenderer';
 
+const HIDDEN_LINE_DASH_PATTERN = [4, 8] as const;
+const HIDDEN_LINE_DASH_STROKE_WIDTH = 1;
+const HIDDEN_LINE_DEFAULT_DASH_STROKE_COLOR = 'rgba(102, 102, 102, 1)';
+
 const DEFAULT_HIDDEN_LINE_OPTIONS: GraphHiddenLineOptions = {
   enabled: false,
   profile: 'balanced',
@@ -27,8 +31,10 @@ const DEFAULT_HIDDEN_LINE_OPTIONS: GraphHiddenLineOptions = {
   debug: false,
   visibleStyle: {},
   hiddenStyle: {
-    dash: 2,
-    strokeOpacity: 0.7
+    strokeColor: HIDDEN_LINE_DEFAULT_DASH_STROKE_COLOR,
+    strokeWidth: HIDDEN_LINE_DASH_STROKE_WIDTH,
+    strokeOpacity: 1,
+    lineDash: HIDDEN_LINE_DASH_PATTERN
   },
   sampling: {
     curveSegments: 64,
@@ -44,8 +50,10 @@ const HIDDEN_LINE_PROFILE_DEFAULTS: Record<GraphHiddenLineProfile, Pick<GraphHid
     precision: 'balanced',
     visibleStyle: {},
     hiddenStyle: {
-      dash: 2,
-      strokeOpacity: 0.55
+      strokeColor: HIDDEN_LINE_DEFAULT_DASH_STROKE_COLOR,
+      strokeWidth: HIDDEN_LINE_DASH_STROKE_WIDTH,
+      strokeOpacity: 1,
+      lineDash: HIDDEN_LINE_DASH_PATTERN
     },
     sampling: {
       curveSegments: 32,
@@ -59,8 +67,10 @@ const HIDDEN_LINE_PROFILE_DEFAULTS: Record<GraphHiddenLineProfile, Pick<GraphHid
     precision: 'balanced',
     visibleStyle: {},
     hiddenStyle: {
-      dash: 2,
-      strokeOpacity: 0.7
+      strokeColor: HIDDEN_LINE_DEFAULT_DASH_STROKE_COLOR,
+      strokeWidth: HIDDEN_LINE_DASH_STROKE_WIDTH,
+      strokeOpacity: 1,
+      lineDash: HIDDEN_LINE_DASH_PATTERN
     },
     sampling: {
       curveSegments: 64,
@@ -74,8 +84,10 @@ const HIDDEN_LINE_PROFILE_DEFAULTS: Record<GraphHiddenLineProfile, Pick<GraphHid
     precision: 'high',
     visibleStyle: {},
     hiddenStyle: {
-      dash: 2,
-      strokeOpacity: 0.8
+      strokeColor: HIDDEN_LINE_DEFAULT_DASH_STROKE_COLOR,
+      strokeWidth: HIDDEN_LINE_DASH_STROKE_WIDTH,
+      strokeOpacity: 1,
+      lineDash: HIDDEN_LINE_DASH_PATTERN
     },
     sampling: {
       curveSegments: 96,

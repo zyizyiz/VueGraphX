@@ -66,6 +66,40 @@ describe('JsxGraphRuntime', () => {
     expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.any(Object));
   });
 
+  it('maps lineDash render hints to the standard JSXGraph 4/8 dash renderer pattern', () => {
+    const create = vi.fn((type: string) => ({ id: `${type}-1` }));
+    const board = {
+      create,
+      removeObject: vi.fn(),
+      update: vi.fn(),
+      renderer: { dashArray: [[2, 2], [5, 5], [10, 10]] }
+    };
+    const runtime = createJsxGraphRuntime({} as any, { board });
+
+    expect(board.renderer.dashArray[1]).toEqual([4, 8]);
+
+    runtime.createObject({
+      id: 'helper',
+      kind: 'shape',
+      type: 'segment',
+      payload: { geometry: { kind: 'segment', start: { x: -1, y: 0 }, end: { x: 1, y: 0 } } },
+      renderHints: { strokeColor: 'rgba(102, 102, 102, 1)', lineDash: [4, 8] },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:helper',
+      objectId: 'helper',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'helper', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(create).toHaveBeenCalledWith('segment', [[-1, 0], [1, 0]], expect.objectContaining({
+      dash: 2,
+      dashScale: false,
+      strokeWidth: 1
+    }));
+  });
+
   it('keeps coordinate-system scoped JSXGraph objects fixed instead of draggable', () => {
     const create = vi.fn((type: string) => ({ id: `${type}-1` }));
     const runtime = createJsxGraphRuntime({} as any, {

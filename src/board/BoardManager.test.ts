@@ -47,7 +47,8 @@ describe('BoardManager.initBoard interaction options', () => {
       containerObj: document.getElementById('box'),
       on: vi.fn(),
       getBoundingBox: vi.fn(),
-      update: vi.fn()
+      update: vi.fn(),
+      renderer: { dashArray: [[2, 2], [5, 5], [10, 10]] }
     } as any;
 
     const initBoardSpy = vi.spyOn(JXG.JSXGraph, 'initBoard').mockReturnValue(fakeBoard);
@@ -88,6 +89,7 @@ describe('BoardManager.initBoard interaction options', () => {
         max: 4
       }
     }));
+    expect(fakeBoard.renderer.dashArray[1]).toEqual([4, 8]);
   });
 
   it('disables JSXGraph wheel zoom when two-finger pan bridge is enabled', () => {

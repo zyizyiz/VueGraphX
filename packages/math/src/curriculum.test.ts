@@ -36,18 +36,18 @@ describe('math knowledge catalog', () => {
       expect(entry.demoIds).toEqual([`curriculum.${entry.id}`]);
       const statuses = Object.values(entry.backendEvidence).map((evidence) => evidence.status);
       expect(statuses.every((status) => ['native', 'sampled', 'projected', 'dom-overlay'].includes(status))).toBe(true);
+      expect(Object.keys(entry.backendEvidence)).toEqual(['jsxgraph', 'canvas2d']);
       expect(entry.backendEvidence.jsxgraph.demoIds).toEqual(entry.demoIds);
       expect(entry.backendEvidence.canvas2d.demoIds).toEqual(entry.demoIds);
-      expect(entry.backendEvidence.babylon.demoIds).toEqual(entry.demoIds);
       expect(entry.visualObjectTypes.length).toBeGreaterThan(0);
       expect(entry.capabilityFamilies.length).toBeGreaterThan(0);
     }
   });
 
-  it('uses honest backend evidence where rendering is sampled, projected, or DOM-overlayed', () => {
+  it('uses honest backend evidence for sampled, projected, and native rendering', () => {
     expect(getMathKnowledgePoint('solid.ir-surface')?.backendEvidence.canvas2d.status).toBe('projected');
     expect(getMathKnowledgePoint('algebra.symbolic-derivative')?.backendEvidence.canvas2d.status).toBe('sampled');
-    expect(getMathKnowledgePoint('statistics.descriptive')?.backendEvidence.babylon.status).toBe('dom-overlay');
+    expect(getMathKnowledgePoint('solid.ir-surface')?.backendEvidence.jsxgraph.status).toBe('native');
   });
 
   it('filters and clones catalog entries so callers cannot mutate package truth', () => {

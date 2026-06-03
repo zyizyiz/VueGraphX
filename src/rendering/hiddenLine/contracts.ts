@@ -23,8 +23,7 @@ export interface GraphHiddenLineEdgeStyle {
   strokeColor?: string;
   strokeWidth?: number;
   strokeOpacity?: number;
-  dash?: number;
-  dashScale?: boolean;
+  lineDash?: readonly number[];
   lineCap?: 'butt' | 'round' | 'square';
 }
 

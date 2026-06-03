@@ -45,6 +45,7 @@ type JsxGraphBoardLike = {
   on?(eventName: string, handler: () => void): void;
   off?(eventName: string, handler: () => void): void;
   containerObj?: HTMLElement;
+  renderer?: { dashArray?: number[][] };
 };
 
 type JsxGraphNamespaceLike = {
@@ -86,6 +87,10 @@ interface Point2D {
   y: number;
 }
 
+const JSXGRAPH_STANDARD_DASH_INDEX = 2;
+const JSXGRAPH_STANDARD_DASH_PATTERN = [4, 8] as const;
+const JSXGRAPH_DASH_STROKE_WIDTH = 1;
+
 const DEFAULT_BOUNDS: [number, number, number, number] = [-10, 10, 10, -10];
 const JSXGRAPH_TEXT_BASE_FONT_SIZE = 14;
 const KATEX_STYLE_ELEMENT_ID = 'vuegraphx-katex-style';
@@ -105,6 +110,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
   ) {
     this.board = options.board ?? null;
     if (this.board) {
+      configureJsxGraphDashPattern(this.board);
       this.captureVisualBaseline(this.board);
       this.bindBoardOverlaySync(this.board);
     }
@@ -132,6 +138,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
       ?? this.JXG.JSXGraph?.initBoard(host, boardOptions)
       ?? null;
     if (!this.board) throw new Error('JSXGraph runtime requires a board or a JXG.JSXGraph.initBoard implementation.');
+    configureJsxGraphDashPattern(this.board);
     this.captureVisualBaseline(this.board);
     this.bindBoardOverlaySync(this.board);
     this.ownsBoard = true;
@@ -632,7 +639,8 @@ const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext):
   const selected = isSelectedNode(node);
   const strokeColor = typeof hints.strokeColor === 'string' ? hints.strokeColor : '#0ea5e9';
   const fillColor = typeof hints.fillColor === 'string' ? hints.fillColor : strokeColor;
-  const strokeWidth = typeof hints.strokeWidth === 'number' ? hints.strokeWidth : 2;
+  const lineDash = readLineDashPattern(hints.lineDash);
+  const strokeWidth = typeof hints.strokeWidth === 'number' ? hints.strokeWidth : lineDash ? JSXGRAPH_DASH_STROKE_WIDTH : 2;
   return {
     name,
     withLabel: Boolean(name),
@@ -644,9 +652,21 @@ const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext):
     size: readNumber(hints.radius, 3),
     visible: hints.visible !== false,
     fixed: isJsxGraphDragDisabled(node),
-    linecap: readJsxGraphLineCap(hints.lineCap, isJsxGraphDragDisabled(node) ? 'butt' : 'round')
+    linecap: readJsxGraphLineCap(hints.lineCap, isJsxGraphDragDisabled(node) ? 'butt' : 'round'),
+    ...(lineDash ? { dash: JSXGRAPH_STANDARD_DASH_INDEX, dashScale: false } : {})
   };
 };
+
+const configureJsxGraphDashPattern = (board: JsxGraphBoardLike): void => {
+  if (!Array.isArray(board.renderer?.dashArray)) return;
+  board.renderer.dashArray[JSXGRAPH_STANDARD_DASH_INDEX - 1] = [...JSXGRAPH_STANDARD_DASH_PATTERN];
+};
+
+const readLineDashPattern = (value: unknown): number[] | null => (
+  Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry > 0)
+    ? [...value]
+    : null
+);
 
 const readStandardCoordinateLabels = (value: unknown): StandardCoordinateLabelModel[] => (
   Array.isArray(value)

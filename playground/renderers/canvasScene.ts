@@ -44,6 +44,9 @@ export interface PlaygroundLayered3DSceneResult {
   overlay: PlaygroundCanvasSceneResult;
 }
 
+type PlaygroundSceneBackendId = CurriculumBackendId | 'babylon';
+type PlaygroundSceneBuildContext = { backendId: PlaygroundSceneBackendId; renderMode: '2d' | '3d' };
+
 interface OperationCoordinateSystemRuntimeOptions {
   id: string;
   origin: { x: number; y: number };
@@ -97,7 +100,7 @@ const CANVAS_RENDERABLE_TYPES = new Set([
 ]);
 
 export interface PlaygroundSceneBuildOptions {
-  backendId?: CurriculumBackendId;
+  backendId?: PlaygroundSceneBackendId;
   renderMode?: '2d' | '3d';
 }
 
@@ -107,9 +110,9 @@ export const buildPlaygroundCanvasScene = (commands: readonly PlaygroundCanvasCo
 
 export const buildPlaygroundBabylonScene = (
   commands: readonly PlaygroundCanvasCommand[],
-  options: PlaygroundSceneBuildOptions = {}
+  _options: { renderMode?: '3d' } = {}
 ): PlaygroundCanvasSceneResult => (
-  buildPlaygroundCoreScene(commands, { backendId: 'babylon', renderMode: options.renderMode ?? '2d' })
+  buildPlaygroundCoreScene(commands, { backendId: 'babylon', renderMode: '3d' })
 );
 
 export const buildPlaygroundJsxGraphScene = (commands: readonly PlaygroundCanvasCommand[]): PlaygroundCanvasSceneResult => (
@@ -138,7 +141,7 @@ const isPlayground2DOverlayNode = (node: GraphObjectNode): boolean => node.type 
 
 const buildPlaygroundCoreScene = (
   commands: readonly PlaygroundCanvasCommand[],
-  options: Required<Pick<PlaygroundSceneBuildOptions, 'backendId' | 'renderMode'>>
+  options: PlaygroundSceneBuildContext
 ): PlaygroundCanvasSceneResult => {
   const diagnostics: PlaygroundCanvasDiagnostic[] = [];
   const nodes: GraphObjectNode[] = [];
@@ -209,7 +212,7 @@ const withRenderHints = (node: GraphObjectNode, command: PlaygroundCanvasCommand
     fillColor: readString(command.options?.fillColor, `${command.color}26`),
     fillOpacity: readNumber(command.options?.fillOpacity, readNumber(node.renderHints?.fillOpacity, 1)),
     strokeWidth: readNumber(command.options?.strokeWidth, 2),
-    dash: readNumber(command.options?.dash, readNumber(node.renderHints?.dash, 0)),
+    lineDash: readLineDashPattern(command.options?.lineDash) ?? readLineDashPattern(node.renderHints?.lineDash),
     radius: readNumber(command.options?.size, 4)
   }
 });
@@ -546,7 +549,13 @@ const readFiniteNumber = (value: unknown): number | null => (
   typeof value === 'number' && Number.isFinite(value) ? value : null
 );
 
-const backendLabel = (backendId: CurriculumBackendId): string => {
+const readLineDashPattern = (value: unknown): number[] | undefined => (
+  Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry > 0)
+    ? [...value]
+    : undefined
+);
+
+const backendLabel = (backendId: PlaygroundSceneBackendId): string => {
   if (backendId === 'jsxgraph') return 'JSXGraph 后端';
   if (backendId === 'babylon') return 'Babylon 后端';
   return 'Canvas2D 后端';
@@ -699,7 +708,7 @@ const expandCanvasCommandNode = (
   command: PlaygroundCanvasCommand,
   symbols: GraphCommandSymbolTable,
   scope: Record<string, unknown>,
-  options: Required<Pick<PlaygroundSceneBuildOptions, 'backendId' | 'renderMode'>>
+  options: PlaygroundSceneBuildContext
 ): { ok: true; nodes: GraphObjectNode[] } | { ok: false; message: string } => {
   if (node.type === 'variable') return { ok: true, nodes: [] };
 
@@ -778,7 +787,7 @@ const captureFunctionScope = (
 const buildMathExpressionNodes = (
   command: PlaygroundCanvasCommand,
   scope: Record<string, unknown>,
-  options: Required<Pick<PlaygroundSceneBuildOptions, 'backendId' | 'renderMode'>>
+  options: PlaygroundSceneBuildContext
 ): { ok: true; nodes: GraphObjectNode[] } | { ok: false; message: string } => {
   let node: math.MathNode;
   try {
@@ -939,7 +948,7 @@ const createExplicitSurfaceWireframeNode = (
   command: PlaygroundCanvasCommand,
   zExpression: string,
   scope: Record<string, unknown>,
-  options: Required<Pick<PlaygroundSceneBuildOptions, 'backendId' | 'renderMode'>>
+  options: PlaygroundSceneBuildContext
 ): { ok: true; nodes: GraphObjectNode[] } | { ok: false; message: string } => (
   createSurfaceWireframeNode(command, {
     id: command.id,
@@ -965,7 +974,7 @@ const createExplicitSurfaceWireframeNode = (
 const createSurfaceWireframeNode = (
   command: PlaygroundCanvasCommand,
   node: GraphObjectNode,
-  options: Required<Pick<PlaygroundSceneBuildOptions, 'backendId' | 'renderMode'>>
+  options: PlaygroundSceneBuildContext
 ): { ok: true; nodes: GraphObjectNode[] } | { ok: false; message: string } => {
   const payload = asRecord(node.payload) ?? {};
   const surfaceKind = typeof payload.surfaceKind === 'string' ? payload.surfaceKind : 'explicit';

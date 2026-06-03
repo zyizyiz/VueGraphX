@@ -341,8 +341,9 @@ const ensureCircleSelectionRefs = (api: GraphShapeApi<CircleState>): CircleVisua
         fillColor: '#38bdf8',
         fillOpacity: 0,
         strokeOpacity: 0,
-        strokeWidth: 1.5,
+        strokeWidth: 1,
         dash: 2,
+        dashScale: false,
         highlight: false,
         fixed: true,
         hasInnerPoints: false
@@ -573,7 +574,8 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
           straightFirst: false,
           straightLast: false,
           dash: 2,
-          strokeWidth: 2,
+          dashScale: false,
+          strokeWidth: 1,
           strokeColor: '#64748b'
         }));
 
@@ -630,8 +632,7 @@ const createCircleComposition = (payload: CirclePayload): GraphShapeComposition<
         const line = api.trackObject(api.board.create('line', [cropStart, p2], {
           straightFirst: false,
           straightLast: false,
-          dash: 0,
-          strokeWidth: 3,
+          strokeWidth: 1,
           strokeColor: '#ef4444'
         }));
         const icon = api.trackObject(api.board.create('text', [

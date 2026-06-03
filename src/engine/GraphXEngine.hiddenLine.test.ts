@@ -15,8 +15,10 @@ const createSnapshot = (): GraphHiddenLineSceneSnapshot => ({
     debug: false,
     visibleStyle: {},
     hiddenStyle: {
-      dash: 2,
-      strokeOpacity: 0.8
+      strokeColor: 'rgba(102, 102, 102, 1)',
+      strokeWidth: 1,
+      strokeOpacity: 1,
+      lineDash: [4, 8]
     },
     sampling: {
       curveSegments: 80,

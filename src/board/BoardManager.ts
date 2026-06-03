@@ -12,6 +12,8 @@ type View3DRect = NonNullable<NonNullable<GraphXOptions['view3D']>['rect']>;
 type WheelGestureKind = 'zoom' | 'pan' | 'ignore';
 type WheelGestureLikeEvent = Pick<WheelEvent, 'ctrlKey' | 'metaKey' | 'deltaMode'>;
 const WHEEL_DELTA_PIXEL = 0;
+const JSXGRAPH_STANDARD_DASH_INDEX = 2;
+const JSXGRAPH_STANDARD_DASH_PATTERN = [4, 8] as const;
 
 const DEFAULT_VIEW3D_RECT: View3DRect = [[-6, -3], [8, 8], [[-5, 5], [-5, 5], [-5, 5]]];
 
@@ -105,6 +107,12 @@ export class BoardManager {
     JXG.Options.elements.highlight = false;
   }
 
+  private configureStandardDashPattern(): void {
+    const dashArray = (this.board as { renderer?: { dashArray?: number[][] } } | undefined)?.renderer?.dashArray;
+    if (!Array.isArray(dashArray)) return;
+    dashArray[JSXGRAPH_STANDARD_DASH_INDEX - 1] = [...JSXGRAPH_STANDARD_DASH_PATTERN];
+  }
+
   private injectCoreStyles(): void {
     const styleId = 'vuegraphx-core-styles';
     if (document.getElementById(styleId)) return;
@@ -186,6 +194,7 @@ export class BoardManager {
     }
 
     this.board = JXG.JSXGraph.initBoard(this.containerId, { ...defaultOptions, ...boardOptions } as any);
+    this.configureStandardDashPattern();
     this.setupTrackpadGestureBridge();
     this.setupGridSync(gridOptions);
 

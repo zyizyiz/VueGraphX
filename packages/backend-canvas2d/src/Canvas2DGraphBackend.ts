@@ -125,6 +125,7 @@ const CANVAS2D_MIN_VISUAL_ZOOM_SCALE = 0.25;
 const CANVAS2D_MAX_VISUAL_ZOOM_SCALE = 8;
 const KATEX_STYLE_ELEMENT_ID = 'vuegraphx-katex-style';
 const KATEX_LAYOUT_CSS = katexCss.replace(/@font-face\{[^}]*\}/g, '');
+const CANVAS2D_DASH_STROKE_WIDTH = 1;
 
 const getBaseCanvas2DSupportStatus = (node: GraphObjectNode): BackendSupportStatus => {
   if (node.type === 'implicit') {
@@ -418,10 +419,11 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const payload = node.payload as CanvasDrawablePayload;
     const selected = node.type !== 'coordinate-system' && isSelectedNode(node);
     const visualScale = this.getVisualZoomScale();
+    const lineDash = readLineDashPattern(node.renderHints?.lineDash);
     const strokeColor = readString(node.renderHints?.strokeColor, '#1f6feb');
     const fillColor = readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
-    const baseStrokeWidth = readNumber(node.renderHints?.strokeWidth, 2);
-    const strokeWidth = (selected ? resolveSelectedStrokeWidth(baseStrokeWidth) : baseStrokeWidth) * visualScale;
+    const baseStrokeWidth = readNumber(node.renderHints?.strokeWidth, lineDash ? CANVAS2D_DASH_STROKE_WIDTH : 2);
+    const strokeWidth = (selected ? resolveSelectedStrokeWidth(baseStrokeWidth) : baseStrokeWidth) * (lineDash ? 1 : visualScale);
     this.context.save();
     this.context.strokeStyle = strokeColor;
     this.context.fillStyle = fillColor;
@@ -429,8 +431,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.context.lineCap = readCanvasLineCap(node.renderHints?.lineCap, 'round');
     this.context.lineJoin = 'round';
     this.applyWorldClipBounds(node.renderHints?.clipWorldBounds);
-    const dash = readNumber(node.renderHints?.dash, 0);
-    if (dash > 0) this.context.setLineDash([dash * 4 * visualScale, dash * 3 * visualScale]);
+    if (lineDash) this.context.setLineDash(lineDash);
 
     if (node.type === 'text') {
       const layout = readCanvasTextLayout(node);
@@ -1124,6 +1125,11 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
 
 const readString = (value: unknown, fallback: string): string => typeof value === 'string' ? value : fallback;
 const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const readLineDashPattern = (value: unknown): number[] | null => (
+  Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry > 0)
+    ? [...value]
+    : null
+);
 const clampVisualZoomScale = (value: number): number => (
   Number.isFinite(value)
     ? Math.min(CANVAS2D_MAX_VISUAL_ZOOM_SCALE, Math.max(CANVAS2D_MIN_VISUAL_ZOOM_SCALE, value))

@@ -156,6 +156,10 @@ export interface SubjectOverlayConfig {
   meta?: Record<string, unknown>;
 }
 
+export const SUBJECT_OVERLAY_DASH_PATTERN = [4, 8] as const;
+export const SUBJECT_OVERLAY_DASH_STROKE_WIDTH = 1;
+export const SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR = 'rgba(102, 102, 102, 1)';
+
 export interface SubjectOverlayTargetBase {
   id: string;
   kind: SubjectOverlayTargetKind;
@@ -514,7 +518,7 @@ export const createFreeSubjectAuxiliaryLine = (
     visible: true,
     state: 'confirmed',
     selectable: true,
-    style: options.style ?? dashedStyle(target.strokeColor),
+    style: options.style ?? dashedStyle(target.strokeColor, 'free'),
     meta: { freeDraw: true }
   };
   const configured = (line: SubjectAuxiliaryLineDescriptor): SubjectAuxiliaryLineDescriptor => applyLineConfig(line, context);
@@ -848,7 +852,7 @@ const createCircleAuxiliaryLines = (
       visible: context.auxiliaryLineVisible('radius'),
       state: context.auxiliaryLineState('radius'),
       selectable: true,
-      style: dashedStyle(strokeColor)
+      style: dashedStyle(strokeColor, 'radius')
     });
   }
   if (context.auxiliaryLineEnabled('diameter')) {
@@ -862,7 +866,7 @@ const createCircleAuxiliaryLines = (
       visible: context.auxiliaryLineVisible('diameter'),
       state: context.auxiliaryLineState('diameter'),
       selectable: true,
-      style: dashedStyle(strokeColor)
+      style: dashedStyle(strokeColor, 'diameter')
     });
   }
   return lines;
@@ -948,7 +952,7 @@ const createFunctionAuxiliaryLines = (context: SubjectOverlayComputationContext)
         visible: context.auxiliaryLineVisible('symmetry-axis'),
         state: context.auxiliaryLineState('symmetry-axis'),
         selectable: true,
-        style: dashedStyle(target.strokeColor),
+        style: dashedStyle(target.strokeColor, 'symmetry-axis'),
         meta: { expression: `${target.descriptor.variable} = ${context.formatNumber(x)}` }
       });
     }
@@ -969,7 +973,7 @@ const createFunctionAuxiliaryLines = (context: SubjectOverlayComputationContext)
         visible: context.auxiliaryLineVisible('radius'),
         state: context.auxiliaryLineState('radius'),
         selectable: true,
-        style: dashedStyle(target.strokeColor)
+        style: dashedStyle(target.strokeColor, 'radius')
       });
     }
     if (context.auxiliaryLineEnabled('diameter')) {
@@ -983,7 +987,7 @@ const createFunctionAuxiliaryLines = (context: SubjectOverlayComputationContext)
         visible: context.auxiliaryLineVisible('diameter'),
         state: context.auxiliaryLineState('diameter'),
         selectable: true,
-        style: dashedStyle(target.strokeColor)
+        style: dashedStyle(target.strokeColor, 'diameter')
       });
     }
   }
@@ -1189,7 +1193,7 @@ const createLineDescriptor = (
   visible: context.auxiliaryLineVisible(kind),
   state: context.auxiliaryLineState(kind),
   selectable: true,
-  style: dashedStyle(target.strokeColor),
+  style: dashedStyle(target.strokeColor, kind),
   meta
 });
 
@@ -1222,7 +1226,7 @@ const perpendicularBisectorDescriptor = (
     visible: context.auxiliaryLineVisible('perpendicular-bisector'),
     state: context.auxiliaryLineState('perpendicular-bisector'),
     selectable: true,
-    style: dashedStyle(target.strokeColor),
+    style: dashedStyle(target.strokeColor, 'perpendicular-bisector'),
     meta: { edgeIndex: edge.index }
   };
 };
@@ -1244,7 +1248,7 @@ const extensionLineDescriptor = (
     visible: context.auxiliaryLineVisible('extension'),
     state: context.auxiliaryLineState('extension'),
     selectable: true,
-    style: dashedStyle(target.strokeColor),
+    style: dashedStyle(target.strokeColor, 'extension'),
     meta: {
       edgeIndex: edge.index,
       controls: {
@@ -1295,12 +1299,22 @@ const defaultLineLabels: Record<string, string> = {
   free: '自由辅助线'
 };
 
-const dashedStyle = (strokeColor = '#0ea5e9'): SubjectOverlayStyle => ({
-  strokeColor,
-  textColor: strokeColor,
-  lineDash: [6, 4],
-  strokeWidth: 1.5
-});
+const followTargetStrokeKinds = new Set<SubjectAuxiliaryLineKind>(['symmetry-axis', 'asymptote']);
+
+const dashedStyle = (
+  targetStrokeColor?: string,
+  kind?: SubjectAuxiliaryLineKind
+): SubjectOverlayStyle => {
+  const strokeColor = followTargetStrokeKinds.has(kind ?? '')
+    ? targetStrokeColor ?? SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR
+    : SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR;
+  return {
+    strokeColor,
+    textColor: strokeColor,
+    lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
+    strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH
+  };
+};
 
 const mergeStyle = (...styles: Array<SubjectOverlayStyle | undefined>): SubjectOverlayStyle | undefined => {
   const merged = Object.assign({}, ...styles.filter(Boolean));

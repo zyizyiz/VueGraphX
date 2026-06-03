@@ -73,7 +73,7 @@ describe('curriculum parity matrix', () => {
       const snapshot = createParitySnapshot(
         row.demoIds[0],
         row.visualObjectTypes.map((type) => createParityFixtureNode({ id: `${row.id}:${type}`, type, rowIds: [row.id] })),
-        { backendId: 'babylon', curriculumRowIds: [row.id] }
+        { backendId: 'canvas2d', curriculumRowIds: [row.id] }
       );
       expect(snapshot.objects.length).toBe(row.visualObjectTypes.length);
       expect(compareParitySnapshots(snapshot, snapshot).ok).toBe(true);

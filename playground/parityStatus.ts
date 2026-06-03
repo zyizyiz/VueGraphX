@@ -1,7 +1,7 @@
 import { curriculumParityRows, type CurriculumBackendId } from '@vuegraphx/core';
 import type { PlaygroundMode } from './types/mode';
 
-export type PlaygroundRenderBackend = CurriculumBackendId;
+export type PlaygroundRenderBackend = CurriculumBackendId | 'babylon';
 
 export interface PlaygroundBackendCapability {
   id: PlaygroundRenderBackend;
@@ -58,7 +58,7 @@ export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, 
     jsxgraph: {
       id: 'jsxgraph',
       label: 'JSXGraph',
-      summary: `兼容验证后端：与 Canvas2D/Babylon 合同适配器使用同一份语义场景和 ${coverage}。`,
+      summary: `兼容验证后端：与 Canvas2D 合同适配器使用同一份语义场景和 ${coverage}。`,
       supported: [`对象族：${objectTypes.join(' / ')}`, `能力族：${families.join(' / ')}`],
       unsupported: [],
       notes: ['关系面板、隐藏线调试仍属于 JSXGraph 专项面板；课程 parity demo 不依赖这些专项面板。'],
@@ -320,7 +320,7 @@ const commandsForParityRow = (rowId: string, index: number): readonly ParityDemo
         cmd('D4', 'D4 = Point(2, 4)'),
         cmd('D5', 'D5 = Point(4, 5)'),
         cmd('trend', 'trend = Polyline(D1, D2, D3, D4, D5)'),
-        cmd('mean', 'mean = Segment(Point(-4, 2.8), Point(4, 2.8))', { dash: 2 }),
+        cmd('mean', 'mean = Segment(Point(-4, 2.8), Point(4, 2.8))', { lineDash: [4, 8], strokeWidth: 1 }),
         text('stats', '数据 1,2,2,4,5：均值2.8，中位数2，极差4', -6, 4)
       ];
     case 'probability.combinatorics-binomial':

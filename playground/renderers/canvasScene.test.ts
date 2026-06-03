@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { GraphSceneRuntime, compareParitySnapshots } from '@vuegraphx/core';
-import { createBabylonGraphBackend } from '@vuegraphx/backend-babylon';
 import { createCanvas2DGraphBackend } from '@vuegraphx/backend-canvas2d';
 import { createJsxGraphBackend } from '@vuegraphx/backend-jsxgraph';
 import { createOperationScopedCommands, operationToolGroups, updateOperationCoordinateSystemOrigin } from '../operationTools';
@@ -29,6 +28,10 @@ const toCommands = (
   color: '#0ea5e9',
   options: typeof command === 'string' ? undefined : command.options
 }));
+
+const twoDParityBackends = parityRendererBackends.filter((
+  backend
+): backend is { id: 'jsxgraph' | 'canvas2d'; label: string } => backend.id !== 'babylon');
 
 describe('buildPlaygroundCanvasScene', () => {
   it('keeps playground drawing geometry when routed through GraphSceneRuntime scene validation', () => {
@@ -251,24 +254,20 @@ describe('buildPlaygroundCanvasScene', () => {
     expect(result.babylon.nodes[1].payload).toMatchObject({ family: 'sphere', parameters: { radius: 1 }, origin: { x: 2, y: 0, z: 0 } });
   });
 
-  it('keeps every curriculum parity demo diagnostic-free and equivalent across first-release backends', () => {
+  it('keeps every curriculum parity demo diagnostic-free and equivalent across 2D parity backends', () => {
     const demoCommands = getParityDemoCommands();
     expect(demoCommands.length).toBeGreaterThan(20);
 
     for (const demo of demoCommands) {
       const jsxGraph = buildPlaygroundJsxGraphScene(demo.commands);
       const canvas = buildPlaygroundCanvasScene(demo.commands);
-      const babylon = buildPlaygroundBabylonScene(demo.commands);
 
       expect(jsxGraph.diagnostics, demo.demoId).toEqual([]);
       expect(canvas.diagnostics, demo.demoId).toEqual([]);
-      expect(babylon.diagnostics, demo.demoId).toEqual([]);
 
       const expected = createPlaygroundParitySnapshot(demo.demoId, jsxGraph.nodes, 'jsxgraph', demo.rowIds);
       const canvasComparison = compareParitySnapshots(expected, createPlaygroundParitySnapshot(demo.demoId, canvas.nodes, 'canvas2d', demo.rowIds));
-      const babylonComparison = compareParitySnapshots(expected, createPlaygroundParitySnapshot(demo.demoId, babylon.nodes, 'babylon', demo.rowIds));
       expect(canvasComparison.diagnostics, demo.demoId).toEqual([]);
-      expect(babylonComparison.diagnostics, demo.demoId).toEqual([]);
     }
   });
 
@@ -299,17 +298,15 @@ describe('buildPlaygroundCanvasScene', () => {
     const demoCommands = getParityDemoCommands();
     const builders = {
       jsxgraph: buildPlaygroundJsxGraphScene,
-      canvas2d: buildPlaygroundCanvasScene,
-      babylon: buildPlaygroundBabylonScene
+      canvas2d: buildPlaygroundCanvasScene
     };
     const backendFactories = {
       jsxgraph: () => createJsxGraphBackend({ id: 'jsxgraph' }),
-      canvas2d: () => createCanvas2DGraphBackend({ id: 'canvas2d' }),
-      babylon: () => createBabylonGraphBackend({ id: 'babylon' })
+      canvas2d: () => createCanvas2DGraphBackend({ id: 'canvas2d' })
     };
 
     for (const demo of demoCommands) {
-      for (const backend of parityRendererBackends) {
+      for (const backend of twoDParityBackends) {
         const result = builders[backend.id](demo.commands);
         expect(result.diagnostics, `${backend.id}:${demo.demoId}`).toEqual([]);
         const graphBackend = backendFactories[backend.id]();
@@ -364,15 +361,14 @@ describe('buildPlaygroundCanvasScene', () => {
     }
   });
 
-  it('keeps operation-area command tools diagnostic-free for every backend', () => {
+  it('keeps operation-area command tools diagnostic-free for every 2D backend', () => {
     const builders = {
       jsxgraph: buildPlaygroundJsxGraphScene,
-      canvas2d: buildPlaygroundCanvasScene,
-      babylon: buildPlaygroundBabylonScene
+      canvas2d: buildPlaygroundCanvasScene
     };
     const tools = operationToolGroups.flatMap((group) => group.tools);
 
-    for (const backend of parityRendererBackends) {
+    for (const backend of twoDParityBackends) {
       for (const tool of tools) {
         const result = builders[backend.id](toCommands(tool.commands));
         expect(result.diagnostics, `${backend.id}:${tool.id}`).toEqual([]);
@@ -385,8 +381,7 @@ describe('buildPlaygroundCanvasScene', () => {
     const tools = operationToolGroups.flatMap((group) => group.tools);
     const builders = {
       jsxgraph: buildPlaygroundJsxGraphScene,
-      canvas2d: buildPlaygroundCanvasScene,
-      babylon: buildPlaygroundBabylonScene
+      canvas2d: buildPlaygroundCanvasScene
     };
 
     expect(tools.length).toBeGreaterThan(0);
@@ -400,7 +395,7 @@ describe('buildPlaygroundCanvasScene', () => {
       ...createOperationScopedCommands(tool.commands, { x: -4.2, y: 5.1 }, 'coord_right')
     ];
 
-    for (const backend of parityRendererBackends) {
+    for (const backend of twoDParityBackends) {
       const result = builders[backend.id](toCommands(commands));
       expect(result.diagnostics, backend.id).toEqual([]);
 
@@ -439,12 +434,11 @@ describe('buildPlaygroundCanvasScene', () => {
     expect(tool).toBeDefined();
     const builders = {
       jsxgraph: buildPlaygroundJsxGraphScene,
-      canvas2d: buildPlaygroundCanvasScene,
-      babylon: buildPlaygroundBabylonScene
+      canvas2d: buildPlaygroundCanvasScene
     };
     const commands = createOperationScopedCommands(tool!.commands, { x: 2.25, y: -1.5 }, 'coord_triangle');
 
-    for (const backend of parityRendererBackends) {
+    for (const backend of twoDParityBackends) {
       const result = builders[backend.id](toCommands(commands));
       expect(result.diagnostics, backend.id).toEqual([]);
       const bounds = { left: -3.75, right: 8.25, top: 4.5, bottom: -7.5 };
@@ -500,7 +494,7 @@ describe('buildPlaygroundCanvasScene', () => {
 
     expect(updateOperationCoordinateSystemOrigin(commands, 'coord_triangle_move', movedOrigin)).toBe(commands.length);
 
-    for (const builder of [buildPlaygroundJsxGraphScene, buildPlaygroundCanvasScene, buildPlaygroundBabylonScene]) {
+    for (const builder of [buildPlaygroundJsxGraphScene, buildPlaygroundCanvasScene]) {
       const after = builder(commands);
       expect(after.diagnostics).toEqual([]);
       expect(operationLocalPointSnapshot(after.nodes, 'coord_triangle_move', movedOrigin)).toEqual(beforeSnapshot);
@@ -541,7 +535,7 @@ describe('buildPlaygroundCanvasScene', () => {
       options: command.options
     }));
 
-    for (const builder of [buildPlaygroundCanvasScene, buildPlaygroundBabylonScene]) {
+    for (const builder of [buildPlaygroundCanvasScene]) {
       const rebuilt = builder([...commands, ...appendedCommands]);
       expect(rebuilt.diagnostics).toEqual([]);
       expect((rebuilt.nodes.find((node) => node.id === 'coord_drag')?.payload as any)?.origin).toMatchObject({ x: 5, y: -1 });
@@ -559,15 +553,14 @@ describe('buildPlaygroundCanvasScene', () => {
   it('clips scoped operation-area graphs to their independent coordinate windows', () => {
     const builders = {
       jsxgraph: buildPlaygroundJsxGraphScene,
-      canvas2d: buildPlaygroundCanvasScene,
-      babylon: buildPlaygroundBabylonScene
+      canvas2d: buildPlaygroundCanvasScene
     };
     const commands = createOperationScopedCommands([
       { expr: 'Function("x^2 - 2", -20, 20)', options: { strokeColor: '#4DA6FF' } },
       { expr: 'Equation("x^2 + y^2 = 50")', options: { strokeColor: '#FF8D1A' } }
     ], { x: 10, y: 20 }, 'coord_clip');
 
-    for (const backend of parityRendererBackends) {
+    for (const backend of twoDParityBackends) {
       const result = builders[backend.id](toCommands(commands));
       expect(result.diagnostics, backend.id).toEqual([]);
       const scopedGraphs = result.nodes.filter((node) => node.meta?.coordinateSystemId === 'coord_clip' && node.type !== 'coordinate-system');
