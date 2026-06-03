@@ -467,6 +467,21 @@ export class GraphSceneStore {
     return okResult(createGraphObjectNode(stored));
   }
 
+  public moveObjectToTop(id: string): GraphOperationResult<GraphObjectNode> {
+    const current = this.objectMap.get(id);
+    if (!current) {
+      return { ok: false, diagnostics: [missingObjectDiagnostic(id)] };
+    }
+
+    const orderIndex = this.objectOrder.indexOf(id);
+    if (orderIndex >= 0 && orderIndex !== this.objectOrder.length - 1) {
+      this.objectOrder.splice(orderIndex, 1);
+      this.objectOrder.push(id);
+    }
+
+    return okResult(createGraphObjectNode(current));
+  }
+
   public removeObject(id: string): GraphOperationResult<GraphObjectNode> {
     const current = this.objectMap.get(id);
     if (!current) {

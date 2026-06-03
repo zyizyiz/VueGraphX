@@ -33,6 +33,9 @@ const curriculumParityDemos: DemoItem[] = getParityDemoCommands().map((demo) => 
   ))
 }));
 
+const TWO_D_PLAYGROUND_BACKENDS = ['canvas2d'] as const satisfies readonly PlaygroundRenderBackend[];
+const THREE_D_PLAYGROUND_BACKENDS = ['babylon'] as const satisfies readonly PlaygroundRenderBackend[];
+
 export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
   '2d': [
     ...subjectToolsRepresentativeDemos,
@@ -40,8 +43,8 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
     {
       emoji: '🖱️',
       title: '交互合同验证',
-      desc: '滚轮/触控板缩放平移，点击对象后在三个首发后端显示 selected 高亮与诊断',
-      compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+      desc: '滚轮/触控板缩放平移，点击对象后在 Canvas2D 主后端显示 selected 高亮与诊断',
+      compatibleBackends: TWO_D_PLAYGROUND_BACKENDS,
       commands: [
         'A = Point(-3, 1)',
         'B = Point(2, 1)',
@@ -57,7 +60,8 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
     {
       emoji: '🧪',
       title: 'Canvas2D 全功能巡检',
-      desc: '点线圆弧、多边形、圆锥曲线、文本、测量和变换，可直接切任一首发后端',
+      desc: '点线圆弧、多边形、圆锥曲线、文本、测量和变换，由 Canvas2D 承载 2D 主画布',
+      compatibleBackends: TWO_D_PLAYGROUND_BACKENDS,
       commands: [
         'A = Point(-8, 4)',
         'B = Point(-5, 4)',
@@ -142,7 +146,8 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
     {
       emoji: '🧊',
       title: 'Babylon 全 solid family',
-      desc: '展示 core Solid(...) 当前全部可渲染族，可在三个首发后端间切换',
+      desc: '展示 core Solid(...) 当前全部可渲染族，由 Babylon 承载 3D 主画布',
+      compatibleBackends: THREE_D_PLAYGROUND_BACKENDS,
       commands: [
         'cube = Solid("cube", size=1.4, x=-6, y=0, z=0)',
         'box = Solid("rectangular-prism", width=1.8, depth=1, height=1.2, x=-3.8)',
@@ -159,7 +164,8 @@ export const allDemos: Record<PlaygroundMode, DemoItem[]> = {
     {
       emoji: '🧊',
       title: 'Babylon 基础立体',
-      desc: '同一份 Solid 指令在三个首发后端中保持语义一致',
+      desc: '同一份 Solid 指令进入 Babylon 3D 层，2D 标注走独立 Canvas2D overlay',
+      compatibleBackends: THREE_D_PLAYGROUND_BACKENDS,
       commands: [
         'cube = Solid("cube", size=2, x=-2)',
         'sphere = Solid("sphere", radius=1.2, x=1.6)',

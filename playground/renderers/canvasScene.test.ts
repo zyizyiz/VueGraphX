@@ -3,11 +3,12 @@ import { GraphSceneRuntime, compareParitySnapshots } from '@vuegraphx/core';
 import { createBabylonGraphBackend } from '@vuegraphx/backend-babylon';
 import { createCanvas2DGraphBackend } from '@vuegraphx/backend-canvas2d';
 import { createJsxGraphBackend } from '@vuegraphx/backend-jsxgraph';
-import { createOperationScopedCommands, operationToolGroups } from '../operationTools';
+import { createOperationScopedCommands, operationToolGroups, updateOperationCoordinateSystemOrigin } from '../operationTools';
 import { allDemos } from '../showcase';
 import {
   getParityCapabilitySummaries,
   getParityDemoCommands,
+  getPreferredBackendForMode,
   isBackendSelectableForMode,
   parityRendererBackends
 } from '../parityStatus';
@@ -15,6 +16,7 @@ import {
   buildPlaygroundBabylonScene,
   buildPlaygroundCanvasScene,
   buildPlaygroundJsxGraphScene,
+  buildPlaygroundLayered3DScene,
   createPlaygroundParitySnapshot,
   type PlaygroundCanvasCommand
 } from './canvasScene';
@@ -193,7 +195,7 @@ describe('buildPlaygroundCanvasScene', () => {
     expect(canvasResult.diagnostics).toEqual([]);
     expect(canvasResult.nodes.length).toBeGreaterThan(12);
 
-    const babylonResult = buildPlaygroundBabylonScene(toCommands(babylonDemo!.commands));
+    const babylonResult = buildPlaygroundLayered3DScene(toCommands(babylonDemo!.commands)).babylon;
     expect(babylonResult.diagnostics).toEqual([]);
     expect(babylonResult.nodes).toHaveLength(10);
     expect(babylonResult.nodes.map((node) => (node.payload as any).family)).toContain('quadrangular-frustum');
@@ -233,17 +235,20 @@ describe('buildPlaygroundCanvasScene', () => {
     }
   });
 
-  it('builds a real Babylon core scene from Solid and non-solid curriculum commands', () => {
-    const result = buildPlaygroundBabylonScene([
+  it('splits 3D scene nodes between Babylon and Canvas2D overlay layers', () => {
+    const result = buildPlaygroundLayered3DScene([
       { id: 'cube', expression: 'cube = Solid("cube", size=2, x=-1)', color: '#0ea5e9' },
       { id: 'sphere', expression: 'sphere = Solid("sphere", radius=1, x=2)', color: '#22c55e' },
-      { id: 'point', expression: 'A = Point(0, 0)', color: '#f43f5e' }
+      { id: 'point', expression: 'A = Point(0, 0)', color: '#f43f5e' },
+      { id: 'label', expression: 'label = Text(1, 1, "overlay")', color: '#64748b' }
     ]);
 
-    expect(result.diagnostics).toEqual([]);
-    expect(result.nodes.map((node) => node.type)).toEqual(['solid', 'solid', 'point']);
-    expect(result.nodes[0].payload).toMatchObject({ family: 'cube', parameters: { size: 2 }, origin: { x: -1, y: 0, z: 0 } });
-    expect(result.nodes[1].payload).toMatchObject({ family: 'sphere', parameters: { radius: 1 }, origin: { x: 2, y: 0, z: 0 } });
+    expect(result.babylon.diagnostics).toEqual([]);
+    expect(result.overlay.diagnostics).toEqual([]);
+    expect(result.babylon.nodes.map((node) => node.type)).toEqual(['solid', 'solid']);
+    expect(result.overlay.nodes.map((node) => node.type)).toEqual(['point', 'text']);
+    expect(result.babylon.nodes[0].payload).toMatchObject({ family: 'cube', parameters: { size: 2 }, origin: { x: -1, y: 0, z: 0 } });
+    expect(result.babylon.nodes[1].payload).toMatchObject({ family: 'sphere', parameters: { radius: 1 }, origin: { x: 2, y: 0, z: 0 } });
   });
 
   it('keeps every curriculum parity demo diagnostic-free and equivalent across first-release backends', () => {
@@ -290,7 +295,7 @@ describe('buildPlaygroundCanvasScene', () => {
     expect(labels[0].renderHints).toMatchObject({ strokeColor: '#0f172a' });
   });
 
-  it('creates backend handles for every curriculum parity node on all selectable first-release backends', () => {
+  it('creates backend handles for every curriculum parity node on backend contract adapters', () => {
     const demoCommands = getParityDemoCommands();
     const builders = {
       jsxgraph: buildPlaygroundJsxGraphScene,
@@ -325,27 +330,34 @@ describe('buildPlaygroundCanvasScene', () => {
 
   it('derives selector availability and capability summaries from parity status instead of hardcoded unsupported gaps', () => {
     expect(parityRendererBackends.map((backend) => backend.id)).toEqual(['jsxgraph', 'canvas2d', 'babylon']);
+    expect(getPreferredBackendForMode('2d')).toBe('canvas2d');
+    expect(getPreferredBackendForMode('geometry')).toBe('canvas2d');
+    expect(getPreferredBackendForMode('operation')).toBe('canvas2d');
+    expect(getPreferredBackendForMode('3d')).toBe('babylon');
+
+    for (const mode of ['2d', 'geometry', 'operation', '3d'] as const) {
+      for (const backend of parityRendererBackends) {
+        expect(isBackendSelectableForMode(mode, backend.id), `${mode}:${backend.id}`).toBe(
+          backend.id === getPreferredBackendForMode(mode)
+        );
+      }
+    }
+
     for (const backend of parityRendererBackends) {
-      expect(isBackendSelectableForMode('2d', backend.id)).toBe(true);
-      expect(isBackendSelectableForMode('geometry', backend.id)).toBe(true);
-      expect(isBackendSelectableForMode('3d', backend.id)).toBe(true);
-      expect(isBackendSelectableForMode('operation', backend.id)).toBe(true);
       expect(getParityCapabilitySummaries()[backend.id].unsupported).toEqual([]);
     }
   });
 
   it('keeps every selectable playground demo diagnostic-free for every selectable backend', () => {
-    const builders = {
-      jsxgraph: buildPlaygroundJsxGraphScene,
-      canvas2d: buildPlaygroundCanvasScene,
-      babylon: buildPlaygroundBabylonScene
-    };
-
     for (const mode of Object.keys(allDemos) as Array<keyof typeof allDemos>) {
       for (const backend of parityRendererBackends) {
         if (!isBackendSelectableForMode(mode, backend.id)) continue;
         for (const demo of allDemos[mode]) {
-          const result = builders[backend.id](toCommands(demo.commands));
+          const result = backend.id === 'babylon'
+            ? buildPlaygroundLayered3DScene(toCommands(demo.commands)).babylon
+            : backend.id === 'canvas2d'
+              ? buildPlaygroundCanvasScene(toCommands(demo.commands))
+              : buildPlaygroundJsxGraphScene(toCommands(demo.commands));
           expect(result.diagnostics, `${mode}:${backend.id}:${demo.title}`).toEqual([]);
         }
       }
@@ -397,28 +409,150 @@ describe('buildPlaygroundCanvasScene', () => {
       expect(coordinateSystems[0]).toMatchObject({
         meta: { coordinateSystemId: 'coord_left', independentCoordinateSystem: true, draggable: true, snapToGrid: { enabled: true, phase: 'end' } },
         payload: {
-          origin: { x: 2, y: -3 },
-          geometry: {
-            xAxis: [{ x: -4, y: -3 }, { x: 8, y: -3 }],
-            yAxis: [{ x: 2, y: -9 }, { x: 2, y: 3 }]
-          }
+          origin: { x: 2.3, y: -2.7 }
         }
+      });
+      expectCoordinateSystemAxes(coordinateSystems[0], {
+        xAxis: [{ x: -3.7, y: -2.7 }, { x: 8.3, y: -2.7 }],
+        yAxis: [{ x: 2.3, y: -8.7 }, { x: 2.3, y: 3.3 }]
       });
       expect(coordinateSystems[1]).toMatchObject({
         meta: { coordinateSystemId: 'coord_right', independentCoordinateSystem: true, draggable: true, snapToGrid: { enabled: true, phase: 'end' } },
         payload: {
-          origin: { x: -4, y: 5 },
-          geometry: {
-            xAxis: [{ x: -10, y: 5 }, { x: 2, y: 5 }],
-            yAxis: [{ x: -4, y: -1 }, { x: -4, y: 11 }]
-          }
+          origin: { x: -4.2, y: 5.1 }
         }
+      });
+      expectCoordinateSystemAxes(coordinateSystems[1], {
+        xAxis: [{ x: -10.2, y: 5.1 }, { x: 1.8, y: 5.1 }],
+        yAxis: [{ x: -4.2, y: -0.9 }, { x: -4.2, y: 11.1 }]
       });
 
       const scopedGraphs = result.nodes.filter((node) => node.type === 'function' || node.type === 'equation');
       expect(scopedGraphs.some((node) => node.meta?.coordinateSystemId === 'coord_left'), backend.id).toBe(true);
       expect(scopedGraphs.some((node) => node.meta?.coordinateSystemId === 'coord_right'), backend.id).toBe(true);
       expect(scopedGraphs.every((node) => node.renderHints?.draggable === false), backend.id).toBe(true);
+    }
+  });
+
+  it('keeps operation-area geometry annotations scoped inside their coordinate windows', () => {
+    const tool = operationToolGroups.flatMap((group) => group.tools).find((entry) => entry.id === 'triangle-overlay-tools');
+    expect(tool).toBeDefined();
+    const builders = {
+      jsxgraph: buildPlaygroundJsxGraphScene,
+      canvas2d: buildPlaygroundCanvasScene,
+      babylon: buildPlaygroundBabylonScene
+    };
+    const commands = createOperationScopedCommands(tool!.commands, { x: 2.25, y: -1.5 }, 'coord_triangle');
+
+    for (const backend of parityRendererBackends) {
+      const result = builders[backend.id](toCommands(commands));
+      expect(result.diagnostics, backend.id).toEqual([]);
+      const bounds = { left: -3.75, right: 8.25, top: 4.5, bottom: -7.5 };
+      const scoped = result.nodes.filter((node) => node.meta?.coordinateSystemId === 'coord_triangle' && node.type !== 'coordinate-system');
+      expect(scoped.length, backend.id).toBeGreaterThan(8);
+      for (const node of scoped) {
+        const points = nodePoints(node);
+        expect(points.length, `${backend.id}:${node.id}`).toBeGreaterThan(0);
+        expect(node.renderHints, `${backend.id}:${node.id}`).toMatchObject({
+          draggable: false,
+          clipWorldBounds: bounds
+        });
+        expect(points.every((point) => point.x >= bounds.left - 1e-9
+          && point.x <= bounds.right + 1e-9
+          && point.y >= bounds.bottom - 1e-9
+          && point.y <= bounds.top + 1e-9), `${backend.id}:${node.id}`).toBe(true);
+      }
+    }
+  });
+
+  it('repositions dense operation-area text labels to reduce overlap', () => {
+    const commands = createOperationScopedCommands([
+      { expr: 'Text(0, 0, "顶点: (0, 0)")' },
+      { expr: 'Text(0, 0, "x 轴交点: (0, 0)")' },
+      { expr: 'Text(0, 0, "y 轴交点: (0, 0)")' },
+      { expr: 'Text(0, 0, "对称轴: x = 0")' }
+    ], { x: 0, y: 0 }, 'coord_labels');
+
+    const result = buildPlaygroundCanvasScene(toCommands(commands));
+    expect(result.diagnostics).toEqual([]);
+    const labels = result.nodes.filter((node) => node.type === 'text');
+    expect(labels).toHaveLength(4);
+    expect(labels.every((node) => node.renderHints?.labelAvoidance === 'playground')).toBe(true);
+    expect(new Set(labels.map((node) => {
+      const point = (node.payload as any).point as { x: number; y: number };
+      return `${point.x.toFixed(3)},${point.y.toFixed(3)}`;
+    })).size).toBe(labels.length);
+    expect(labels.some((node) => (node.payload as any).labelAnchor)).toBe(true);
+  });
+
+  it('preserves operation-area annotation local geometry when command coordinate origins move', () => {
+    const tool = operationToolGroups
+      .flatMap((group) => group.tools)
+      .find((entry) => entry.id === 'triangle-overlay-tools');
+    expect(tool).toBeTruthy();
+
+    const origin = { x: 0, y: 0 };
+    const movedOrigin = { x: 3, y: -1 };
+    const commands = toCommands(createOperationScopedCommands(tool!.commands, origin, 'coord_triangle_move'));
+    const before = buildPlaygroundCanvasScene(commands);
+    expect(before.diagnostics).toEqual([]);
+    const beforeSnapshot = operationLocalPointSnapshot(before.nodes, 'coord_triangle_move', origin);
+
+    expect(updateOperationCoordinateSystemOrigin(commands, 'coord_triangle_move', movedOrigin)).toBe(commands.length);
+
+    for (const builder of [buildPlaygroundJsxGraphScene, buildPlaygroundCanvasScene, buildPlaygroundBabylonScene]) {
+      const after = builder(commands);
+      expect(after.diagnostics).toEqual([]);
+      expect(operationLocalPointSnapshot(after.nodes, 'coord_triangle_move', movedOrigin)).toEqual(beforeSnapshot);
+    }
+  });
+
+  it('keeps dragged operation-area coordinate systems after appending functions in core renderers', () => {
+    const commands = toCommands(createOperationScopedCommands([
+      { expr: 'Function("x", -5, 5)', options: { strokeColor: '#4DA6FF' } }
+    ], { x: 1.25, y: -2.75 }, 'coord_drag'));
+    const initial = buildPlaygroundCanvasScene(commands);
+    expect(initial.diagnostics).toEqual([]);
+
+    const runtime = new GraphSceneRuntime();
+    for (const node of initial.nodes) {
+      const added = runtime.addObject(node);
+      expect(added.ok, node.id).toBe(true);
+    }
+
+    const dragged = runtime.applyDragToObject('coord_drag', {
+      delta: { dimension: '2d', dx: 4.1, dy: 1.6 },
+      dragPhase: 'end'
+    });
+    expect(dragged.ok).toBe(true);
+    const movedOrigin = ((dragged.value?.payload as any)?.origin ?? {}) as { x?: number; y?: number };
+    expect(movedOrigin).toMatchObject({ x: 5, y: -1 });
+    expect(updateOperationCoordinateSystemOrigin(commands, 'coord_drag', {
+      x: movedOrigin.x ?? Number.NaN,
+      y: movedOrigin.y ?? Number.NaN
+    })).toBe(2);
+
+    const appendedCommands = createOperationScopedCommands([
+      { expr: 'Function("-x", -5, 5)', options: { strokeColor: '#16D957' } }
+    ], { x: -4.2, y: 5.1 }, 'coord_new').map((command, index) => ({
+      id: `new-${index}`,
+      expression: command.expr,
+      color: '#10b981',
+      options: command.options
+    }));
+
+    for (const builder of [buildPlaygroundCanvasScene, buildPlaygroundBabylonScene]) {
+      const rebuilt = builder([...commands, ...appendedCommands]);
+      expect(rebuilt.diagnostics).toEqual([]);
+      expect((rebuilt.nodes.find((node) => node.id === 'coord_drag')?.payload as any)?.origin).toMatchObject({ x: 5, y: -1 });
+      const draggedFunction = rebuilt.nodes.find((node) => node.type === 'function' && node.meta?.coordinateSystemId === 'coord_drag');
+      expect((draggedFunction?.renderHints as any)?.clipWorldBounds).toMatchObject({
+        left: -1,
+        right: 11,
+        top: 5,
+        bottom: -7
+      });
+      expect((rebuilt.nodes.find((node) => node.id === 'coord_new')?.payload as any)?.origin).toMatchObject({ x: -4.2, y: 5.1 });
     }
   });
 
@@ -462,5 +596,50 @@ const geometryPoints = (geometry: any): Array<{ x: number; y: number }> => {
   if ((geometry?.kind === 'multiline' || geometry?.kind === 'wireframe') && Array.isArray(geometry.segments)) {
     return geometry.segments.flat();
   }
+  if (geometry?.kind === 'polygon' && Array.isArray(geometry.vertices)) return geometry.vertices;
+  if (geometry?.kind === 'segment' && geometry.start && geometry.end) return [geometry.start, geometry.end];
+  if (geometry?.kind === 'circle' && geometry.center) return [geometry.center];
+  if (geometry?.kind === 'line' && geometry.point) return [geometry.point];
   return [];
 };
+
+const nodePoints = (node: any): Array<{ x: number; y: number }> => {
+  if (node?.payload?.point) return [node.payload.point];
+  return geometryPoints(node?.payload?.geometry);
+};
+
+const expectCoordinateSystemAxes = (
+  node: any,
+  expected: {
+    xAxis: Array<{ x: number; y: number }>;
+    yAxis: Array<{ x: number; y: number }>;
+  }
+) => {
+  const geometry = node?.payload?.geometry;
+  for (const [index, point] of expected.xAxis.entries()) {
+    expectPointClose(geometry.xAxis[index], point);
+  }
+  for (const [index, point] of expected.yAxis.entries()) {
+    expectPointClose(geometry.yAxis[index], point);
+  }
+};
+
+const expectPointClose = (actual: any, expected: { x: number; y: number }) => {
+  expect(actual.x).toBeCloseTo(expected.x, 6);
+  expect(actual.y).toBeCloseTo(expected.y, 6);
+};
+
+const operationLocalPointSnapshot = (
+  nodes: readonly any[],
+  coordinateSystemId: string,
+  origin: { x: number; y: number }
+) => nodes
+  .filter((node) => node.meta?.coordinateSystemId === coordinateSystemId && node.type !== 'coordinate-system')
+  .map((node) => ({
+    id: node.id,
+    type: node.type,
+    points: nodePoints(node).map((point) => ({
+      x: Number((point.x - origin.x).toFixed(6)),
+      y: Number((point.y - origin.y).toFixed(6))
+    }))
+  }));

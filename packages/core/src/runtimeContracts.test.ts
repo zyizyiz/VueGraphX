@@ -1510,8 +1510,115 @@ describe('renderer-neutral core runtime contracts', () => {
     expect(runtime.snapshot().handles).toHaveLength(1);
   });
 
+  it('syncs runtime objects incrementally without recreating unchanged backend resources', () => {
+    const backend = createCoreOnlyTestBackend('runtime-sync');
+    const createIds: string[] = [];
+    const updateIds: string[] = [];
+    const removeIds: string[] = [];
+    const flushFrames: Array<readonly string[] | undefined> = [];
+    const create = backend.create;
+    const update = backend.update;
+    const remove = backend.remove;
+    backend.create = (node, context) => {
+      createIds.push(node.id);
+      return create(node, context);
+    };
+    backend.update = (handle, patch, context) => {
+      updateIds.push(handle.objectId);
+      update(handle, patch, context);
+    };
+    backend.remove = (handle) => {
+      removeIds.push(handle.objectId);
+      remove(handle);
+    };
+    backend.flush = (frame) => {
+      flushFrames.push(frame?.dirtyObjectIds);
+    };
+
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+
+    const firstSync = runtime.syncObjects([
+      createPointNode('A', 1, 1),
+      createPointNode('B', 2, 2)
+    ]);
+    expect(firstSync.ok).toBe(true);
+    expect(createIds).toEqual(['A', 'B']);
+    expect(updateIds).toEqual([]);
+    expect(removeIds).toEqual([]);
+    expect(flushFrames).toEqual([['A', 'B']]);
+
+    createIds.length = 0;
+    updateIds.length = 0;
+    removeIds.length = 0;
+    flushFrames.length = 0;
+
+    const appendSync = runtime.syncObjects([
+      createPointNode('A', 1, 1),
+      createPointNode('B', 2, 2),
+      createPointNode('C', 3, 3)
+    ]);
+    expect(appendSync.ok).toBe(true);
+    expect(createIds).toEqual(['C']);
+    expect(updateIds).toEqual([]);
+    expect(removeIds).toEqual([]);
+    expect(flushFrames).toEqual([['C']]);
+
+    createIds.length = 0;
+    updateIds.length = 0;
+    removeIds.length = 0;
+    flushFrames.length = 0;
+
+    const updateSync = runtime.syncObjects([
+      createPointNode('A', 4, 4),
+      createPointNode('B', 2, 2),
+      createPointNode('C', 3, 3)
+    ]);
+    expect(updateSync.ok).toBe(true);
+    expect(createIds).toEqual([]);
+    expect(updateIds).toEqual(['A']);
+    expect(removeIds).toEqual([]);
+    expect(flushFrames).toEqual([['A']]);
+
+    createIds.length = 0;
+    updateIds.length = 0;
+    removeIds.length = 0;
+    flushFrames.length = 0;
+
+    const removeSync = runtime.syncObjects([
+      createPointNode('A', 4, 4),
+      createPointNode('C', 3, 3)
+    ]);
+    expect(removeSync.ok).toBe(true);
+    expect(createIds).toEqual([]);
+    expect(updateIds).toEqual([]);
+    expect(removeIds).toEqual(['B']);
+    expect(flushFrames).toEqual([['B']]);
+  });
+
+  it('moves selected runtime objects to the top of the scene order', () => {
+    const backend = createCoreOnlyTestBackend('runtime-selected-order');
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+
+    const first = runtime.addObject(createPointNode('A', 1, 1));
+    const second = runtime.addObject(createPointNode('B', 2, 2));
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(runtime.snapshot().objects.map((node) => node.id)).toEqual(['A', 'B']);
+
+    const selected = runtime.updateObject('A', { meta: { selected: true } });
+
+    expect(selected.ok).toBe(true);
+    expect(runtime.snapshot().objects.map((node) => node.id)).toEqual(['B', 'A']);
+  });
+
   it('moves coordinate systems with their scoped graph objects and clip bounds', () => {
     const backend = createCoreOnlyTestBackend('runtime-coordinate-drag');
+    let flushCount = 0;
+    (backend as GraphRenderBackend & { flush: NonNullable<GraphRenderBackend['flush']> }).flush = () => {
+      flushCount += 1;
+    };
     const runtime = new GraphSceneRuntime({ backend });
     runtime.mount(document.createElement('div'));
 
@@ -1580,6 +1687,7 @@ describe('renderer-neutral core runtime contracts', () => {
       draggable: false,
       clipWorldBounds: { left: -2, right: 10, top: 4, bottom: -8 }
     });
+    expect(flushCount).toBe(1);
   });
 
   it('removes old backend resources before switching GraphSceneRuntime backends', () => {

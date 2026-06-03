@@ -11,6 +11,7 @@ import {
   GraphSceneStore,
   createStandardCoordinateSystemGeometry,
   executeGraphCapability,
+  resolveGraphGridSnapOptions,
   snapPointToGraphGrid,
   type GraphObjectNode,
   type GraphObjectPatch,
@@ -275,18 +276,24 @@ const readCommandCoordinateSystemOptions = (value: unknown): CommandCoordinateSy
   if (!id || originX === null || originY === null || unitScale === null || unitScale <= 0) return null;
   if (xMin === null || xMax === null || yMin === null || yMax === null || xMax <= xMin || yMax <= yMin) return null;
   const snapToGrid = coordinateSystem?.snapToGrid;
+  const resolvedOrigin = readCommandCoordinateSystemOrigin({ x: originX, y: originY }, snapToGrid);
   return {
     id,
-    origin: snapPointToGraphGrid(
-      { x: originX, y: originY },
-      snapToGrid,
-      { enabled: false, step: 1 }
-    ),
+    origin: resolvedOrigin,
     unitScale,
     xRange: { min: xMin, max: xMax },
     yRange: { min: yMin, max: yMax },
     snapToGrid
   };
+};
+
+const readCommandCoordinateSystemOrigin = (
+  origin: SceneSamplePoint2D,
+  snapToGrid: unknown
+): SceneSamplePoint2D => {
+  const snapOptions = resolveGraphGridSnapOptions(snapToGrid, { enabled: false, step: 1 });
+  if (!snapOptions.enabled || snapOptions.phase === 'end') return { ...origin };
+  return snapPointToGraphGrid(origin, snapOptions);
 };
 
 const withCommandCoordinateSystemMeta = (
@@ -320,6 +327,14 @@ const commandCoordinateToWorld = (
 ): SceneSamplePoint2D => ({
   x: coordinateSystem.origin.x + point.x * coordinateSystem.unitScale,
   y: coordinateSystem.origin.y + point.y * coordinateSystem.unitScale
+});
+
+const scaleCommandCoordinateVector = (
+  point: SceneSamplePoint2D,
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions
+): SceneSamplePoint2D => ({
+  x: point.x * coordinateSystem.unitScale,
+  y: point.y * coordinateSystem.unitScale
 });
 
 const commandCoordinateWorldBounds = (
@@ -392,6 +407,84 @@ const withEmptyCommandCoordinateGeometry = (
   }
 }, coordinateSystem);
 
+const transformCommandCoordinateNode = (
+  node: GraphObjectNode,
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions
+): GraphObjectNode => {
+  if (node.type === 'coordinate-system') return node;
+  return {
+    ...node,
+    payload: transformCommandCoordinateValue(node.payload, coordinateSystem)
+  };
+};
+
+const transformCommandCoordinateValue = (
+  value: unknown,
+  coordinateSystem: CommandCoordinateSystemRuntimeOptions,
+  key = ''
+): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => transformCommandCoordinateValue(entry, coordinateSystem, key));
+  }
+
+  const point = readCommandPoint2D(value);
+  if (point && isCommandCoordinatePointKey(key)) {
+    return {
+      ...(isRecord(value) ? value : {}),
+      ...commandCoordinateToWorld(point, coordinateSystem)
+    };
+  }
+  if (point && key === 'direction') {
+    return {
+      ...(isRecord(value) ? value : {}),
+      ...scaleCommandCoordinateVector(point, coordinateSystem)
+    };
+  }
+
+  if (!isRecord(value)) return value;
+  const next: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of Object.entries(value)) {
+    if ((entryKey === 'radius' || entryKey === 'radiusX' || entryKey === 'radiusY') && typeof entryValue === 'number' && Number.isFinite(entryValue)) {
+      next[entryKey] = entryValue * coordinateSystem.unitScale;
+    } else {
+      next[entryKey] = transformCommandCoordinateValue(entryValue, coordinateSystem, entryKey);
+    }
+  }
+  return next;
+};
+
+const isCommandCoordinatePointKey = (key: string): boolean => (
+  [
+    'anchor',
+    'border',
+    'center',
+    'centroid',
+    'coordinates',
+    'end',
+    'gridSegments',
+    'origin',
+    'point',
+    'points',
+    'position',
+    'segments',
+    'start',
+    'through',
+    'tickPoints',
+    'vertex',
+    'vertices',
+    'xAxis',
+    'yAxis'
+  ].includes(key)
+);
+
+const readCommandPoint2D = (value: unknown): SceneSamplePoint2D | null => {
+  if (!isRecord(value)) return null;
+  return typeof value.x === 'number' && Number.isFinite(value.x)
+    && typeof value.y === 'number' && Number.isFinite(value.y)
+    ? { x: value.x, y: value.y }
+    : null;
+};
+
 const readCommandFunctionDescriptor = (
   payload: unknown
 ): { expression: string; variable: string; domain?: [number, number]; scope: Record<string, number> } | null => {
@@ -462,7 +555,7 @@ const applyCommandCoordinateSystemOptions = (
 
   if (node.type === 'function' || node.type === 'derivative') {
     const descriptor = readCommandFunctionDescriptor(node.payload);
-    if (!descriptor) return withCommandCoordinateSystemMeta(node, coordinateSystem);
+    if (!descriptor) return withCommandCoordinateSystemMeta(transformCommandCoordinateNode(node, coordinateSystem), coordinateSystem, { clipToCoordinateSystem: true });
     const domain = clampCommandCoordinateDomain(descriptor.domain, coordinateSystem);
     if (!domain) return withEmptyCommandCoordinateGeometry(node, coordinateSystem);
     const localSegments = sampleFunctionExpressionSegments(descriptor.expression, descriptor.variable, descriptor.scope, {
@@ -514,7 +607,7 @@ const applyCommandCoordinateSystemOptions = (
     }, coordinateSystem, { clipToCoordinateSystem: true });
   }
 
-  return withCommandCoordinateSystemMeta(node, coordinateSystem, { clipToCoordinateSystem: true });
+  return withCommandCoordinateSystemMeta(transformCommandCoordinateNode(node, coordinateSystem), coordinateSystem, { clipToCoordinateSystem: true });
 };
 
 const normalizeSceneGridOptions = (value: unknown): GraphViewportGridInput | null => {

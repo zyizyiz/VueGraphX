@@ -372,7 +372,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.labelLayer?.replaceChildren();
     this.drawGrid(width, height);
     this.drawAxes(width, height);
-    for (const node of this.listNodes()) {
+    for (const node of sortNodesByCanvasRenderOrder(this.listNodes())) {
       this.drawNode(node);
     }
   }
@@ -1151,6 +1151,22 @@ const createDomLabelTransform = (point: { x: number; y: number }, visualScale: n
 const isSelectedNode = (node: GraphObjectNode): boolean => (
   node.meta?.selected === true || node.renderHints?.selected === true
 );
+
+const sortNodesByCanvasRenderOrder = (nodes: readonly GraphObjectNode[]): GraphObjectNode[] => (
+  nodes
+    .map((node, index) => ({ node, index, zIndex: readRenderZIndex(node), selected: isSelectedNode(node) }))
+    .sort((left, right) => (
+      Number(left.selected) - Number(right.selected)
+      || left.zIndex - right.zIndex
+      || left.index - right.index
+    ))
+    .map((entry) => entry.node)
+);
+
+const readRenderZIndex = (node: GraphObjectNode): number => {
+  const value = node.renderHints?.zIndex ?? node.meta?.zIndex;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+};
 
 const resolveSelectedStrokeWidth = (strokeWidth: number): number => Math.max(1, strokeWidth) * 2;
 const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '';

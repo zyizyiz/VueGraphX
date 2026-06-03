@@ -366,7 +366,7 @@ describe('GraphXEngine scene document support', () => {
 
     engine.executeCommand('cmd_coord', 'coord_drop = CoordinateSystem("plane")', '#64748b', { coordinateSystem });
     engine.executeCommand('cmd_f', 'f = Function("x^2", -20, 20)', '#0ea5e9', { coordinateSystem });
-    engine.executeCommand('cmd_eq', 'eq = Equation("x^2 + y^2 = 1")', '#f97316', { coordinateSystem });
+    engine.executeCommand('cmd_eq', 'eq = Equation("(x - 1)^2 + (y + 1)^2 = 9")', '#f97316', { coordinateSystem });
 
     expect(created.map((entry) => entry.type)).not.toContain('functiongraph');
     expect(created.filter((entry) => entry.type === 'curve').length).toBeGreaterThanOrEqual(2);
@@ -412,15 +412,47 @@ describe('GraphXEngine scene document support', () => {
     expect(equation).toMatchObject({
       type: expect.stringMatching(/^(equation|implicit)$/),
       meta: { coordinateSystemId: 'coord_drop', independentCoordinateSystem: true, draggable: false },
-      payload: { geometry: expect.objectContaining({ kind: expect.stringMatching(/^(polyline|multiline)$/) }) }
+      payload: { geometry: expect.objectContaining({ kind: 'polyline' }) }
     });
     const equationPoints = flattenGeometryPoints((equation?.payload as any)?.geometry);
+    expect(equationPoints).toHaveLength(145);
     expect(equationPoints.every((point) => (
       point.x >= -3 - 1e-9
       && point.x <= 9 + 1e-9
       && point.y >= -8 - 1e-9
       && point.y <= 4 + 1e-9
     ))).toBe(true);
+  });
+
+  it('keeps phase-end coordinate-system origins unsnapped until release', () => {
+    const engine = createFakeEngine();
+    const board = (engine as any).boardMgr.board;
+    board.containerObj = document.createElement('div');
+    board.create = vi.fn((type: string) => ({ id: `${type}-${board.create.mock.calls.length}`, elType: type }));
+    board.removeObject = vi.fn();
+
+    const coordinateSystem = {
+      id: 'coord_snap_end',
+      origin: { x: 3.2, y: -1.8 },
+      unitScale: 1,
+      xRange: { min: -6, max: 6 },
+      yRange: { min: -6, max: 6 },
+      snapToGrid: { enabled: true, phase: 'end' }
+    };
+
+    engine.executeCommand('cmd_coord', 'coord_snap_end = CoordinateSystem("plane")', '#64748b', { coordinateSystem });
+
+    const coord = engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'coord_snap_end');
+    expect(coord).toMatchObject({
+      type: 'coordinate-system',
+      payload: {
+        origin: { dimension: '2d', x: 3.2, y: -1.8 },
+        geometry: {
+          xAxis: [{ x: -2.8, y: -1.8 }, { x: 9.2, y: -1.8 }],
+          yAxis: [{ x: 3.2, y: -7.8 }, { x: 3.2, y: 4.2 }]
+        }
+      }
+    });
   });
 
   it('moves scoped coordinate-system commands together with their graph content', () => {

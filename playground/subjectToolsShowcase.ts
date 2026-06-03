@@ -2,13 +2,23 @@ import { createSubjectBackendSupportMatrix } from '@vuegraphx/core';
 import {
   computeSubjectFunctionProperties,
   createCircleEquationSubjectFunction,
+  createFreeSubjectAuxiliaryLine,
   createLinearSubjectFunction,
   createPiecewiseSubjectFunction,
   createQuadraticSubjectFunction,
+  createSubjectAuxiliaryLineIntersectionAnnotations,
   createSubjectDynamicPoint,
-  createSubjectFunctionAnnotations,
+  createSubjectOverlayModel,
+  point2D,
   tickSubjectDynamicPoint,
-  updateSubjectFunctionParameters
+  updateSubjectFunctionParameters,
+  type MathPoint2D,
+  type SubjectAuxiliaryLineDescriptor,
+  type SubjectOverlayAnnotation,
+  type SubjectOverlayConfig,
+  type SubjectOverlayModel,
+  type SubjectOverlayStyle,
+  type SubjectOverlayTarget
 } from '@vuegraphx/math';
 import type { PlaygroundRenderBackend } from './parityStatus';
 
@@ -19,6 +29,7 @@ export type SubjectToolsDemoCategory =
   | 'domain-piecewise'
   | 'equation'
   | 'annotation'
+  | 'geometry-overlay'
   | 'dynamic-point'
   | 'backend-status';
 
@@ -47,8 +58,94 @@ const circle = createCircleEquationSubjectFunction({ id: 'circle-demo', centerX:
 const annotated = createQuadraticSubjectFunction({ id: 'annotation-demo', a: 1, b: -2, c: -3, domain: [-4, 5] });
 const dynamicFunction = createLinearSubjectFunction({ id: 'dynamic-demo', a: 0.5, b: 1, domain: [0, 8] });
 const dynamicPoint = tickSubjectDynamicPoint(dynamicFunction, createSubjectDynamicPoint(dynamicFunction, { parameter: 1, speed: 2, playing: true }), 1);
+const annotationOverlay = createSubjectOverlayModel({
+  id: 'annotation-overlay',
+  kind: 'function',
+  descriptor: annotated,
+  sampleWindow: { minX: -4, maxX: 5, minY: -5, maxY: 5 },
+  strokeColor: '#2563EB'
+}, {
+  annotations: {
+    includeKinds: ['expression', 'vertex', 'axis', 'intercept'],
+    styles: {
+      vertex: { strokeColor: '#EF4444' },
+      intercept: { strokeColor: '#16A34A' }
+    }
+  },
+  auxiliaryLines: {
+    includeKinds: ['symmetry-axis'],
+    defaultVisibleKinds: ['symmetry-axis'],
+    styles: {
+      'symmetry-axis': { strokeColor: '#EF4444', strokeWidth: 2, lineDash: [5, 4] }
+    }
+  }
+});
+const geometryOverlayTarget: SubjectOverlayTarget = {
+  id: 'geometry-overlay-triangle',
+  kind: 'polygon',
+  shapeKind: 'triangle',
+  vertices: [point2D(-4, -2), point2D(2, -2), point2D(-1, 3)],
+  coordinateSystemId: 'plane',
+  strokeColor: '#2563EB',
+  meta: { subject: 'triangle-construction' }
+};
+const geometryOverlayConfig: SubjectOverlayConfig = {
+  annotations: {
+    includeKinds: ['vertex', 'angle', 'side-ratio', 'helper-intersection'],
+    labels: { 'side-ratio': '三边比例' },
+    styles: {
+      vertex: { strokeColor: '#0F172A' },
+      angle: { strokeColor: '#7C3AED' },
+      'side-ratio': { strokeColor: '#0F766E' },
+      'helper-intersection': { strokeColor: '#B45309' }
+    }
+  },
+  auxiliaryLines: {
+    includeKinds: ['altitude', 'median', 'angle-bisector', 'free'],
+    defaultVisibleKinds: ['altitude', 'median', 'free'],
+    allowFreeDraw: true,
+    maxCandidates: 9,
+    labels: {
+      altitude: '高',
+      median: '中线',
+      'angle-bisector': '角平分线'
+    },
+    styles: {
+      altitude: { strokeColor: '#EF4444', strokeWidth: 2, lineDash: [4, 3] },
+      median: { strokeColor: '#16A34A', strokeWidth: 2, lineDash: [6, 3] },
+      free: { strokeColor: '#7C3AED', strokeWidth: 2, lineDash: [5, 4] }
+    }
+  },
+  shapes: {
+    triangle: {
+      auxiliaryLines: {
+        includeKinds: ['altitude', 'median', 'angle-bisector', 'free'],
+        allowFreeDraw: true,
+        maxCandidates: 9
+      }
+    }
+  },
+  coordinates: {
+    showForKinds: ['vertex', 'helper-intersection'],
+    precision: 1
+  }
+};
+const geometryOverlay = createSubjectOverlayModel(geometryOverlayTarget, geometryOverlayConfig);
+const geometryFreeLine = createFreeSubjectAuxiliaryLine(
+  geometryOverlayTarget,
+  point2D(-4, 0),
+  point2D(2.5, 0),
+  { config: geometryOverlayConfig, label: '用户自定义线' }
+);
+const geometryFreeIntersections = createSubjectAuxiliaryLineIntersectionAnnotations(
+  geometryOverlayTarget,
+  geometryFreeLine ? [geometryFreeLine] : [],
+  geometryOverlayConfig
+);
 
 export const getSubjectToolsBackendStatusRows = () => createSubjectBackendSupportMatrix();
+
+const TWO_D_SUBJECT_BACKENDS = ['canvas2d'] as const satisfies readonly PlaygroundRenderBackend[];
 
 export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDemo[] = [
   {
@@ -56,7 +153,7 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     emoji: '🎯',
     title: '学科画布 · 独立坐标系',
     desc: '默认背景只有网格；拖入函数/方程时创建可见独立坐标系，所有后端走同一 coordinate-system IR。',
-    compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
     modelSummary: 'CoordinateSystem("plane") 生成 360×360、30px/unit、x/y=[-6,6] 的 renderer-neutral 节点。',
     commands: [
       'cs = CoordinateSystem("plane")',
@@ -69,7 +166,7 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     emoji: '🎚️',
     title: '参数调节 · 二次函数',
     desc: '参数模型在 math 包中复用，playground 用两条曲线代表调节前后体验。',
-    compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
     modelSummary: `a 从 ${parameterBase.parameters.a} 调整到 ${parameterUpdated.parameters.a}，参数控件保持序列化。`,
     commands: [
       'before = Function("0.5*x^2 + x + 2", -5, 5)',
@@ -82,7 +179,7 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     emoji: '🧩',
     title: '函数管理 · 添加/排序/删除',
     desc: '同一坐标系下颜色按固定序列分配，删除/重排不让既有函数随机变色。',
-    compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
     modelSummary: '颜色序列：#4DA6FF → #FF8D1A → #16D957 → #FF4D4D → #BB32FF，按创建序循环。',
     commands: [
       { expr: 'f1 = Function("x + 1", -5, 5)', options: { strokeColor: '#4DA6FF' } },
@@ -96,7 +193,7 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     emoji: '✂️',
     title: '定义域 · 分段函数',
     desc: '多区间定义域、开闭端点与分段采样由 math 包统一处理。',
-    compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
     modelSummary: `piecewise: ${piecewise.expression}`,
     commands: [
       { expr: 'left = Function("-x - 1", -5, 0)', options: { strokeColor: '#4DA6FF' } },
@@ -109,7 +206,7 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     emoji: '⭕',
     title: '方程族 · 圆的方程',
     desc: '函数与方程共享描述符/属性/采样，圆方程通过 active backend proxy 渲染。',
-    compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
     modelSummary: computeSubjectFunctionProperties(circle).map((property) => `${property.label}=${JSON.stringify(property.value)}`).join('；'),
     commands: [
       'circle = Equation("(x - 1)^2 + (y + 1)^2 = 9")',
@@ -120,15 +217,36 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
   {
     category: 'annotation',
     emoji: '🏷️',
-    title: '标注 · 顶点/对称轴/截距',
-    desc: '标注不是 UI 特例，而是由函数属性生成的可序列化 annotation descriptors。',
-    compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
-    modelSummary: createSubjectFunctionAnnotations(annotated).map((annotation) => annotation.label).join(' / '),
+    title: '函数标注 · 顶点/对称轴/截距',
+    desc: '标注与辅助轴线由 overlay 模型生成，playground 只把 descriptors 映射成通用命令。',
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
+    modelSummary: `annotations=${annotationOverlay.annotations.map((annotation) => annotation.label).join(' / ')}；auxiliary=${annotationOverlay.auxiliaryLines.map((line) => line.label).join(' / ')}`,
     commands: [
       'q = Function("x^2 - 2*x - 3", -4, 5)',
-      'V = Point(1, -4)',
-      'axis = Line(Point(1, -5), Point(1, 5))',
-      'Text(1.2, -4, "vertex (1,-4)")'
+      ...overlayLineCommands(annotationOverlay, { prefix: 'q_aux' }),
+      ...overlayAnnotationCommands(annotationOverlay, { prefix: 'q_note', kinds: ['vertex', 'intercept'], limit: 4 }),
+      'Text(-4, 4.4, "overlay annotations: vertex / axis / intercept")'
+    ]
+  },
+  {
+    category: 'geometry-overlay',
+    emoji: '📐',
+    title: '几何标注/辅助线 · 三角形配置',
+    desc: '同一套 overlay provider 生成顶点、角度、边长比、高、中线和自由辅助线；图形、标签、样式、候选数量都由配置控制。',
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
+    modelSummary: `annotations=${geometryOverlay.annotations.map((annotation) => annotation.label).join(' / ')}；visible auxiliary=${geometryOverlay.auxiliaryLines.filter((line) => line.visible !== false).map((line) => line.label).join(' / ')}；free=${geometryFreeLine?.label ?? 'disabled'}`,
+    commands: [
+      'A = (-4, -2)',
+      'B = (2, -2)',
+      'C = (-1, 3)',
+      { expr: 'tri = Polygon(A, B, C)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.18, strokeWidth: 2 } },
+      ...overlayLineCommands(geometryOverlay, { prefix: 'tri_aux', kinds: ['altitude', 'median'], limit: 6 }),
+      ...(geometryFreeLine ? overlayLineCommands([geometryFreeLine], { prefix: 'tri_free' }) : []),
+      ...overlayAnnotationCommands([...geometryOverlay.annotations, ...geometryFreeIntersections], {
+        prefix: 'tri_note',
+        kinds: ['vertex', 'angle', 'side-ratio', 'helper-intersection'],
+        limit: 10
+      })
     ]
   },
   {
@@ -136,7 +254,7 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     emoji: '▶️',
     title: '动点 P · 沿函数播放',
     desc: '动点状态含 range/speed/direction，可 tick/reset/reverse 并随参数重算。',
-    compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
     modelSummary: `P(${dynamicPoint.point?.x.toFixed(1)}, ${dynamicPoint.point?.y.toFixed(1)}) after 1s tick`,
     commands: [
       'path = Function("0.5*x + 1", 0, 8)',
@@ -148,12 +266,105 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     category: 'backend-status',
     emoji: '🧪',
     title: '后端状态 · 显式降级',
-    desc: 'jsxgraph/canvas2d/babylon 是真实验证目标；pixi/konva/three/fabric 保持明确 deferred。',
-    compatibleBackends: ['jsxgraph', 'canvas2d', 'babylon'],
+    desc: 'Canvas2D 是 2D 学科画布主后端；Babylon 保留给 3D solid，其他包保持明确 deferred。',
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
     modelSummary: getSubjectToolsBackendStatusRows().map((row) => `${row.backendId}:${row.active ? 'active' : 'deferred'}`).join(' · '),
     commands: [
-      'Text(-5, 4, "active: JSXGraph / Canvas2D / Babylon")',
-      'Text(-5, 3.3, "deferred placeholders: Pixi / Konva / Three / Fabric")'
+      'Text(-5, 4, "2D active: Canvas2D · 3D active: Babylon")',
+      'Text(-5, 3.3, "compat/deferred: JSXGraph / Pixi / Konva / Three / Fabric")'
     ]
   }
 ];
+
+function overlayLineCommands(
+  input: SubjectOverlayModel | readonly SubjectAuxiliaryLineDescriptor[],
+  options: {
+    prefix: string;
+    kinds?: readonly string[];
+    limit?: number;
+    visibleOnly?: boolean;
+    labels?: boolean;
+  }
+): SubjectToolsDemoCommand[] {
+  const visibleOnly = options.visibleOnly ?? true;
+  const sourceLines: readonly SubjectAuxiliaryLineDescriptor[] = isOverlayModel(input) ? input.auxiliaryLines : input;
+  const lines = sourceLines
+    .filter((line) => (!visibleOnly || line.visible !== false) && (!options.kinds || options.kinds.includes(line.kind)))
+    .slice(0, options.limit ?? Infinity);
+
+  return lines.flatMap((line, index) => {
+    const id = `${options.prefix}_${index + 1}`;
+    const commands: SubjectToolsDemoCommand[] = [{
+      expr: `${id} = Segment(${formatPointTuple(line.start)}, ${formatPointTuple(line.end)})`,
+      options: overlayStyleOptions(line.style, '#64748B')
+    }];
+    if (options.labels !== false) {
+      commands.push({
+        expr: `${id}_label = Text(${formatPoint(lineMidpoint(line))}, "${escapeCommandText(line.label)}")`,
+        options: overlayStyleOptions(line.style, '#64748B')
+      });
+    }
+    return commands;
+  });
+}
+
+function overlayAnnotationCommands(
+  input: SubjectOverlayModel | readonly SubjectOverlayAnnotation[],
+  options: {
+    prefix: string;
+    kinds?: readonly string[];
+    limit?: number;
+    visibleOnly?: boolean;
+  }
+): SubjectToolsDemoCommand[] {
+  const visibleOnly = options.visibleOnly ?? true;
+  const annotations: readonly SubjectOverlayAnnotation[] = isOverlayModel(input) ? input.annotations : input;
+  return annotations
+    .filter((annotation) => !!annotation.anchor && (!visibleOnly || annotation.visible !== false) && (!options.kinds || options.kinds.includes(annotation.kind)))
+    .slice(0, options.limit ?? Infinity)
+    .map((annotation, index) => ({
+      expr: `${options.prefix}_${index + 1} = Text(${formatPoint(annotation.anchor!)}, "${escapeCommandText(annotation.text)}")`,
+      options: overlayStyleOptions(annotation.style, '#0F172A')
+    }));
+}
+
+function isOverlayModel(
+  value: SubjectOverlayModel | readonly SubjectAuxiliaryLineDescriptor[] | readonly SubjectOverlayAnnotation[]
+): value is SubjectOverlayModel {
+  return !Array.isArray(value);
+}
+
+function lineMidpoint(line: SubjectAuxiliaryLineDescriptor): MathPoint2D {
+  return {
+    x: (line.start.x + line.end.x) / 2,
+    y: (line.start.y + line.end.y) / 2
+  };
+}
+
+function overlayStyleOptions(style: SubjectOverlayStyle | undefined, fallbackColor: string): Record<string, unknown> {
+  const options: Record<string, unknown> = {
+    strokeColor: style?.strokeColor ?? style?.textColor ?? fallbackColor
+  };
+  if (typeof style?.strokeWidth === 'number') options.strokeWidth = style.strokeWidth;
+  if (style?.fillColor) options.fillColor = style.fillColor;
+  if (style?.lineDash?.[0]) options.dash = style.lineDash[0];
+  return options;
+}
+
+function formatPointTuple(point: MathPoint2D): string {
+  return `(${formatNumber(point.x)}, ${formatNumber(point.y)})`;
+}
+
+function formatPoint(point: MathPoint2D): string {
+  return `${formatNumber(point.x)}, ${formatNumber(point.y)}`;
+}
+
+function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function escapeCommandText(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}

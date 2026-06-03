@@ -191,6 +191,11 @@ interface RgbaColor {
   a: number;
 }
 
+interface Babylon2DTranslation {
+  dx: number;
+  dy: number;
+}
+
 interface StandardCoordinateScreenMetrics {
   width: number;
   height: number;
@@ -225,7 +230,7 @@ const BABYLON_2D_COORDINATE_LABEL_Z = 0.07;
 const BABYLON_3D_GRID_Z = -0.025;
 const BABYLON_2D_PATH_Z = 0;
 const BABYLON_2D_POINT_Z = -0.02;
-const BABYLON_2D_SELECTED_Z = -0.04;
+const BABYLON_2D_SELECTED_Z = -1;
 const BABYLON_2D_TEXT_Z = -0.06;
 const BABYLON_2D_LAYER_Z_STEP = 0.0001;
 const BABYLON_2D_JOIN_Z_OFFSET = BABYLON_2D_LAYER_Z_STEP * 0.25;
@@ -333,7 +338,11 @@ export class BabylonRuntime implements BabylonRuntimePort {
   public createObject(node: GraphObjectNode, handle: GraphRenderHandle, _context: GraphBackendContext = {}): void {
     const scene = this.requireScene();
     const previous = this.objects.get(handle.id);
-    if (previous) this.disposeStoredObject(previous);
+    if (previous) {
+      this.disposeStoredObject(previous);
+      this.objects.delete(handle.id);
+    }
+    if (this.renderMode === '2d' && isSelectedNode(node)) this.raise2DLayerOrder(handle);
     const meshes = this.shouldRenderAsNativeSolid(node)
       ? [this.createMeshForSolid(node, handle, scene)]
       : this.createMeshesForProxyObject(node, handle, scene);
@@ -345,13 +354,50 @@ export class BabylonRuntime implements BabylonRuntimePort {
     const stored = this.objects.get(handle.id);
     if (!stored) return;
     const nextNode = mergeGraphObjectPatch(stored.node, patch);
+    if (this.tryUpdateObjectBy2DTranslation(stored, nextNode, patch)) return;
+    if (this.renderMode === '2d' && isSelectedNode(nextNode)) this.raise2DLayerOrder(handle);
     this.disposeStoredObject(stored);
     const scene = this.requireScene();
     const meshes = this.shouldRenderAsNativeSolid(nextNode)
       ? [this.createMeshForSolid(nextNode, stored.handle, scene)]
       : this.createMeshesForProxyObject(nextNode, stored.handle, scene);
     const labels = this.createLabelsForObject(nextNode, stored.handle);
+    if (isSelectedNode(nextNode)) this.objects.delete(handle.id);
     this.objects.set(handle.id, { node: nextNode, handle: stored.handle, meshes, labels });
+  }
+
+  private tryUpdateObjectBy2DTranslation(
+    stored: BabylonStoredObject,
+    nextNode: GraphObjectNode,
+    patch: GraphObjectPatch
+  ): boolean {
+    if (this.renderMode !== '2d') return false;
+    const translation = resolveReusable2DTranslation(stored.node, nextNode, patch);
+    if (!translation) return false;
+
+    for (const mesh of stored.meshes) {
+      if (!mesh.position) continue;
+      mesh.position.x += translation.dx;
+      mesh.position.y += translation.dy;
+    }
+
+    const clientDelta = this.worldDeltaToClientDelta(translation);
+    for (const label of stored.labels) shiftDomLabel(label, clientDelta);
+
+    stored.node = nextNode;
+    this.objects.set(stored.handle.id, stored);
+    return true;
+  }
+
+  private worldDeltaToClientDelta(translation: Babylon2DTranslation): GraphClientPoint {
+    const bounds = this.getVisible2DWorldBounds();
+    const viewportSize = this.viewportSize ?? readCanvasViewportSize(this.canvas);
+    const origin = project2DWorldToClient({ x: 0, y: 0 }, bounds, viewportSize);
+    const shifted = project2DWorldToClient({ x: translation.dx, y: translation.dy }, bounds, viewportSize);
+    return {
+      x: shifted.x - origin.x,
+      y: shifted.y - origin.y
+    };
   }
 
   public createSolid(node: GraphObjectNode, handle: GraphRenderHandle, context: GraphBackendContext = {}): void {
@@ -761,7 +807,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
 
     if (node.type === 'point') {
       const anchor = readObjectAnchor(node);
-      const pointZ = this.resolve2DLayerZ(handle, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_POINT_Z);
+      const pointZ = this.resolve2DLayerZ(handle, node, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_POINT_Z);
       const position = this.renderMode === '2d'
         ? this.layerPoint(anchor, pointZ)
         : { x: anchor.x, y: anchor.y, z: anchor.z + 0.02 };
@@ -789,7 +835,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
       return pathSegments.flatMap((linePoints) => {
         const close = node.type === 'polygon' || geometry?.kind === 'polygon';
         const points = close ? closePointPath(linePoints) : linePoints;
-        const pathZ = this.resolve2DLayerZ(handle, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z);
+        const pathZ = this.resolve2DLayerZ(handle, node, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z);
         const layeredPoints = this.layerPathPoints(points, pathZ);
         if (this.renderMode === '2d' && this.BABYLON.MeshBuilder.CreatePlane) {
           const meshes = this.createFlatPathMeshes({
@@ -833,7 +879,7 @@ export class BabylonRuntime implements BabylonRuntimePort {
     }
 
     const rawAnchor = readObjectAnchor(node);
-    const fallbackZ = this.resolve2DLayerZ(handle, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z);
+    const fallbackZ = this.resolve2DLayerZ(handle, node, isSelectedNode(node) ? BABYLON_2D_SELECTED_Z : BABYLON_2D_PATH_Z);
     const anchor = this.renderMode === '2d'
       ? this.layerPoint(rawAnchor, fallbackZ)
       : { x: rawAnchor.x, y: rawAnchor.y, z: rawAnchor.z + 0.02 };
@@ -1576,8 +1622,12 @@ export class BabylonRuntime implements BabylonRuntimePort {
     return points.map((point) => this.layerPoint(point, z));
   }
 
-  private resolve2DLayerZ(handle: GraphRenderHandle, baseZ: number): number {
+  private resolve2DLayerZ(handle: GraphRenderHandle, node: GraphObjectNode, baseZ: number): number {
     if (this.renderMode !== '2d') return baseZ;
+    if (!isSelectedNode(node)) {
+      return baseZ - readRenderZIndex(node) * BABYLON_2D_LAYER_Z_STEP;
+    }
+
     let order = this.object2DLayerOrders.get(handle.id);
     if (order === undefined) {
       order = this.next2DLayerOrder;
@@ -1585,6 +1635,11 @@ export class BabylonRuntime implements BabylonRuntimePort {
       this.object2DLayerOrders.set(handle.id, order);
     }
     return baseZ - order * BABYLON_2D_LAYER_Z_STEP;
+  }
+
+  private raise2DLayerOrder(handle: GraphRenderHandle): void {
+    this.object2DLayerOrders.set(handle.id, this.next2DLayerOrder);
+    this.next2DLayerOrder += 1;
   }
 
   private pick2DObjectWithTolerance(point: GraphClientPoint, options: GraphPickOptions = {}): BabylonRuntimePickResult | null {
@@ -2097,6 +2152,175 @@ const isSurfaceSolidNode = (node: GraphObjectNode): boolean => {
   return payload?.solidKind === 'surface' || payload?.family === 'surface';
 };
 
+const resolveReusable2DTranslation = (
+  previous: GraphObjectNode,
+  next: GraphObjectNode,
+  patch: GraphObjectPatch
+): Babylon2DTranslation | null => {
+  if (!isTranslationOnlyPatchShape(patch)) return null;
+  if (previous.type !== next.type || previous.kind !== next.kind || previous.layerId !== next.layerId) return null;
+  if (previous.backendHint !== next.backendHint) return null;
+  if (!areSerializableValuesEqual(previous.meta ?? {}, next.meta ?? {})) return null;
+  if (!areSerializableValuesEqual(renderHintsWithoutClipBounds(previous.renderHints), renderHintsWithoutClipBounds(next.renderHints))) return null;
+  if (!areSerializableValuesEqual(previous.dependencies ?? [], next.dependencies ?? [])) return null;
+  if (!areSerializableValuesEqual(previous.children ?? [], next.children ?? [])) return null;
+  if (!areSerializableValuesEqual(previous.relations ?? [], next.relations ?? [])) return null;
+  if (!areSerializableValuesEqual(previous.capabilities ?? [], next.capabilities ?? [])) return null;
+  if ((previous.type === 'text' || previous.type === 'measurement') && textDescriptorKey(previous) !== textDescriptorKey(next)) return null;
+
+  const previousPayload = asRecord(previous.payload);
+  const nextPayload = asRecord(next.payload);
+  const previousSegments = readRenderablePathSegments(previousPayload, asRecord(previousPayload?.geometry));
+  const nextSegments = readRenderablePathSegments(nextPayload, asRecord(nextPayload?.geometry));
+  const translation = resolvePathSegments2DTranslation(previousSegments, nextSegments)
+    ?? resolveAnchor2DTranslation(previous, next, previousSegments, nextSegments);
+  if (!translation) return null;
+  return clipBoundsTranslatedBy(previous.renderHints?.clipWorldBounds, next.renderHints?.clipWorldBounds, translation)
+    ? translation
+    : null;
+};
+
+const isTranslationOnlyPatchShape = (patch: GraphObjectPatch): boolean => (
+  patch.payload !== undefined
+  && patch.dependencies === undefined
+  && patch.children === undefined
+  && patch.relations === undefined
+  && patch.capabilities === undefined
+);
+
+const renderHintsWithoutClipBounds = (hints: GraphObjectNode['renderHints']): Record<string, unknown> => {
+  if (!hints) return {};
+  const { clipWorldBounds: _clipWorldBounds, ...rest } = hints;
+  return rest;
+};
+
+const textDescriptorKey = (node: GraphObjectNode): string => {
+  const descriptor = resolveGraphTextRenderDescriptor(node);
+  return JSON.stringify({
+    format: descriptor?.format ?? null,
+    latex: descriptor?.latex ?? null,
+    text: descriptor?.text ?? null
+  });
+};
+
+const resolvePathSegments2DTranslation = (
+  previousSegments: BabylonVector3Like[][],
+  nextSegments: BabylonVector3Like[][]
+): Babylon2DTranslation | null => {
+  if (previousSegments.length === 0 && nextSegments.length === 0) return null;
+  if (previousSegments.length !== nextSegments.length) return null;
+  const firstPrevious = previousSegments[0]?.[0];
+  const firstNext = nextSegments[0]?.[0];
+  if (!firstPrevious || !firstNext) return null;
+  const translation = {
+    dx: firstNext.x - firstPrevious.x,
+    dy: firstNext.y - firstPrevious.y
+  };
+  if (!Number.isFinite(translation.dx) || !Number.isFinite(translation.dy) || !sameFinite(firstPrevious.z, firstNext.z)) return null;
+
+  for (let segmentIndex = 0; segmentIndex < previousSegments.length; segmentIndex += 1) {
+    const previousSegment = previousSegments[segmentIndex];
+    const nextSegment = nextSegments[segmentIndex];
+    if (previousSegment.length !== nextSegment.length) return null;
+    for (let pointIndex = 0; pointIndex < previousSegment.length; pointIndex += 1) {
+      const previousPoint = previousSegment[pointIndex];
+      const nextPoint = nextSegment[pointIndex];
+      if (
+        !sameFinite(previousPoint.x + translation.dx, nextPoint.x)
+        || !sameFinite(previousPoint.y + translation.dy, nextPoint.y)
+        || !sameFinite(previousPoint.z, nextPoint.z)
+      ) {
+        return null;
+      }
+    }
+  }
+
+  return translation;
+};
+
+const resolveAnchor2DTranslation = (
+  previous: GraphObjectNode,
+  next: GraphObjectNode,
+  previousSegments: BabylonVector3Like[][],
+  nextSegments: BabylonVector3Like[][]
+): Babylon2DTranslation | null => {
+  if (previousSegments.length !== 0 || nextSegments.length !== 0) return null;
+  if (previous.type !== 'point' && previous.type !== 'text' && previous.type !== 'measurement') return null;
+  const previousAnchor = readObjectAnchor(previous);
+  const nextAnchor = readObjectAnchor(next);
+  if (!sameFinite(previousAnchor.z, nextAnchor.z)) return null;
+  const dx = nextAnchor.x - previousAnchor.x;
+  const dy = nextAnchor.y - previousAnchor.y;
+  return Number.isFinite(dx) && Number.isFinite(dy) ? { dx, dy } : null;
+};
+
+const clipBoundsTranslatedBy = (
+  previous: unknown,
+  next: unknown,
+  translation: Babylon2DTranslation
+): boolean => {
+  if (previous === undefined && next === undefined) return true;
+  const previousBounds = asRecord(previous);
+  const nextBounds = asRecord(next);
+  if (!previousBounds || !nextBounds) return false;
+  return translatedFinite(previousBounds.left, nextBounds.left, translation.dx)
+    && translatedFinite(previousBounds.right, nextBounds.right, translation.dx)
+    && translatedFinite(previousBounds.top, nextBounds.top, translation.dy)
+    && translatedFinite(previousBounds.bottom, nextBounds.bottom, translation.dy);
+};
+
+const translatedFinite = (previous: unknown, next: unknown, delta: number): boolean => {
+  const previousNumber = readFiniteNumber(previous);
+  const nextNumber = readFiniteNumber(next);
+  return previousNumber !== undefined && nextNumber !== undefined && sameFinite(previousNumber + delta, nextNumber);
+};
+
+const sameFinite = (left: unknown, right: unknown, epsilon = 1e-7): boolean => (
+  typeof left === 'number'
+  && typeof right === 'number'
+  && Number.isFinite(left)
+  && Number.isFinite(right)
+  && Math.abs(left - right) <= epsilon
+);
+
+const areSerializableValuesEqual = (left: unknown, right: unknown): boolean => {
+  if (left === right) return true;
+  if (left === null || right === null || left === undefined || right === undefined) return left === right;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((entry, index) => areSerializableValuesEqual(entry, right[index]));
+  }
+  if (typeof left !== 'object' || typeof right !== 'object') return false;
+
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).sort();
+  const rightKeys = Object.keys(rightRecord).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key, index) => (
+    key === rightKeys[index]
+    && areSerializableValuesEqual(leftRecord[key], rightRecord[key])
+  ));
+};
+
+const shiftDomLabel = (label: HTMLElement, delta: GraphClientPoint): void => {
+  const translate3d = label.style.transform.match(/^translate3d\(([-\d.]+)px,\s*([-\d.]+)px,\s*0\)(.*)$/);
+  if (translate3d) {
+    label.style.transform = `translate3d(${formatCssNumber(Number(translate3d[1]) + delta.x)}px, ${formatCssNumber(Number(translate3d[2]) + delta.y)}px, 0)${translate3d[3]}`;
+    return;
+  }
+
+  const left = parseCssPixelValue(label.style.left);
+  const top = parseCssPixelValue(label.style.top);
+  if (left !== null) label.style.left = `${formatCssNumber(left + delta.x)}px`;
+  if (top !== null) label.style.top = `${formatCssNumber(top + delta.y)}px`;
+};
+
+const parseCssPixelValue = (value: string): number | null => {
+  const parsed = Number(value.replace(/px$/, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const readRenderablePathSegments = (
   payload: Record<string, unknown> | null,
   geometry: Record<string, unknown> | null
@@ -2416,6 +2640,11 @@ const readNodeColor = (node: GraphObjectNode, fallback: RgbaColor): RgbaColor =>
 const isSelectedNode = (node: GraphObjectNode): boolean => (
   node.meta?.selected === true || node.renderHints?.selected === true
 );
+
+const readRenderZIndex = (node: GraphObjectNode): number => {
+  const value = node.renderHints?.zIndex ?? node.meta?.zIndex;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+};
 
 const parseCssHexColor = (value: string): RgbaColor | null => {
   const normalized = value.trim();

@@ -86,6 +86,7 @@ export class MemoryGraphBackend implements GraphRenderBackend {
     const current = this.nodes.get(handle.objectId);
     if (!current) return;
     const next = mergeGraphObjectPatch(current, patch);
+    if (isSelectedNode(next)) this.nodes.delete(handle.objectId);
     this.nodes.set(handle.objectId, { ...next, layerId: context.layerId ?? next.layerId ?? handle.layerId });
   }
 
@@ -98,7 +99,7 @@ export class MemoryGraphBackend implements GraphRenderBackend {
     if (!this.capabilities.pick) return null;
     if (options.targetScopes && !options.targetScopes.includes('object')) return null;
     const allowedLayers = options.layerOrder ? new Set(options.layerOrder) : null;
-    const candidates = [...this.nodes.values()].reverse();
+    const candidates = sortNodesByRenderOrder([...this.nodes.values()]).reverse();
     for (const node of candidates) {
       if (node.renderHints?.visible === false) continue;
       if (allowedLayers && !allowedLayers.has(node.layerId ?? 'content')) continue;
@@ -162,6 +163,26 @@ const readNodeHitGroups = (node: GraphObjectNode): string[] => {
     ...readStringList(renderHints?.hitGroup)
   ];
   return groups.length > 0 ? [...new Set(groups)] : [node.type, node.kind];
+};
+
+const isSelectedNode = (node: GraphObjectNode): boolean => (
+  node.meta?.selected === true || node.renderHints?.selected === true
+);
+
+const sortNodesByRenderOrder = (nodes: readonly GraphObjectNode[]): GraphObjectNode[] => (
+  nodes
+    .map((node, index) => ({ node, index, zIndex: readRenderZIndex(node), selected: isSelectedNode(node) }))
+    .sort((left, right) => (
+      Number(left.selected) - Number(right.selected)
+      || left.zIndex - right.zIndex
+      || left.index - right.index
+    ))
+    .map((entry) => entry.node)
+);
+
+const readRenderZIndex = (node: GraphObjectNode): number => {
+  const value = node.renderHints?.zIndex ?? node.meta?.zIndex;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 };
 
 const readStringList = (value: unknown): string[] => {

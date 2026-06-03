@@ -14,6 +14,7 @@ import {
   CURRICULUM_PARITY_BACKENDS,
   createStandardCoordinateSystemGeometry,
   createParitySnapshot,
+  resolveGraphGridSnapOptions,
   snapPointToGraphGrid,
   type CurriculumBackendId,
   type GraphObjectNode,
@@ -36,6 +37,11 @@ export interface PlaygroundCanvasDiagnostic {
 export interface PlaygroundCanvasSceneResult {
   nodes: GraphObjectNode[];
   diagnostics: PlaygroundCanvasDiagnostic[];
+}
+
+export interface PlaygroundLayered3DSceneResult {
+  babylon: PlaygroundCanvasSceneResult;
+  overlay: PlaygroundCanvasSceneResult;
 }
 
 interface OperationCoordinateSystemRuntimeOptions {
@@ -110,6 +116,26 @@ export const buildPlaygroundJsxGraphScene = (commands: readonly PlaygroundCanvas
   buildPlaygroundCoreScene(commands, { backendId: 'jsxgraph', renderMode: '2d' })
 );
 
+export const buildPlaygroundLayered3DScene = (
+  commands: readonly PlaygroundCanvasCommand[]
+): PlaygroundLayered3DSceneResult => {
+  const babylon = buildPlaygroundBabylonScene(commands, { renderMode: '3d' });
+  const overlayBase = buildPlaygroundCanvasScene(commands);
+  return {
+    babylon: {
+      ...babylon,
+      nodes: babylon.nodes.filter(isPlayground3DNode)
+    },
+    overlay: {
+      nodes: overlayBase.nodes.filter(isPlayground2DOverlayNode),
+      diagnostics: overlayBase.diagnostics
+    }
+  };
+};
+
+const isPlayground3DNode = (node: GraphObjectNode): boolean => node.type === 'solid';
+const isPlayground2DOverlayNode = (node: GraphObjectNode): boolean => node.type !== 'solid';
+
 const buildPlaygroundCoreScene = (
   commands: readonly PlaygroundCanvasCommand[],
   options: Required<Pick<PlaygroundSceneBuildOptions, 'backendId' | 'renderMode'>>
@@ -161,7 +187,7 @@ const buildPlaygroundCoreScene = (
     diagnostics.push({ commandId: command.id, message: mathNodes.ok ? `${backendLabel(options.backendId)} 暂不支持该指令。` : mathNodes.message });
   }
 
-  return { nodes, diagnostics };
+  return { nodes: withTextAvoidance(withStableRenderOrder(nodes)), diagnostics };
 };
 
 export const createPlaygroundParitySnapshot = (
@@ -187,6 +213,177 @@ const withRenderHints = (node: GraphObjectNode, command: PlaygroundCanvasCommand
     radius: readNumber(command.options?.size, 4)
   }
 });
+
+const withStableRenderOrder = (nodes: readonly GraphObjectNode[]): GraphObjectNode[] => (
+  nodes.map((node, index) => ({
+    ...node,
+    renderHints: {
+      ...(node.renderHints ?? {}),
+      zIndex: readNumber(node.renderHints?.zIndex, index)
+    }
+  }))
+);
+
+interface TextAvoidanceBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+interface TextAvoidanceLabel {
+  node: GraphObjectNode;
+  index: number;
+  anchor: { x: number; y: number };
+  text: string;
+  width: number;
+  height: number;
+  bounds: TextAvoidanceBox;
+}
+
+const TEXT_AVOIDANCE_PADDING = 0.16;
+const TEXT_AVOIDANCE_MIN_GAP = 0.08;
+
+const withTextAvoidance = (nodes: readonly GraphObjectNode[]): GraphObjectNode[] => {
+  const labels = nodes
+    .map((node, index): TextAvoidanceLabel | null => {
+      if (node.type !== 'text' && node.type !== 'measurement') return null;
+      if (typeof node.meta?.coordinateSystemId !== 'string') return null;
+      const payload = asRecord(node.payload);
+      const anchor = readPoint(payload?.point);
+      const text = typeof payload?.text === 'string' ? payload.text : '';
+      if (!payload || !anchor || !text.trim()) return null;
+      const size = estimateTextAvoidanceSize(text);
+      return {
+        node,
+        index,
+        anchor,
+        text,
+        width: size.width,
+        height: size.height,
+        bounds: readTextAvoidanceBounds(node.renderHints?.clipWorldBounds)
+      };
+    })
+    .filter((label): label is TextAvoidanceLabel => label !== null);
+
+  if (labels.length < 2) return [...nodes];
+
+  const placed: TextAvoidanceBox[] = [];
+  const relocated = new Map<number, { x: number; y: number }>();
+  for (const label of labels) {
+    const position = chooseTextAvoidancePosition(label, placed);
+    relocated.set(label.index, position);
+    placed.push(textAvoidanceBox(position, label.width, label.height));
+  }
+
+  return nodes.map((node, index) => {
+    const point = relocated.get(index);
+    if (!point) return node;
+    const payload = asRecord(node.payload);
+    if (!payload) return node;
+    return {
+      ...node,
+      payload: {
+        ...payload,
+        point,
+        labelAnchor: payload.labelAnchor ?? payload.point
+      },
+      renderHints: {
+        ...(node.renderHints ?? {}),
+        labelAvoidance: 'playground'
+      }
+    };
+  });
+};
+
+const chooseTextAvoidancePosition = (
+  label: TextAvoidanceLabel,
+  placed: readonly TextAvoidanceBox[]
+): { x: number; y: number } => {
+  let best = clampTextAvoidancePosition(label.anchor, label.width, label.height, label.bounds);
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const candidate of textAvoidanceCandidates(label)) {
+    const position = clampTextAvoidancePosition(candidate, label.width, label.height, label.bounds);
+    const box = textAvoidanceBox(position, label.width, label.height);
+    const overlap = placed.reduce((sum, existing) => sum + textAvoidanceOverlapArea(box, existing), 0);
+    const distance = Math.hypot(position.x - label.anchor.x, position.y - label.anchor.y);
+    const score = overlap * 1000 + distance;
+    if (score < bestScore) {
+      best = position;
+      bestScore = score;
+      if (overlap <= 1e-9) break;
+    }
+  }
+  return best;
+};
+
+const textAvoidanceCandidates = (label: TextAvoidanceLabel): Array<{ x: number; y: number }> => {
+  const gap = TEXT_AVOIDANCE_PADDING;
+  const { x, y } = label.anchor;
+  return [
+    { x: x + gap, y: y + label.height + gap },
+    { x: x + gap, y: y - gap },
+    { x: x - label.width - gap, y: y + label.height + gap },
+    { x: x - label.width - gap, y: y - gap },
+    { x: x - label.width / 2, y: y + label.height + gap },
+    { x: x - label.width / 2, y: y - gap },
+    { x: x + gap, y: y + label.height / 2 },
+    { x: x - label.width - gap, y: y + label.height / 2 },
+    { x, y },
+    { x: x + gap * 2, y },
+    { x: x - label.width - gap * 2, y }
+  ];
+};
+
+const estimateTextAvoidanceSize = (text: string): { width: number; height: number } => {
+  const width = [...text].reduce((sum, char) => sum + (/[\u4e00-\u9fff]/.test(char) ? 0.34 : 0.19), 0);
+  return {
+    width: Math.max(0.7, width + TEXT_AVOIDANCE_PADDING * 2),
+    height: 0.48
+  };
+};
+
+const textAvoidanceBox = (
+  position: { x: number; y: number },
+  width: number,
+  height: number
+): TextAvoidanceBox => ({
+  left: position.x,
+  right: position.x + width,
+  top: position.y,
+  bottom: position.y - height
+});
+
+const clampTextAvoidancePosition = (
+  position: { x: number; y: number },
+  width: number,
+  height: number,
+  bounds: TextAvoidanceBox
+): { x: number; y: number } => ({
+  x: clampFiniteNumber(position.x, bounds.left, Math.max(bounds.left, bounds.right - width)),
+  y: clampFiniteNumber(position.y, Math.min(bounds.top, bounds.bottom + height), bounds.top)
+});
+
+const textAvoidanceOverlapArea = (left: TextAvoidanceBox, right: TextAvoidanceBox): number => {
+  const width = Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left) + TEXT_AVOIDANCE_MIN_GAP);
+  const height = Math.max(0, Math.min(left.top, right.top) - Math.max(left.bottom, right.bottom) + TEXT_AVOIDANCE_MIN_GAP);
+  return width * height;
+};
+
+const readTextAvoidanceBounds = (value: unknown): TextAvoidanceBox => {
+  const bounds = asRecord(value);
+  const left = readFiniteNumber(bounds?.left);
+  const right = readFiniteNumber(bounds?.right);
+  const top = readFiniteNumber(bounds?.top);
+  const bottom = readFiniteNumber(bounds?.bottom);
+  return left !== null && right !== null && top !== null && bottom !== null && left < right && bottom < top
+    ? { left, right, top, bottom }
+    : { ...PLAYGROUND_CANVAS_WORLD_BOUNDS };
+};
+
+const clampFiniteNumber = (value: number, min: number, max: number): number => (
+  Math.max(min, Math.min(max, value))
+);
 
 const withOperationCoordinateMeta = (
   node: GraphObjectNode,
@@ -273,18 +470,24 @@ const readOperationCoordinateSystemOptions = (
   const yMax = readFiniteNumber(yRange?.max);
   if (!id || originX === null || originY === null || unitScale === null || unitScale <= 0) return null;
   if (xMin === null || xMax === null || yMin === null || yMax === null || xMax <= xMin || yMax <= yMin) return null;
+  const resolvedOrigin = readOperationCoordinateSystemOrigin({ x: originX, y: originY }, value?.snapToGrid);
   return {
     id,
-    origin: snapPointToGraphGrid(
-      { x: originX, y: originY },
-      value?.snapToGrid,
-      { enabled: false, step: 1 }
-    ),
+    origin: resolvedOrigin,
     unitScale,
     xRange: { min: xMin, max: xMax },
     yRange: { min: yMin, max: yMax },
     snapToGrid: value?.snapToGrid
   };
+};
+
+const readOperationCoordinateSystemOrigin = (
+  origin: { x: number; y: number },
+  snapToGrid: unknown
+): { x: number; y: number } => {
+  const snapOptions = resolveGraphGridSnapOptions(snapToGrid, { enabled: false, step: 1 });
+  if (!snapOptions.enabled || snapOptions.phase === 'end') return { ...origin };
+  return snapPointToGraphGrid(origin, snapOptions);
 };
 
 const transformOperationCoordinateSegments = (
@@ -294,6 +497,22 @@ const transformOperationCoordinateSegments = (
   x: coordinateSystem.origin.x + point.x * coordinateSystem.unitScale,
   y: coordinateSystem.origin.y + point.y * coordinateSystem.unitScale
 })));
+
+const transformOperationCoordinatePoint = (
+  point: { x: number; y: number },
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): { x: number; y: number } => ({
+  x: coordinateSystem.origin.x + point.x * coordinateSystem.unitScale,
+  y: coordinateSystem.origin.y + point.y * coordinateSystem.unitScale
+});
+
+const scaleOperationCoordinateVector = (
+  point: { x: number; y: number },
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): { x: number; y: number } => ({
+  x: point.x * coordinateSystem.unitScale,
+  y: point.y * coordinateSystem.unitScale
+});
 
 const operationCoordinateWorldBounds = (
   coordinateSystem: OperationCoordinateSystemRuntimeOptions
@@ -376,6 +595,87 @@ const normalizeSceneContractNode = (node: GraphObjectNode): GraphObjectNode => {
   return node;
 };
 
+const transformOperationCoordinateNode = (
+  node: GraphObjectNode,
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): GraphObjectNode => {
+  if (node.type === 'coordinate-system') return node;
+  return {
+    ...node,
+    payload: transformOperationCoordinateValue(node.payload, coordinateSystem) as GraphObjectNode['payload']
+  };
+};
+
+const transformOperationCoordinateValue = (
+  value: unknown,
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions,
+  key = ''
+): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => transformOperationCoordinateValue(entry, coordinateSystem, key));
+  }
+
+  const point = readPoint(value);
+  if (point && isOperationCoordinatePointKey(key)) {
+    return {
+      ...(asRecord(value) ?? {}),
+      ...transformOperationCoordinatePoint(point, coordinateSystem)
+    };
+  }
+  if (point && key === 'direction') {
+    return {
+      ...(asRecord(value) ?? {}),
+      ...scaleOperationCoordinateVector(point, coordinateSystem)
+    };
+  }
+
+  const record = asRecord(value);
+  if (!record) return value;
+  const next: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of Object.entries(record)) {
+    if ((entryKey === 'radius' || entryKey === 'radiusX' || entryKey === 'radiusY') && typeof entryValue === 'number' && Number.isFinite(entryValue)) {
+      next[entryKey] = entryValue * coordinateSystem.unitScale;
+    } else {
+      next[entryKey] = transformOperationCoordinateValue(entryValue, coordinateSystem, entryKey);
+    }
+  }
+  return next;
+};
+
+const isOperationCoordinatePointKey = (key: string): boolean => (
+  [
+    'anchor',
+    'border',
+    'center',
+    'centroid',
+    'coordinates',
+    'end',
+    'gridSegments',
+    'origin',
+    'point',
+    'points',
+    'position',
+    'segments',
+    'start',
+    'through',
+    'tickPoints',
+    'vertex',
+    'vertices',
+    'xAxis',
+    'yAxis'
+  ].includes(key)
+);
+
+const prepareOperationCoordinateNode = (
+  node: GraphObjectNode,
+  command: PlaygroundCanvasCommand,
+  options: { clipToCoordinateSystem?: boolean } = { clipToCoordinateSystem: true }
+): GraphObjectNode => {
+  const coordinateSystem = readOperationCoordinateSystemOptions(command);
+  const transformed = coordinateSystem ? transformOperationCoordinateNode(node, coordinateSystem) : node;
+  return withOperationCoordinateMeta(withRenderHints(transformed, command), command, options);
+};
+
 const compileCanvasGraphCommand = (
   graphCommand: string,
   symbols: GraphCommandSymbolTable
@@ -420,11 +720,11 @@ const expandCanvasCommandNode = (
   if (node.type === 'conic') {
     const normalized = normalizeCanvasConicNode(node, symbols);
     if (!normalized.ok) return { ok: false, message: normalized.message };
-    return { ok: true, nodes: [withRenderHints(normalized.node, command)] };
+    return { ok: true, nodes: [prepareOperationCoordinateNode(normalized.node, command)] };
   }
 
   if (node.type === 'solid') {
-    return { ok: true, nodes: [withRenderHints(addSolidProjectionGeometry(node), command)] };
+    return { ok: true, nodes: [prepareOperationCoordinateNode(addSolidProjectionGeometry(node), command)] };
   }
 
   if (!CANVAS_RENDERABLE_TYPES.has(node.type)) {
@@ -434,7 +734,7 @@ const expandCanvasCommandNode = (
   const normalizedMeasurement = node.type === 'measurement'
     ? addMeasurementAnchor(node, symbols)
     : node;
-  return { ok: true, nodes: [withRenderHints(normalizeSceneContractNode(normalizedMeasurement), command)] };
+  return { ok: true, nodes: [prepareOperationCoordinateNode(normalizeSceneContractNode(normalizedMeasurement), command)] };
 };
 
 const registerMathFunctionSymbol = (

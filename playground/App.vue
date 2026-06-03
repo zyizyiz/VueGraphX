@@ -356,6 +356,8 @@ import {
   GraphSceneRuntime,
   createCenteredWorldBoundsForViewportGrid,
   resolveGraphViewportGridOptions,
+  resolveGraphGridSnapOptions,
+  snapPointToGraphGrid,
   type GraphClientPoint,
   type GraphObjectNode,
   type GraphOperationDiagnostic,
@@ -372,18 +374,25 @@ import {
 import { useFormulaStore, type CommandInput, type CommandItem } from './stores/formula';
 import { useSceneDocument } from './composables/useSceneDocument';
 import {
-  buildPlaygroundBabylonScene,
   buildPlaygroundCanvasScene,
+  buildPlaygroundLayered3DScene,
   PLAYGROUND_CANVAS_WORLD_BOUNDS
 } from './renderers/canvasScene';
 import { allDemos, playgroundBackendCapabilities, rendererBackends, type PlaygroundRenderBackend } from './showcase';
-import { isBackendSelectableForMode } from './parityStatus';
+import { getPreferredBackendForMode, isBackendSelectableForMode } from './parityStatus';
 import ExternalCircleDesigner from './components/ExternalCircleDesigner.vue';
 import ExternalCubeDesigner from './components/ExternalCubeDesigner.vue';
 import HiddenLinePanel from './components/HiddenLinePanel.vue';
 import OperationPanel from './components/OperationPanel.vue';
 import RelationPanel from './components/RelationPanel.vue';
-import { OPERATION_COMMANDS_MIME, createOperationScopedCommands, resolveOperationCommandOrigin } from './operationTools';
+import {
+  OPERATION_COMMANDS_MIME,
+  clampOperationCoordinateSystemOrigin,
+  createOperationScopedCommands,
+  resolveOperationCommandOrigin,
+  updateOperationCoordinateSystemOrigin,
+  type OperationCoordinateSystemRuntimeOptions
+} from './operationTools';
 import { registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 import {
@@ -455,7 +464,7 @@ const canvasBackendRef = shallowRef<Canvas2DGraphBackend | null>(null);
 const canvasRuntimeRef = shallowRef<GraphSceneRuntime | null>(null);
 const babylonBackendRef = shallowRef<BabylonGraphBackend | null>(null);
 const babylonRuntimeRef = shallowRef<GraphSceneRuntime | null>(null);
-const activeRendererBackend = ref<PlaygroundRenderBackend>('jsxgraph');
+const activeRendererBackend = ref<PlaygroundRenderBackend>(getPreferredBackendForMode('2d'));
 const babylonRuntimeError = ref('');
 const sidebarBottomHeight = ref(420);
 const sidebarBottomMaxHeight = ref(920);
@@ -501,17 +510,16 @@ const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'c
 const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
 const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
 const rendererBackendHint = computed(() => {
-  if (isBabylonRendererActive.value) return babylonRuntimeError.value || '同一份课程语义场景已切到 Babylon Core';
-  if (isCanvasRendererActive.value) return '同一份课程语义场景已切到 Canvas2D Core';
-  if (store.activeMode === 'operation') return '操作区支持 JSXGraph / Canvas2D / Babylon 共用命令链路';
-  return 'JSXGraph 与 Canvas2D / Babylon 共用课程 parity 合同';
+  if (isBabylonRendererActive.value) return babylonRuntimeError.value || '3D 使用 Babylon canvas，2D 标注使用独立 Canvas2D overlay';
+  if (isCanvasRendererActive.value) return '2D / 几何 / 操作区使用 Canvas2D Core';
+  return 'JSXGraph 仅保留为兼容路径';
 });
 const coreRendererPanelMessage = computed(() => {
   if (isBabylonRendererActive.value) {
     return babylonRuntimeError.value
-      || 'Babylon 后端正在通过 GraphSceneRuntime 渲染同一份课程语义场景；2D 对象使用原生 mesh proxy，Solid 使用原生 Babylon mesh。';
+      || 'Babylon runtime 只承载 3D 节点；平面文本、标注和辅助对象通过独立 Canvas2D overlay 渲染。';
   }
-  return 'Canvas2D 后端正在用同一份课程语义场景渲染 core IR；Equation / Parabola / Solid 会降维为可绘制教学对象。';
+  return 'Canvas2D 后端正在用同一份课程语义场景渲染 2D core IR；Equation / Parabola / Solid 会降维为可绘制教学对象。';
 });
 const isRendererBackendSupported = (backend: PlaygroundRenderBackend): boolean => (
   isBackendSelectableForMode(store.activeMode, backend)
@@ -519,9 +527,15 @@ const isRendererBackendSupported = (backend: PlaygroundRenderBackend): boolean =
 const activeBackendCapability = computed(() => playgroundBackendCapabilities[activeRendererBackend.value]);
 const coreSceneSummary = computed(() => {
   if (!isCoreRendererActive.value) return null;
-  const result = isBabylonRendererActive.value
-    ? buildPlaygroundBabylonScene(store.commands, { renderMode: getBabylonRenderModeForCurrentMode() })
-    : buildPlaygroundCanvasScene(store.commands);
+  if (isBabylonRendererActive.value) {
+    const result = buildPlaygroundLayered3DScene(store.commands);
+    return {
+      commandCount: store.commands.filter((command) => command.expression.trim()).length,
+      nodeCount: result.babylon.nodes.length + result.overlay.nodes.length,
+      diagnosticCount: result.babylon.diagnostics.length + result.overlay.diagnostics.length
+    };
+  }
+  const result = buildPlaygroundCanvasScene(store.commands);
   return {
     commandCount: store.commands.filter((command) => command.expression.trim()).length,
     nodeCount: result.nodes.length,
@@ -632,11 +646,15 @@ const getCoreLocalPoint = (event: Pick<PointerEvent | WheelEvent | DragEvent, 'c
 };
 
 const getWorldPointForOperationDrop = (point: GraphClientPoint | null): { x: number; y: number } => {
+  const bounds = getOperationPlacementBounds();
+  return resolveOperationCommandOrigin(point, getGraphViewportSize(), bounds);
+};
+
+const getOperationPlacementBounds = (): CanvasWorldBounds => {
   const boardBounds = engineRef.value?.getBoard()?.getBoundingBox?.() as [number, number, number, number] | undefined;
-  const bounds = boardBounds
+  return boardBounds
     ? { left: boardBounds[0], top: boardBounds[1], right: boardBounds[2], bottom: boardBounds[3] }
     : coreViewportBounds.value;
-  return resolveOperationCommandOrigin(point, getGraphViewportSize(), bounds);
 };
 
 const getWorldPointForCanvasPoint = (point: GraphClientPoint): { dimension: '2d'; x: number; y: number } => {
@@ -782,16 +800,171 @@ const applyCoordinateSystemDragDelta = (
   delta: { dimension: '2d'; dx: number; dy: number },
   dragPhase: 'move' | 'end'
 ) => {
+  if (applyOperationCoordinateSystemDragDelta(session, delta, dragPhase)) return;
+
+  const constrainedDelta = clampCoordinateSystemDragDelta(session, delta);
   if (session.backend === 'core') {
-    const result = getActiveCoreRuntime()?.applyDragToObject(session.objectId, { delta, dragPhase });
+    const result = getActiveCoreRuntime()?.applyDragToObject(session.objectId, { delta: constrainedDelta, dragPhase });
     if (result && !result.ok) pushCoreDiagnostics(result.diagnostics);
+    if (dragPhase === 'end' && result?.ok && result.value) {
+      persistDraggedOperationCoordinateSystemOrigin(session.objectId, result.value);
+    }
   } else {
     const moved = engineRef.value?.executeRuntimeCapability('math.object.move', {
       scope: 'object',
       objectId: session.objectId
-    }, { delta, dragPhase });
+    }, { delta: constrainedDelta, dragPhase });
     if (!moved) pushCoreInteractionDiagnostic(`coordinate system drag failed: ${session.objectId}`);
   }
+};
+
+const applyOperationCoordinateSystemDragDelta = (
+  session: CoordinateSystemDragSession,
+  delta: { dimension: '2d'; dx: number; dy: number },
+  dragPhase: 'move' | 'end'
+): boolean => {
+  if (store.activeMode !== 'operation') return false;
+  const coordinateSystem = readStoredOperationCoordinateSystem(session.objectId);
+  if (!coordinateSystem) return false;
+
+  let nextOrigin = {
+    x: coordinateSystem.origin.x + delta.dx,
+    y: coordinateSystem.origin.y + delta.dy
+  };
+  nextOrigin = applyOperationCoordinateSystemSnap(nextOrigin, coordinateSystem, dragPhase);
+  nextOrigin = clampOperationCoordinateSystemOrigin(nextOrigin, getOperationPlacementBounds(), {
+    unitScale: coordinateSystem.unitScale,
+    xRange: coordinateSystem.xRange,
+    yRange: coordinateSystem.yRange
+  });
+
+  const updatedCount = updateOperationCoordinateSystemOrigin(store.commands, session.objectId, nextOrigin);
+  if (updatedCount <= 0) return false;
+  syncAllToEngine({ keepSelection: session.objectId });
+  return true;
+};
+
+const readStoredOperationCoordinateSystem = (coordinateSystemId: string): OperationCoordinateSystemRuntimeOptions | null => {
+  for (const command of store.commands) {
+    const options = readPlainRecord(command.options);
+    const coordinateSystem = readPlainRecord(options?.coordinateSystem);
+    if (coordinateSystem?.id !== coordinateSystemId) continue;
+    return normalizeOperationCoordinateSystem(coordinateSystem);
+  }
+  return null;
+};
+
+const normalizeOperationCoordinateSystem = (
+  value: Record<string, unknown>
+): OperationCoordinateSystemRuntimeOptions | null => {
+  const origin = readPointRecord(value.origin);
+  const xRange = readRangeRecord(value.xRange);
+  const yRange = readRangeRecord(value.yRange);
+  const unitScale = typeof value.unitScale === 'number' && Number.isFinite(value.unitScale) && value.unitScale > 0
+    ? value.unitScale
+    : 1;
+  if (typeof value.id !== 'string' || !origin || !xRange || !yRange) return null;
+  return {
+    id: value.id,
+    origin,
+    unitScale,
+    xRange,
+    yRange,
+    snapToGrid: value.snapToGrid
+  };
+};
+
+const applyOperationCoordinateSystemSnap = (
+  origin: { x: number; y: number },
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions,
+  dragPhase: 'move' | 'end'
+): { x: number; y: number } => {
+  const snapOptions = resolveGraphGridSnapOptions(coordinateSystem.snapToGrid, { enabled: false, step: coordinateSystem.unitScale });
+  if (!snapOptions.enabled || (snapOptions.phase === 'end' && dragPhase === 'move')) return origin;
+  return snapPointToGraphGrid(origin, snapOptions);
+};
+
+const clampCoordinateSystemDragDelta = (
+  session: CoordinateSystemDragSession,
+  delta: { dimension: '2d'; dx: number; dy: number }
+): { dimension: '2d'; dx: number; dy: number } => {
+  const node = getCoordinateSystemDragNode(session);
+  const payload = node?.payload as Record<string, unknown> | undefined;
+  const origin = readCoordinateSystemNodeOrigin(node as GraphObjectNode | null);
+  const xRange = payload?.xRange as Record<string, unknown> | undefined;
+  const yRange = payload?.yRange as Record<string, unknown> | undefined;
+  const unitScale = typeof payload?.unitPx === 'number' && Number.isFinite(payload.unitPx) && payload.unitPx > 0
+    ? payload.unitPx
+    : 1;
+  if (
+    !origin
+    || typeof xRange?.min !== 'number'
+    || typeof xRange.max !== 'number'
+    || typeof yRange?.min !== 'number'
+    || typeof yRange.max !== 'number'
+  ) {
+    return delta;
+  }
+  const nextOrigin = clampOperationCoordinateSystemOrigin({
+    x: origin.x + delta.dx,
+    y: origin.y + delta.dy
+  }, getOperationPlacementBounds(), {
+    unitScale,
+    xRange: { min: xRange.min, max: xRange.max },
+    yRange: { min: yRange.min, max: yRange.max }
+  });
+  return {
+    dimension: '2d',
+    dx: nextOrigin.x - origin.x,
+    dy: nextOrigin.y - origin.y
+  };
+};
+
+const getCoordinateSystemDragNode = (session: CoordinateSystemDragSession): GraphObjectNode | null => {
+  if (session.backend === 'core') return getActiveCoreRuntime()?.scene.getObject(session.objectId) ?? null;
+  return engineRef.value?.exportRuntimeScene().scene?.objects.find((node) => node.id === session.objectId) ?? null;
+};
+
+const persistDraggedOperationCoordinateSystemOrigin = (
+  coordinateSystemId: string,
+  node: GraphObjectNode
+) => {
+  const origin = readCoordinateSystemNodeOrigin(node);
+  if (!origin) return;
+  updateOperationCoordinateSystemOrigin(store.commands, coordinateSystemId, origin);
+};
+
+const readPlainRecord = (value: unknown): Record<string, unknown> | null => (
+  typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
+);
+
+const readPointRecord = (value: unknown): { x: number; y: number } | null => {
+  const record = readPlainRecord(value);
+  return typeof record?.x === 'number' && Number.isFinite(record.x)
+    && typeof record.y === 'number' && Number.isFinite(record.y)
+    ? { x: record.x, y: record.y }
+    : null;
+};
+
+const readRangeRecord = (value: unknown): { min: number; max: number } | null => {
+  const record = readPlainRecord(value);
+  return typeof record?.min === 'number' && Number.isFinite(record.min)
+    && typeof record.max === 'number' && Number.isFinite(record.max)
+    ? { min: record.min, max: record.max }
+    : null;
+};
+
+const readCoordinateSystemNodeOrigin = (node: GraphObjectNode | null | undefined): { x: number; y: number } | null => {
+  if (!node) return null;
+  const payload = typeof node.payload === 'object' && node.payload !== null
+    ? node.payload as Record<string, unknown>
+    : null;
+  const origin = typeof payload?.origin === 'object' && payload.origin !== null
+    ? payload.origin as Record<string, unknown>
+    : null;
+  if (typeof origin?.x !== 'number' || !Number.isFinite(origin.x)) return null;
+  if (typeof origin.y !== 'number' || !Number.isFinite(origin.y)) return null;
+  return { x: origin.x, y: origin.y };
 };
 
 const stopCoordinateSystemDrag = (event: PointerEvent) => {
@@ -1143,6 +1316,23 @@ const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
   startResizeObserver();
 };
 
+const createCoreRenderLayer = (
+  host: HTMLElement,
+  name: string,
+  options: { zIndex: number; pointerEvents: 'auto' | 'none' }
+): HTMLDivElement => {
+  const layer = document.createElement('div');
+  layer.setAttribute('data-vuegraphx-render-layer', name);
+  Object.assign(layer.style, {
+    position: 'absolute',
+    inset: '0',
+    zIndex: String(options.zIndex),
+    pointerEvents: options.pointerEvents
+  });
+  host.appendChild(layer);
+  return layer;
+};
+
 const loadBabylonNamespace = async (): Promise<BabylonNamespaceLike> => {
   const [engineModule, sceneModule, vectorModule, colorModule, materialModule, textureModule, cameraModule, lightModule, meshBuilderModule] = await Promise.all([
     import('@babylonjs/core/Engines/engine'),
@@ -1174,32 +1364,51 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
   const host = graphContainerRef.value;
   if (!host) return;
 
-  const showAxes = shouldShowCoreAxesForCurrentMode();
   const grid = getBoardOptionsForCurrentMode(store.activeMode).grid;
   coreViewportBounds.value = createCoreViewportBoundsForCurrentMode();
   host.replaceChildren();
+  const babylonLayer = createCoreRenderLayer(host, 'babylon-3d', { zIndex: 1, pointerEvents: 'auto' });
+  const overlayLayer = createCoreRenderLayer(host, 'canvas2d-overlay', { zIndex: 2, pointerEvents: 'none' });
   babylonRuntimeError.value = '';
-  const renderMode = getBabylonRenderModeForCurrentMode();
+  const renderMode: BabylonRenderMode = '3d';
   try {
     const BABYLON = await loadBabylonNamespace();
     const runtimePort = createBabylonRuntime(BABYLON, {
       renderMode,
-      attachCameraControl: renderMode === '3d',
+      attachCameraControl: true,
       canvasPointerEvents: 'auto',
-      showAxes,
+      showAxes: shouldShowCoreAxesForCurrentMode(),
       grid
     });
     const backend = createBabylonGraphBackend({
       id: 'playground-babylon',
       runtime: runtimePort
     });
-    backend.mount(host, {
+    backend.mount(babylonLayer, {
       size: getGraphViewportSize(),
-      attributes: { renderMode, worldBounds: coreViewportBounds.value, showAxes, grid }
+      attributes: { renderMode, worldBounds: coreViewportBounds.value, showAxes: shouldShowCoreAxesForCurrentMode(), grid }
     });
     babylonBackendRef.value = backend;
     babylonRuntimeRef.value = new GraphSceneRuntime({
       backend,
+      defaultContext: { layerId: 'content' }
+    });
+
+    const overlayBackend = createCanvas2DGraphBackend({
+      id: 'playground-canvas2d-overlay',
+      pixelRatio: window.devicePixelRatio || 1,
+      worldBounds: coreViewportBounds.value,
+      showAxes: false,
+      grid: false,
+      preserveAspectRatio: true
+    });
+    overlayBackend.mount(overlayLayer, {
+      size: getGraphViewportSize(),
+      attributes: { worldBounds: coreViewportBounds.value, grid: false }
+    });
+    canvasBackendRef.value = overlayBackend;
+    canvasRuntimeRef.value = new GraphSceneRuntime({
+      backend: overlayBackend,
       defaultContext: { layerId: 'content' }
     });
   } catch (error) {
@@ -1213,7 +1422,7 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
 };
 
 const getBabylonRenderModeForCurrentMode = (): BabylonRenderMode => (
-  store.activeMode === '3d' ? '3d' : '2d'
+  '3d'
 );
 const shouldShowCoreAxesForCurrentMode = (): boolean => (
   getBoardOptionsForCurrentMode(store.activeMode).axis !== false
@@ -1258,7 +1467,7 @@ const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolea
   store.activeMode = mode;
   activeDemo.value = -1;
   if (!isRendererBackendSupported(activeRendererBackend.value)) {
-    activeRendererBackend.value = 'jsxgraph';
+    activeRendererBackend.value = getPreferredBackendForMode(mode);
   }
 
   stopResizeObserver();
@@ -1273,7 +1482,7 @@ const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolea
 
 const switchRendererBackend = async (backend: PlaygroundRenderBackend) => {
   if (activeRendererBackend.value === backend) return;
-  activeRendererBackend.value = isRendererBackendSupported(backend) ? backend : 'jsxgraph';
+  activeRendererBackend.value = isRendererBackendSupported(backend) ? backend : getPreferredBackendForMode(store.activeMode);
   showScenePanel.value = false;
 
   stopResizeObserver();
@@ -1295,12 +1504,14 @@ const handleRendererBackendChange = (event: Event) => {
 const handleCreateOperationCommands = (commands: readonly CommandInput[], dropPoint: GraphClientPoint | null = null) => {
   if (commands.length === 0) return;
   activeDemo.value = -1;
+  const bounds = getOperationPlacementBounds();
   const origin = getWorldPointForOperationDrop(dropPoint);
   const nextCommands = store.activeMode === 'operation'
     ? createOperationScopedCommands(
       commands,
       origin,
-      `coord_${nextOperationCoordinateSystemSequence++}`
+      `coord_${nextOperationCoordinateSystemSequence++}`,
+      bounds
     )
     : commands;
   store.appendCommands(nextCommands);
@@ -1354,41 +1565,43 @@ const clearAll = () => {
   if (babylonRuntimeRef.value) babylonRuntimeRef.value.clear();
 };
 
-const syncAllToEngine = () => {
+const syncAllToEngine = (options: { keepSelection?: string } = {}) => {
   if (isCanvasRendererActive.value) {
-    const backend = canvasBackendRef.value;
     const runtime = canvasRuntimeRef.value;
-    if (!backend || !runtime) return;
-    coreSelectedObjectId.value = '';
-    runtime.clear();
+    if (!canvasBackendRef.value || !runtime) return;
+    coreSelectedObjectId.value = options.keepSelection ?? '';
     const result = buildPlaygroundCanvasScene(store.commands);
     store.commands.forEach((command) => {
       const diagnostic = result.diagnostics.find((item) => item.commandId === command.id);
       store.setCommandError(command.id, diagnostic?.message ?? '');
     });
-    for (const node of result.nodes) runtime.addObject(node);
-    backend.flush();
+    const synced = runtime.syncObjects(applyCoreRuntimeSelection(result.nodes, options.keepSelection));
+    if (!synced.ok) pushCoreDiagnostics(synced.diagnostics);
     return;
   }
 
   if (isBabylonRendererActive.value) {
-    const backend = babylonBackendRef.value;
     const runtime = babylonRuntimeRef.value;
-    if (!backend || !runtime) {
+    if (!babylonBackendRef.value || !runtime) {
       store.commands.forEach((command) => {
         if (command.expression.trim()) store.setCommandError(command.id, babylonRuntimeError.value || 'Babylon 后端未初始化。');
       });
       return;
     }
-    coreSelectedObjectId.value = '';
-    runtime.clear();
-    const result = buildPlaygroundBabylonScene(store.commands, { renderMode: getBabylonRenderModeForCurrentMode() });
+    coreSelectedObjectId.value = options.keepSelection ?? '';
+    const result = buildPlaygroundLayered3DScene(store.commands);
     store.commands.forEach((command) => {
-      const diagnostic = result.diagnostics.find((item) => item.commandId === command.id);
+      const diagnostic = result.babylon.diagnostics.find((item) => item.commandId === command.id)
+        ?? result.overlay.diagnostics.find((item) => item.commandId === command.id);
       store.setCommandError(command.id, diagnostic?.message ?? '');
     });
-    for (const node of result.nodes) runtime.addObject(node);
-    backend.flush();
+    const synced = runtime.syncObjects(applyCoreRuntimeSelection(result.babylon.nodes, options.keepSelection));
+    if (!synced.ok) pushCoreDiagnostics(synced.diagnostics);
+    const overlayRuntime = canvasRuntimeRef.value;
+    if (overlayRuntime) {
+      const overlaySynced = overlayRuntime.syncObjects(result.overlay.nodes);
+      if (!overlaySynced.ok) pushCoreDiagnostics(overlaySynced.diagnostics);
+    }
     return;
   }
 
@@ -1396,6 +1609,18 @@ const syncAllToEngine = () => {
   store.commands.forEach(cmd => executeSingle(cmd.id));
   // 批量创建图元后 JSXGraph 不会自动重绘，必须手动触发
   if (engineRef.value) engineRef.value.forceUpdate();
+};
+
+const applyCoreRuntimeSelection = (
+  nodes: readonly GraphObjectNode[],
+  selectedObjectId?: string
+): GraphObjectNode[] => {
+  if (!selectedObjectId) return [...nodes];
+  return nodes.map((node) => (
+    node.id === selectedObjectId
+      ? { ...node, meta: { ...(node.meta ?? {}), selected: true } }
+      : node
+  ));
 };
 
 /** 加载点击的 Demo 卡片 */

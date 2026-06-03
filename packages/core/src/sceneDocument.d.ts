@@ -26,6 +26,7 @@ export declare class GraphSceneStore {
         replace?: boolean;
     }): GraphOperationResult<GraphObjectNode>;
     updateObject(id: string, patch: GraphObjectPatch): GraphOperationResult<GraphObjectNode>;
+    moveObjectToTop(id: string): GraphOperationResult<GraphObjectNode>;
     removeObject(id: string): GraphOperationResult<GraphObjectNode>;
     getObject(id: string): GraphObjectNode | null;
     listObjects(): GraphObjectNode[];

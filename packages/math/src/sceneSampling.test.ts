@@ -25,4 +25,17 @@ describe('sceneSampling clipping', () => {
       && point.y <= 2 + 1e-9
     ))).toBe(true);
   });
+
+  it('samples translated circle equations as one closed curve instead of four implicit arcs', () => {
+    const segments = sampleImplicitEquationSegments('(x - 1)^2 + (y + 1)^2 = 9', {
+      bounds: { left: -6, right: 6, bottom: -6, top: 6 }
+    });
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toHaveLength(145);
+    expect(segments[0][0]).toEqual(segments[0].at(-1));
+    expect(segments[0].every((point) => (
+      Math.abs(Math.hypot(point.x - 1, point.y + 1) - 3) < 1e-9
+    ))).toBe(true);
+  });
 });

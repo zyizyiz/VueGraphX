@@ -34,12 +34,15 @@ export declare class GraphSceneRuntime {
     }): GraphOperationResult<GraphObjectNode>;
     updateObject(objectId: string, patch: GraphObjectPatch, context?: GraphBackendContext): GraphOperationResult<GraphObjectNode>;
     removeObject(objectId: string): GraphOperationResult<GraphObjectNode>;
+    syncObjects(nodes: readonly GraphObjectNode[], context?: GraphBackendContext): GraphOperationResult<GraphObjectNode[]>;
     applyDragToObject(objectId: string, drag: GraphCreateDragPatchOptions | GraphDragSession): GraphOperationResult<GraphObjectNode>;
     clear(): void;
     renderAll(context?: GraphBackendContext): void;
     snapshot(): GraphSceneRuntimeSnapshot;
     setDefaultContext(context: GraphBackendContext): void;
     private renderNode;
+    private removeObjectInternal;
+    private reorderSceneObjects;
     private createContext;
     private requireBackend;
 }

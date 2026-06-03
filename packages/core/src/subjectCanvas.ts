@@ -547,17 +547,17 @@ export const createSubjectCoordinateSystemSceneNode = (
 
 export const createSubjectBackendSupportMatrix = (backendIds: readonly GraphBackendKind[] = ['jsxgraph', 'canvas2d', 'babylon', 'pixi', 'konva', 'three', 'fabric']): SubjectBackendSupportRow[] => (
   backendIds.map((backendId) => {
-    const active = backendId === 'jsxgraph' || backendId === 'canvas2d' || backendId === 'babylon';
+    const active = backendId === 'jsxgraph' || backendId === 'canvas2d';
     return {
       backendId: backendId as SubjectBackendId,
       active,
       categories: active ? {
         canvas: 'supported',
-        'coordinate-system': backendId === 'babylon' ? 'partial-support' : 'supported',
+        'coordinate-system': 'supported',
         'function-family': 'supported',
         'equation-family': 'supported',
         domain: 'supported',
-        annotation: backendId === 'babylon' ? 'partial-support' : 'supported',
+        annotation: 'supported',
         'dynamic-point': 'supported',
         management: 'supported'
       } : {
@@ -571,10 +571,10 @@ export const createSubjectBackendSupportMatrix = (backendIds: readonly GraphBack
         management: 'unsupported'
       },
       reason: active
-        ? backendId === 'babylon'
-          ? 'Babylon renders 2D subject tools through proxy geometry; native 3D remains available for solids.'
-          : 'Active VueGraphX backend for subject-canvas parity.'
-        : 'Placeholder backend package is explicitly deferred and must not claim subject-canvas parity.'
+        ? 'Active VueGraphX backend for subject-canvas parity.'
+        : backendId === 'babylon'
+          ? 'Babylon is reserved for native 3D/solid rendering; 2D subject-canvas parity is handled by Canvas2D.'
+          : 'Placeholder backend package is explicitly deferred and must not claim subject-canvas parity.'
     };
   })
 );

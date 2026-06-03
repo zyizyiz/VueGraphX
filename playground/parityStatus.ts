@@ -1,4 +1,4 @@
-import { CURRICULUM_PARITY_BACKENDS, curriculumParityRows, type CurriculumBackendId } from '@vuegraphx/core';
+import { curriculumParityRows, type CurriculumBackendId } from '@vuegraphx/core';
 import type { PlaygroundMode } from './types/mode';
 
 export type PlaygroundRenderBackend = CurriculumBackendId;
@@ -42,8 +42,12 @@ export const parityRendererBackends: { id: PlaygroundRenderBackend; label: strin
   { id: 'babylon', label: 'Babylon Core' }
 ];
 
-export const isBackendSelectableForMode = (_mode: PlaygroundMode, backend: PlaygroundRenderBackend): boolean => (
-  CURRICULUM_PARITY_BACKENDS.includes(backend)
+export const getPreferredBackendForMode = (mode: PlaygroundMode): PlaygroundRenderBackend => (
+  mode === '3d' ? 'babylon' : 'canvas2d'
+);
+
+export const isBackendSelectableForMode = (mode: PlaygroundMode, backend: PlaygroundRenderBackend): boolean => (
+  backend === getPreferredBackendForMode(mode)
 );
 
 export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, PlaygroundBackendCapability> => {
@@ -54,7 +58,7 @@ export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, 
     jsxgraph: {
       id: 'jsxgraph',
       label: 'JSXGraph',
-      summary: `课程标准原生同构后端：与 Canvas2D/Babylon 使用同一份语义场景和 ${coverage}。`,
+      summary: `兼容验证后端：与 Canvas2D/Babylon 合同适配器使用同一份语义场景和 ${coverage}。`,
       supported: [`对象族：${objectTypes.join(' / ')}`, `能力族：${families.join(' / ')}`],
       unsupported: [],
       notes: ['关系面板、隐藏线调试仍属于 JSXGraph 专项面板；课程 parity demo 不依赖这些专项面板。'],
@@ -73,7 +77,7 @@ export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, 
     canvas2d: {
       id: 'canvas2d',
       label: 'Canvas2D Core',
-      summary: `课程标准原生同构后端：Equation/Parabola/Solid 均降维为 Canvas 可绘制语义对象，覆盖 ${coverage}。`,
+      summary: `2D 主渲染后端：Equation/Parabola/Solid 均降维为 Canvas 可绘制语义对象，覆盖 ${coverage}。`,
       supported: [`对象族：${objectTypes.join(' / ')}`, `能力族：${families.join(' / ')}`],
       unsupported: [],
       notes: ['Canvas2D 对立体使用教学等价投影/线框表达，不回退到 JSXGraph。'],
@@ -92,19 +96,19 @@ export const getParityCapabilitySummaries = (): Record<PlaygroundRenderBackend, 
     babylon: {
       id: 'babylon',
       label: 'Babylon Core',
-      summary: `课程标准原生同构后端：2D 画板使用正交 XY 平面，3D 画板使用可旋转立体视图，覆盖 ${coverage}。`,
+      summary: `3D 主渲染后端：空间对象由 Babylon canvas 渲染，平面标注通过独立 Canvas2D overlay 承载，覆盖 ${coverage}。`,
       supported: [`对象族：${objectTypes.join(' / ')}`, `能力族：${families.join(' / ')}`],
       unsupported: [],
-      notes: ['Babylon 对平面对象使用原生 mesh proxy；在 2D 模式不会展示成倾斜 3D 视角。'],
+      notes: ['Babylon 不再作为 2D 主画布；2D/标注层由独立 Canvas2D runtime 叠加。'],
       interactions: [
-        { id: 'viewport.zoom', label: '缩放', status: 'supported', detail: '2D 正交 bounds；3D camera controls' },
-        { id: 'viewport.gestureZoom', label: '手势缩放', status: 'partial-support', detail: '3D 原生 camera；2D 通过 VueGraphX gesture bridge' },
-        { id: 'viewport.pan', label: '平移', status: 'supported', detail: '2D bounds pan；3D camera controls' },
+        { id: 'viewport.zoom', label: '缩放', status: 'supported', detail: '3D camera controls；overlay 跟随 host bounds' },
+        { id: 'viewport.gestureZoom', label: '手势缩放', status: 'partial-support', detail: '3D 原生 camera；Canvas2D overlay 通过 VueGraphX gesture bridge' },
+        { id: 'viewport.pan', label: '平移', status: 'supported', detail: '3D camera controls；overlay 跟随 host bounds' },
         { id: 'object.pick', label: '拾取', status: 'supported', detail: 'scene.pick metadata 映射' },
         { id: 'object.select', label: '选中状态', status: 'supported', detail: 'core meta.selected 可观测状态' },
         { id: 'object.highlight', label: '选中高亮', status: 'supported', detail: 'selected meta -> proxy thickness ×2，不改变原色' },
-        { id: 'project', label: '投影', status: 'supported', detail: '2D worldBounds project；3D runtime fallback' },
-        { id: 'unproject', label: '反投影', status: 'supported', detail: '2D worldBounds unproject；3D pick point fallback' },
+        { id: 'project', label: '投影', status: 'supported', detail: 'Babylon 3D runtime project；overlay worldBounds project' },
+        { id: 'unproject', label: '反投影', status: 'supported', detail: 'Babylon 3D pick fallback；overlay worldBounds unproject' },
         { id: 'diagnostics', label: '诊断', status: 'supported', detail: 'GraphOperationDiagnostic / backend partial support rows' }
       ]
     }

@@ -400,7 +400,7 @@ describe('BabylonRuntime', () => {
     runtime.createObject({
       id: 'f',
       kind: 'shape',
-      type: 'function',
+      type: 'polyline',
       payload: { geometry: { kind: 'polyline', points: [{ x: -1, y: 1 }, { x: 1, y: 1 }] } }
     }, handleFor('f'));
     runtime.createObject({
@@ -903,6 +903,204 @@ describe('BabylonRuntime', () => {
       disableLighting: true,
       specularColor: { r: 0, g: 0, b: 0 }
     });
+
+    runtime.destroy();
+  });
+
+  it('raises selected Babylon 2D paths above previously drawn paths', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
+    const host = document.createElement('div');
+    runtime.mount(host, {
+      size: { width: 400, height: 300 },
+      attributes: { renderMode: '2d', worldBounds: { left: -10, right: 10, top: 10, bottom: -10 } }
+    });
+    clearMeshBuilderCalls();
+
+    const createFunction = (id: string, y: number): GraphRenderHandle => {
+      const handle: GraphRenderHandle = {
+        id: `babylon:${id}`,
+        objectId: id,
+        backendId: 'babylon',
+        layerId: 'content',
+        target: { scope: 'object', objectId: id, backendId: 'babylon', layerId: 'content' }
+      };
+      runtime.createObject({
+        id,
+        kind: 'shape',
+        type: 'function',
+        payload: {
+          geometry: {
+            kind: 'polyline',
+            points: [{ x: -1, y }, { x: 1, y }]
+          }
+        },
+        renderHints: { strokeColor: '#0ea5e9', strokeWidth: 2 }
+      }, handle);
+      return handle;
+    };
+
+    const firstHandle = createFunction('first', 0);
+    createFunction('second', 1);
+    const secondMesh = FakeMeshBuilder.meshes.get('babylon:second:segment-1');
+
+    runtime.updateObject(firstHandle, { meta: { selected: true } });
+    const selectedFirstMesh = FakeMeshBuilder.meshes.get('babylon:first:segment-1');
+
+    expect(selectedFirstMesh?.position?.z).toBeLessThan(secondMesh?.position?.z ?? 0);
+
+    runtime.destroy();
+  });
+
+  it('translates Babylon 2D proxy paths without rebuilding meshes', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
+    const host = document.createElement('div');
+    runtime.mount(host, {
+      size: { width: 400, height: 300 },
+      attributes: { renderMode: '2d', worldBounds: { left: -10, right: 10, top: 10, bottom: -10 } }
+    });
+    clearMeshBuilderCalls();
+
+    const handle: GraphRenderHandle = {
+      id: 'babylon:f',
+      objectId: 'f',
+      backendId: 'babylon',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'f', backendId: 'babylon', layerId: 'content' }
+    };
+    runtime.createObject({
+      id: 'f',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: -1, y: 0 }, { x: 1, y: 0 }]
+        }
+      },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 2 }
+    }, handle);
+
+    const segment = FakeMeshBuilder.meshes.get('babylon:f:segment-1');
+    const firstCap = FakeMeshBuilder.meshes.get('babylon:f:cap-1-1');
+    expect(segment?.position).toEqual({ x: 0, y: 0, z: 0 });
+    expect(firstCap?.position).toEqual({ x: -1, y: 0, z: -0.000025 });
+    FakeMeshBuilder.CreatePlane.mockClear();
+    FakeMeshBuilder.CreateDisc.mockClear();
+
+    runtime.updateObject(handle, {
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: 1, y: 2 }, { x: 3, y: 2 }]
+        }
+      }
+    });
+
+    expect(FakeMeshBuilder.CreatePlane).not.toHaveBeenCalled();
+    expect(FakeMeshBuilder.CreateDisc).not.toHaveBeenCalled();
+    expect(segment?.dispose).not.toHaveBeenCalled();
+    expect(firstCap?.dispose).not.toHaveBeenCalled();
+    expect(FakeMeshBuilder.meshes.get('babylon:f:segment-1')).toBe(segment);
+    expect(segment?.position).toEqual({ x: 2, y: 2, z: 0 });
+    expect(firstCap?.position).toEqual({ x: 1, y: 2, z: -0.000025 });
+
+    runtime.destroy();
+  });
+
+  it('syncs translated Babylon 2D proxy paths without rebuilding meshes', () => {
+    const runtime = createBabylonRuntime(createFakeBabylon(), { renderMode: '2d' });
+    const backend = createBabylonGraphBackend({ runtime });
+    const sceneRuntime = new GraphSceneRuntime({ backend });
+    const host = document.createElement('div');
+    sceneRuntime.mount(host, {
+      size: { width: 400, height: 300 },
+      attributes: { renderMode: '2d', worldBounds: { left: -10, right: 10, top: 10, bottom: -10 } }
+    });
+    clearMeshBuilderCalls();
+
+    const initialNode = {
+      id: 'seg',
+      kind: 'shape',
+      type: 'segment',
+      payload: {
+        start: { x: -1, y: 0 },
+        end: { x: 1, y: 0 },
+        geometry: {
+          kind: 'segment',
+          start: { x: -1, y: 0 },
+          end: { x: 1, y: 0 }
+        }
+      },
+      renderHints: {
+        strokeColor: '#0ea5e9',
+        strokeWidth: 2,
+        clipWorldBounds: { left: -2, right: 2, top: 2, bottom: -2 }
+      },
+      meta: { selected: true, dragScope: 'operation' }
+    } satisfies Parameters<GraphSceneRuntime['syncObjects']>[0][number];
+    const syncedInitial = sceneRuntime.syncObjects([initialNode]);
+    expect(syncedInitial.ok).toBe(true);
+
+    const segment = FakeMeshBuilder.meshes.get('babylon:seg:segment-1');
+    const firstCap = FakeMeshBuilder.meshes.get('babylon:seg:cap-1-1');
+    FakeMeshBuilder.CreatePlane.mockClear();
+    FakeMeshBuilder.CreateDisc.mockClear();
+
+    const syncedMoved = sceneRuntime.syncObjects([{
+      ...initialNode,
+      payload: {
+        start: { x: 1, y: 2 },
+        end: { x: 3, y: 2 },
+        geometry: {
+          kind: 'segment',
+          start: { x: 1, y: 2 },
+          end: { x: 3, y: 2 }
+        }
+      },
+      renderHints: {
+        ...initialNode.renderHints,
+        clipWorldBounds: { left: 0, right: 4, top: 4, bottom: 0 }
+      }
+    }]);
+
+    expect(syncedMoved.ok).toBe(true);
+    expect(FakeMeshBuilder.CreatePlane).not.toHaveBeenCalled();
+    expect(FakeMeshBuilder.CreateDisc).not.toHaveBeenCalled();
+    expect(segment?.dispose).not.toHaveBeenCalled();
+    expect(firstCap?.dispose).not.toHaveBeenCalled();
+    expect(FakeMeshBuilder.meshes.get('babylon:seg:segment-1')).toBe(segment);
+    expect(segment?.position).toEqual({ x: 2, y: 2, z: -1 });
+    expect(firstCap?.position).toEqual({ x: 1, y: 2, z: -1.000025 });
+
+    FakeMeshBuilder.CreatePlane.mockClear();
+    FakeMeshBuilder.CreateDisc.mockClear();
+    const syncedReorderedMetadata = sceneRuntime.syncObjects([{
+      ...initialNode,
+      payload: {
+        start: { x: 3, y: 3 },
+        end: { x: 5, y: 3 },
+        geometry: {
+          kind: 'segment',
+          start: { x: 3, y: 3 },
+          end: { x: 5, y: 3 }
+        }
+      },
+      renderHints: {
+        clipWorldBounds: { left: 2, right: 6, top: 5, bottom: 1 },
+        strokeWidth: 2,
+        strokeColor: '#0ea5e9'
+      },
+      meta: { dragScope: 'operation', selected: true }
+    }]);
+
+    expect(syncedReorderedMetadata.ok).toBe(true);
+    expect(FakeMeshBuilder.CreatePlane).not.toHaveBeenCalled();
+    expect(FakeMeshBuilder.CreateDisc).not.toHaveBeenCalled();
+    expect(segment?.dispose).not.toHaveBeenCalled();
+    expect(firstCap?.dispose).not.toHaveBeenCalled();
+    expect(FakeMeshBuilder.meshes.get('babylon:seg:segment-1')).toBe(segment);
+    expect(segment?.position).toEqual({ x: 4, y: 3, z: -1 });
+    expect(firstCap?.position).toEqual({ x: 3, y: 3, z: -1.000025 });
 
     runtime.destroy();
   });

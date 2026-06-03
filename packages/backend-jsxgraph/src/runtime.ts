@@ -141,7 +141,10 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
   public createObject(node: GraphObjectNode, handle: GraphRenderHandle, context: GraphBackendContext = {}): void {
     const board = this.requireBoard();
     const previous = this.objects.get(handle.id);
-    if (previous) this.removeStored(previous);
+    if (previous) {
+      this.removeStored(previous);
+      this.objects.delete(handle.id);
+    }
 
     const elements = this.createElements(board, node, context);
     const overlays = this.createOverlays(board, node);
@@ -160,6 +163,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
     const elements = this.createElements(board, nextNode, context);
     const overlays = this.createOverlays(board, nextNode);
     const nextStored = { node: nextNode, handle, elements, overlays };
+    if (isSelectedNode(nextNode)) this.objects.delete(handle.id);
     this.objects.set(handle.id, nextStored);
     if (elements.length > 0) this.options.onCreateElements?.(nextStored);
     this.flush();

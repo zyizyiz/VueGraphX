@@ -313,16 +313,82 @@ const areSceneSamplePointsClose = (
 ): boolean => Math.hypot(left.x - right.x, left.y - right.y) < 1e-7;
 
 export const sampleCircleEquationSegments = (expression: string): SceneSamplePoint2D[][] => {
-  const normalized = expression.replace(/\s+/g, '').replace(/\*\*/g, '^');
-  const match = normalized.match(/^x\^2\+y\^2=([0-9.]+)$/) ?? normalized.match(/^y\^2\+x\^2=([0-9.]+)$/);
-  if (!match) return [];
-  const radiusSquared = Number(match[1]);
+  const circle = parseCircleEquation(expression);
+  if (!circle) return [];
+  const { centerX, centerY, radiusSquared } = circle;
   if (!Number.isFinite(radiusSquared) || radiusSquared <= 0) return [];
   const radius = Math.sqrt(radiusSquared);
   return [sampleParametricClosedCurve((theta) => ({
-    x: radius * Math.cos(theta),
-    y: radius * Math.sin(theta)
+    x: centerX + radius * Math.cos(theta),
+    y: centerY + radius * Math.sin(theta)
   }))];
+};
+
+const parseCircleEquation = (
+  expression: string
+): { centerX: number; centerY: number; radiusSquared: number } | null => {
+  const parts = expression.split('=');
+  if (parts.length !== 2) return null;
+
+  let evaluate: (x: number, y: number) => number;
+  try {
+    const code = math.parse(`(${parts[0]}) - (${parts[1]})`).compile();
+    evaluate = (x, y) => Number(code.evaluate({ ...DEFAULT_SCOPE, x, y }));
+  } catch {
+    return null;
+  }
+
+  const safeEvaluate = (x: number, y: number): number => {
+    try {
+      const value = evaluate(x, y);
+      return Number.isFinite(value) ? value : NaN;
+    } catch {
+      return NaN;
+    }
+  };
+
+  const f00 = safeEvaluate(0, 0);
+  const f10 = safeEvaluate(1, 0);
+  const fNeg10 = safeEvaluate(-1, 0);
+  const f01 = safeEvaluate(0, 1);
+  const f0Neg1 = safeEvaluate(0, -1);
+  const f11 = safeEvaluate(1, 1);
+  if (![f00, f10, fNeg10, f01, f0Neg1, f11].every(Number.isFinite)) return null;
+
+  const constant = f00;
+  const xSquared = (f10 + fNeg10 - 2 * constant) / 2;
+  const x = (f10 - fNeg10) / 2;
+  const ySquared = (f01 + f0Neg1 - 2 * constant) / 2;
+  const y = (f01 - f0Neg1) / 2;
+  const xy = f11 - xSquared - ySquared - x - y - constant;
+  const scale = Math.max(1, Math.abs(xSquared), Math.abs(ySquared), Math.abs(x), Math.abs(y), Math.abs(constant));
+  const epsilon = scale * 1e-7;
+
+  if (Math.abs(xSquared) <= epsilon || Math.abs(xSquared - ySquared) > epsilon || Math.abs(xy) > epsilon) {
+    return null;
+  }
+
+  const isQuadraticCircle = [
+    [2, 0],
+    [0, 2],
+    [2, -1],
+    [-1.5, 2.25],
+    [3, -2]
+  ].every(([sampleX, sampleY]) => {
+    const expected = xSquared * sampleX ** 2
+      + xy * sampleX * sampleY
+      + ySquared * sampleY ** 2
+      + x * sampleX
+      + y * sampleY
+      + constant;
+    return Math.abs(safeEvaluate(sampleX, sampleY) - expected) <= epsilon * 16;
+  });
+  if (!isQuadraticCircle) return null;
+
+  const centerX = -x / (2 * xSquared);
+  const centerY = -y / (2 * xSquared);
+  const radiusSquared = centerX ** 2 + centerY ** 2 - constant / xSquared;
+  return { centerX, centerY, radiusSquared };
 };
 
 export const sampleParametricClosedCurve = (
@@ -334,6 +400,7 @@ export const sampleParametricClosedCurve = (
   for (let index = 0; index < count; index += 1) {
     points.push(pointAt((Math.PI * 2 * index) / (count - 1)));
   }
+  points[points.length - 1] = { ...points[0] };
   return points;
 };
 

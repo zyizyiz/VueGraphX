@@ -1,5 +1,6 @@
 import {
   errorResult,
+  okResult,
   type GraphBackendContext,
   type GraphBackendHost,
   type GraphBackendMountOptions,
@@ -98,8 +99,21 @@ export class GraphSceneRuntime {
     patch: GraphObjectPatch,
     context?: GraphBackendContext
   ): GraphOperationResult<GraphObjectNode> {
+    return this.updateObjectInternal(objectId, patch, context, { flush: true });
+  }
+
+  private updateObjectInternal(
+    objectId: string,
+    patch: GraphObjectPatch,
+    context: GraphBackendContext | undefined,
+    options: { flush: boolean }
+  ): GraphOperationResult<GraphObjectNode> {
     const result = this.scene.updateObject(objectId, patch);
     if (!result.ok || !result.value) return result;
+    if (isSelectedRuntimeNode(result.value)) {
+      const moved = this.scene.moveObjectToTop(objectId);
+      if (!moved.ok) return { ok: false, diagnostics: moved.diagnostics };
+    }
 
     const backend = this.backend;
     const handle = this.handlesByObjectId.get(objectId);
@@ -108,20 +122,65 @@ export class GraphSceneRuntime {
     } else if (backend) {
       this.renderNode(result.value, context);
     }
-    this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds: [objectId] });
+    if (options.flush) {
+      this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds: [objectId] });
+    }
     return result;
   }
 
   public removeObject(objectId: string): GraphOperationResult<GraphObjectNode> {
-    const result = this.scene.removeObject(objectId);
-    if (!result.ok) return result;
-    const handle = this.handlesByObjectId.get(objectId);
-    if (handle && this.backend) {
-      this.backend.remove(handle);
+    return this.removeObjectInternal(objectId, { flush: true });
+  }
+
+  public syncObjects(
+    nodes: readonly GraphObjectNode[],
+    context?: GraphBackendContext
+  ): GraphOperationResult<GraphObjectNode[]> {
+    const normalized = normalizeRuntimeSyncNodes(nodes, this.scene.id);
+    if (!normalized.ok || !normalized.value) return normalized;
+
+    const nextNodesById = new Map(normalized.value.map((node) => [node.id, node]));
+    const dirtyObjectIds: string[] = [];
+
+    for (const current of this.scene.listObjects()) {
+      if (!nextNodesById.has(current.id)) {
+        const removed = this.removeObjectInternal(current.id, { flush: false });
+        if (!removed.ok) return { ok: false, diagnostics: removed.diagnostics };
+        dirtyObjectIds.push(current.id);
+      }
     }
-    this.handlesByObjectId.delete(objectId);
-    this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds: [objectId] });
-    return result;
+
+    for (const node of normalized.value) {
+      const current = this.scene.getObject(node.id);
+      if (!current) {
+        const added = this.addObject(node, { context });
+        if (!added.ok) return { ok: false, diagnostics: added.diagnostics };
+        dirtyObjectIds.push(node.id);
+        continue;
+      }
+
+      if (areRuntimeSyncNodesEqual(current, node)) continue;
+
+      if (requiresRuntimeSyncReplace(current, node)) {
+        const removed = this.removeObjectInternal(node.id, { flush: false });
+        if (!removed.ok) return { ok: false, diagnostics: removed.diagnostics };
+        const added = this.addObject(node, { context });
+        if (!added.ok) return { ok: false, diagnostics: added.diagnostics };
+      } else {
+        const updated = this.updateObjectInternal(node.id, createRuntimeSyncPatch(node), context, { flush: false });
+        if (!updated.ok) return { ok: false, diagnostics: updated.diagnostics };
+      }
+      dirtyObjectIds.push(node.id);
+    }
+
+    const ordered = this.reorderSceneObjects(normalized.value);
+    if (!ordered.ok) return { ok: false, diagnostics: ordered.diagnostics };
+
+    if (dirtyObjectIds.length > 0) {
+      this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds });
+    }
+
+    return okResult(this.scene.listObjects());
   }
 
   public applyDragToObject(
@@ -140,10 +199,15 @@ export class GraphSceneRuntime {
       if (!patches.ok || !patches.value) return { ok: false, diagnostics: patches.diagnostics };
 
       let targetResult: GraphOperationResult<GraphObjectNode> | null = null;
+      const dirtyObjectIds: string[] = [];
       for (const scopedPatch of patches.value) {
-        const result = this.updateObject(scopedPatch.objectId, scopedPatch.patch);
+        const result = this.updateObjectInternal(scopedPatch.objectId, scopedPatch.patch, undefined, { flush: false });
         if (!result.ok) return result;
+        dirtyObjectIds.push(scopedPatch.objectId);
         if (scopedPatch.objectId === objectId) targetResult = result;
+      }
+      if (dirtyObjectIds.length > 0) {
+        this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds });
       }
       if (targetResult) return targetResult;
       const updated = this.scene.getObject(objectId);
@@ -203,6 +267,37 @@ export class GraphSceneRuntime {
     }
   }
 
+  private removeObjectInternal(
+    objectId: string,
+    options: { flush: boolean }
+  ): GraphOperationResult<GraphObjectNode> {
+    const result = this.scene.removeObject(objectId);
+    if (!result.ok) return result;
+    const handle = this.handlesByObjectId.get(objectId);
+    if (handle && this.backend) {
+      this.backend.remove(handle);
+    }
+    this.handlesByObjectId.delete(objectId);
+    if (options.flush) {
+      this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds: [objectId] });
+    }
+    return result;
+  }
+
+  private reorderSceneObjects(nodes: readonly GraphObjectNode[]): GraphOperationResult<GraphObjectNode[]> {
+    for (const node of nodes) {
+      const moved = this.scene.moveObjectToTop(node.id);
+      if (!moved.ok) return { ok: false, diagnostics: moved.diagnostics };
+    }
+    for (const node of nodes) {
+      const current = this.scene.getObject(node.id);
+      if (!current || !isSelectedRuntimeNode(current)) continue;
+      const moved = this.scene.moveObjectToTop(node.id);
+      if (!moved.ok) return { ok: false, diagnostics: moved.diagnostics };
+    }
+    return okResult(this.scene.listObjects());
+  }
+
   private createContext(node: GraphObjectNode, context?: GraphBackendContext): GraphBackendContext {
     return {
       ...this.defaultContext,
@@ -218,5 +313,50 @@ export class GraphSceneRuntime {
     return this.backend;
   }
 }
+
+const normalizeRuntimeSyncNodes = (
+  nodes: readonly GraphObjectNode[],
+  sceneId: string
+): GraphOperationResult<GraphObjectNode[]> => {
+  const store = new GraphSceneStore(`${sceneId}:sync`);
+  for (const node of nodes) {
+    const added = store.addObject(node);
+    if (!added.ok) return { ok: false, diagnostics: added.diagnostics };
+  }
+  return okResult(store.listObjects());
+};
+
+const areRuntimeSyncNodesEqual = (left: GraphObjectNode, right: GraphObjectNode): boolean => (
+  JSON.stringify(left) === JSON.stringify(right)
+);
+
+const requiresRuntimeSyncReplace = (current: GraphObjectNode, next: GraphObjectNode): boolean => (
+  current.kind !== next.kind
+  || current.type !== next.type
+  || cannotPatchClearedCollection(current.dependencies, next.dependencies)
+  || cannotPatchClearedCollection(current.children, next.children)
+  || cannotPatchClearedCollection(current.relations, next.relations)
+  || cannotPatchClearedCollection(current.capabilities, next.capabilities)
+);
+
+const cannotPatchClearedCollection = <T>(current: readonly T[] | undefined, next: readonly T[] | undefined): boolean => (
+  current !== undefined && next === undefined
+);
+
+const createRuntimeSyncPatch = (node: GraphObjectNode): GraphObjectPatch => ({
+  payload: node.payload,
+  backendHint: node.backendHint ?? null,
+  layerId: node.layerId ?? null,
+  ...(node.dependencies !== undefined ? { dependencies: node.dependencies } : {}),
+  ...(node.children !== undefined ? { children: node.children } : {}),
+  ...(node.relations !== undefined ? { relations: node.relations } : {}),
+  ...(node.capabilities !== undefined ? { capabilities: node.capabilities } : {}),
+  renderHints: node.renderHints ?? null,
+  meta: node.meta ?? null
+});
+
+const isSelectedRuntimeNode = (node: GraphObjectNode): boolean => (
+  node.meta?.selected === true || node.renderHints?.selected === true
+);
 
 export const createGraphSceneRuntime = (options?: GraphSceneRuntimeOptions): GraphSceneRuntime => new GraphSceneRuntime(options);
