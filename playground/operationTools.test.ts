@@ -154,4 +154,23 @@ describe('updateOperationCoordinateSystemOrigin', () => {
       expect.stringContaining('准线')
     ]));
   });
+
+  it('exposes geometry transform preview commands in the operation tools panel', () => {
+    const tool = operationToolGroups
+      .flatMap((group) => group.tools)
+      .find((entry) => entry.id === 'geometry-transform-preview');
+    expect(tool).toBeDefined();
+
+    const expressions = tool!.commands.map((command) => command.expr);
+    expect(expressions.filter((expr) => expr.includes('Polygon('))).toHaveLength(2);
+    expect(expressions.filter((expr) => expr.startsWith('Segment('))).toHaveLength(3);
+    expect(expressions.filter((expr) => expr.startsWith('Arc('))).toHaveLength(3);
+    expect(expressions).toEqual(expect.arrayContaining([
+      expect.stringContaining('P ='),
+      expect.stringContaining('几何变换预览')
+    ]));
+
+    const commands = createOperationScopedCommands(tool!.commands, { x: 0, y: 0 }, 'coord_transform');
+    expect(commands.every((command) => (command.options?.coordinateSystem as any)?.id === 'coord_transform')).toBe(true);
+  });
 });

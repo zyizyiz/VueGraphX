@@ -16,6 +16,7 @@ describe('subject tools representative playground demos', () => {
       'equation',
       'annotation',
       'geometry-overlay',
+      'geometry-transform',
       'dynamic-point',
       'backend-status'
     ]);
@@ -23,6 +24,11 @@ describe('subject tools representative playground demos', () => {
     const geometryOverlay = subjectToolsRepresentativeDemos.find((demo) => demo.category === 'geometry-overlay');
     expect(geometryOverlay?.modelSummary).toContain('visible auxiliary');
     expect(geometryOverlay?.commands.some((command) => (typeof command === 'string' ? command : command.expr).includes('tri_aux'))).toBe(true);
+
+    const geometryTransform = subjectToolsRepresentativeDemos.find((demo) => demo.category === 'geometry-transform');
+    expect(geometryTransform?.modelSummary).toContain('previewArcs');
+    expect(geometryTransform?.commands.some((command) => (typeof command === 'string' ? command : command.expr).includes('transform_preview'))).toBe(true);
+    expect(geometryTransform?.commands.some((command) => (typeof command === 'string' ? command : command.expr).includes('Arc('))).toBe(true);
   });
 
   it('documents active backends and deferred placeholder backend degradation', () => {

@@ -8,12 +8,15 @@ import {
   createQuadraticSubjectFunction,
   createSubjectAuxiliaryLineIntersectionAnnotations,
   createSubjectDynamicPoint,
+  createSubjectGeometryTransformModel,
   createSubjectOverlayModel,
   point2D,
   tickSubjectDynamicPoint,
   updateSubjectFunctionParameters,
   type MathPoint2D,
   type SubjectAuxiliaryLineDescriptor,
+  type SubjectGeometryTransformPreviewArc,
+  type SubjectGeometryTransformTarget,
   type SubjectOverlayAnnotation,
   type SubjectOverlayConfig,
   type SubjectOverlayModel,
@@ -30,6 +33,7 @@ export type SubjectToolsDemoCategory =
   | 'equation'
   | 'annotation'
   | 'geometry-overlay'
+  | 'geometry-transform'
   | 'dynamic-point'
   | 'backend-status';
 
@@ -135,6 +139,28 @@ const geometryFreeIntersections = createSubjectAuxiliaryLineIntersectionAnnotati
   geometryFreeLine ? [geometryFreeLine] : [],
   geometryOverlayConfig
 );
+const geometryTransformTarget: SubjectGeometryTransformTarget = {
+  id: 'geometry-transform-triangle',
+  kind: 'polygon',
+  shapeKind: 'triangle',
+  vertices: [point2D(-3, -1.5), point2D(1, -1.5), point2D(-1.5, 1.5)],
+  strokeColor: '#2563EB',
+  meta: { subject: 'triangle-transform' }
+};
+const geometryTransform = createSubjectGeometryTransformModel(geometryTransformTarget, {
+  kind: 'rotate',
+  center: point2D(-1, -0.25),
+  angleRadians: Math.PI / 5,
+  bounds: { minX: -5, minY: -4, maxX: 5, maxY: 4 },
+  boundsMode: 'translate-inside',
+  snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 },
+  preview: {
+    includeCenterLines: true,
+    includeTrajectories: true,
+    style: { strokeColor: '#7C3AED', textColor: '#7C3AED' }
+  }
+});
+const geometryTransformVertices = geometryTransform.after.kind === 'polygon' ? geometryTransform.after.vertices : [];
 
 export const getSubjectToolsBackendStatusRows = () => createSubjectBackendSupportMatrix();
 
@@ -243,6 +269,24 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     ]
   },
   {
+    category: 'geometry-transform',
+    emoji: '↻',
+    title: '几何变换 · 旋转/吸附/边界',
+    desc: '旋转中心、等比变换、网格轻吸附、坐标系范围约束和预览轨迹由 math 包输出；业务侧只负责把 descriptor 画出来。',
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
+    modelSummary: `applied=${geometryTransform.applied}；previewLines=${geometryTransform.previewLines.length}；previewArcs=${geometryTransform.previewArcs.length}；diagnostics=${geometryTransform.diagnostics.map((diagnostic) => diagnostic.code).join(' / ') || 'none'}`,
+    commands: [
+      ...pointDefinitionCommands('G', geometryTransformTarget.vertices),
+      { expr: 'baseTransform = Polygon(G1, G2, G3)', options: { strokeColor: '#94A3B8', fillColor: '#E2E8F0', fillOpacity: 0.2, lineDash: [4, 8] } },
+      ...pointDefinitionCommands('R', geometryTransformVertices),
+      { expr: 'rotatedTransform = Polygon(R1, R2, R3)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.22, strokeWidth: 2 } },
+      ...(geometryTransform.center ? [{ expr: `P = ${formatPointTuple(geometryTransform.center)}`, options: { strokeColor: '#7C3AED' } }] : []),
+      ...overlayLineCommands(geometryTransform.previewLines, { prefix: 'transform_preview', visibleOnly: false, labels: false, limit: 6 }),
+      ...transformArcCommands(geometryTransform.previewArcs, { prefix: 'transform_arc', limit: 4 }),
+      'Text(-4.8, 3.6, "math transform model: center / snap / bounds / trajectories")'
+    ]
+  },
+  {
     category: 'dynamic-point',
     emoji: '▶️',
     title: '动点 P · 沿函数播放',
@@ -268,6 +312,10 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     ]
   }
 ];
+
+function pointDefinitionCommands(prefix: string, points: readonly MathPoint2D[]): string[] {
+  return points.map((point, index) => `${prefix}${index + 1} = ${formatPointTuple(point)}`);
+}
 
 function overlayLineCommands(
   input: SubjectOverlayModel | readonly SubjectAuxiliaryLineDescriptor[],
@@ -299,6 +347,16 @@ function overlayLineCommands(
     }
     return commands;
   });
+}
+
+function transformArcCommands(
+  arcs: readonly SubjectGeometryTransformPreviewArc[],
+  options: { prefix: string; limit?: number }
+): SubjectToolsDemoCommand[] {
+  return arcs.slice(0, options.limit ?? Infinity).map((arc, index) => ({
+    expr: `${options.prefix}_${index + 1} = Arc(${formatPointTuple(arc.center)}, ${formatPointTuple(arc.start)}, ${formatPointTuple(arc.end)})`,
+    options: overlayStyleOptions(arc.style, '#7C3AED')
+  }));
 }
 
 function overlayAnnotationCommands(

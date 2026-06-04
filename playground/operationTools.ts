@@ -10,12 +10,15 @@ import {
   createParabolaEquationSubjectFunction,
   createQuadraticSubjectFunction,
   createSineSubjectFunction,
+  createSubjectGeometryTransformModel,
   createSubjectAuxiliaryLineIntersectionAnnotations,
   createSubjectOverlayModel,
   createTangentSubjectFunction,
   point2D,
   type MathPoint2D,
   type SubjectAuxiliaryLineDescriptor,
+  type SubjectGeometryTransformPreviewArc,
+  type SubjectGeometryTransformTarget,
   type SubjectOverlayAnnotation,
   type SubjectOverlayConfig,
   type SubjectOverlayModel,
@@ -261,6 +264,31 @@ const normalizeGridValue = (value: number): number => (
   Math.abs(value) < 1e-9 ? 0 : Number(value.toFixed(10))
 );
 
+const operationGeometryTransformTarget: SubjectGeometryTransformTarget = {
+  id: 'operation-geometry-transform-triangle',
+  kind: 'polygon',
+  shapeKind: 'triangle',
+  vertices: [point2D(-3, -1.5), point2D(1, -1.5), point2D(-1.5, 1.5)],
+  strokeColor: '#2563EB'
+};
+
+const operationGeometryTransform = createSubjectGeometryTransformModel(operationGeometryTransformTarget, {
+  kind: 'rotate',
+  center: point2D(-1, -0.25),
+  angleRadians: Math.PI / 5,
+  bounds: { minX: -5, minY: -4, maxX: 5, maxY: 4 },
+  boundsMode: 'translate-inside',
+  snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 },
+  preview: {
+    includeCenterLines: true,
+    includeTrajectories: true,
+    style: { strokeColor: '#7C3AED', textColor: '#7C3AED' }
+  }
+});
+const operationGeometryTransformVertices = operationGeometryTransform.after.kind === 'polygon'
+  ? operationGeometryTransform.after.vertices
+  : [];
+
 const operationGeometryOverlayTarget: SubjectOverlayTarget = {
   id: 'operation-geometry-overlay-triangle',
   kind: 'polygon',
@@ -446,6 +474,17 @@ const operationConicOverlayCommands: readonly OperationCommandSpec[] = [
   ...operationOverlayAnnotationCommands(operationParabolaOverlay, { kinds: ['vertex', 'focus', 'directrix'], limit: 3 })
 ];
 
+const operationGeometryTransformCommands: readonly OperationCommandSpec[] = [
+  ...operationPointDefinitionCommands('G', operationGeometryTransformTarget.vertices),
+  { expr: 'baseTransform = Polygon(G1, G2, G3)', options: { strokeColor: '#94A3B8', fillColor: '#E2E8F0', fillOpacity: 0.2, lineDash: [4, 8] } },
+  ...operationPointDefinitionCommands('R', operationGeometryTransformVertices),
+  { expr: 'rotatedTransform = Polygon(R1, R2, R3)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.22, strokeWidth: 2 } },
+  ...(operationGeometryTransform.center ? [{ expr: `P = ${operationPointTuple(operationGeometryTransform.center)}`, options: { strokeColor: '#7C3AED' } }] : []),
+  ...operationOverlayLineCommands(operationGeometryTransform.previewLines, { visibleOnly: false, labels: false, limit: 6 }),
+  ...operationTransformArcCommands(operationGeometryTransform.previewArcs, { limit: 4 }),
+  { expr: 'Text(-4.8, 3.6, "几何变换预览: 旋转中心 / 吸附 / 边界")', options: { strokeColor: '#475569' } }
+];
+
 export const operationToolGroups: readonly OperationToolGroup[] = [
   {
     title: '函数',
@@ -532,6 +571,14 @@ export const operationToolGroups: readonly OperationToolGroup[] = [
         icon: '⊥',
         iconClass: 'bg-purple-50 text-purple-700 ring-1 ring-purple-200',
         commands: operationFunctionOverlayCommands
+      },
+      {
+        id: 'geometry-transform-preview',
+        label: '几何变换预览',
+        description: '拖入后展示变换前后图形、旋转中心、吸附/边界后的结果和轨迹弧',
+        icon: '↻',
+        iconClass: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
+        commands: operationGeometryTransformCommands
       }
     ]
   }
@@ -583,6 +630,20 @@ function operationOverlayAnnotationCommands(
       expr: `Text(${operationPointText(annotation.anchor!)}, "${escapeOperationText(annotation.text)}")`,
       options: operationOverlayTextStyleOptions(annotation.style, '#0F172A')
     }));
+}
+
+function operationPointDefinitionCommands(prefix: string, points: readonly MathPoint2D[]): OperationCommandSpec[] {
+  return points.map((point, index) => ({ expr: `${prefix}${index + 1} = ${operationPointTuple(point)}` }));
+}
+
+function operationTransformArcCommands(
+  arcs: readonly SubjectGeometryTransformPreviewArc[],
+  options: { limit?: number } = {}
+): OperationCommandSpec[] {
+  return arcs.slice(0, options.limit ?? Infinity).map((arc) => ({
+    expr: `Arc(${operationPointTuple(arc.center)}, ${operationPointTuple(arc.start)}, ${operationPointTuple(arc.end)})`,
+    options: operationOverlayStyleOptions(arc.style, '#7C3AED')
+  }));
 }
 
 function isOperationOverlayModel(

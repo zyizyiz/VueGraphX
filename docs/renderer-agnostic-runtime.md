@@ -51,7 +51,7 @@ Canvas2D is the baseline proof: because it has no retained math object model, it
 Subject-tool behavior is represented as renderer-free primitives, not as packaged UI components. Applications own menus, panels, tabs, icons, and theme chrome; VueGraphX exposes serializable policies and math descriptors that those UIs can drive.
 
 - `@vuegraphx/core` owns subject canvas state, coordinate-system policy, tick strategies, color allocation, object drag policy, and scene payload serialization. Coordinate-system defaults remain package defaults unless callers pass options.
-- `@vuegraphx/math` owns subject function/equation descriptors, sampling, dynamic points, computed properties, annotations, and auxiliary-line candidates for common function and conic families.
+- `@vuegraphx/math` owns subject function/equation descriptors, sampling, dynamic points, computed properties, annotations, auxiliary-line candidates, and renderer-free geometry transform previews for common plane geometry workflows.
 - Backends consume the resulting scene payloads and overlay descriptors. Canvas2D remains the active 2D subject backend; Babylon remains scoped to native 3D solid rendering and picking.
 
 ## Existing JSXGraph mainline integration
