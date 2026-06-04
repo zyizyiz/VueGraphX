@@ -20,6 +20,18 @@ import {
 } from './dragOperations';
 import { GraphInteractionRouter } from './eventRouter';
 import { GraphSceneStore, type GraphSceneStoreSnapshot } from './sceneDocument';
+import {
+  cloneGraphRuntimeSelectionItem,
+  cloneGraphRuntimeSelectionItems,
+  createGraphRuntimeSelectionItem,
+  isGraphRuntimeSelectedNode,
+  resolveGraphRuntimeSelectionChangeReason,
+  sameGraphRuntimeSelectionItems,
+  type GraphRuntimeSelectionChangeEvent,
+  type GraphRuntimeSelectionChangeSource,
+  type GraphRuntimeSelectionItem,
+  type GraphRuntimeSelectionListener
+} from './selection';
 
 export interface GraphSceneRuntimeOptions {
   scene?: GraphSceneStore;
@@ -31,6 +43,18 @@ export interface GraphSceneRuntimeOptions {
 
 export interface GraphSceneRuntimeSnapshot extends GraphSceneStoreSnapshot {
   handles: readonly GraphRenderHandle[];
+}
+
+export interface GraphSceneRuntimeSelectionOptions {
+  source?: GraphRuntimeSelectionChangeSource;
+}
+
+export interface GraphSceneRuntimeSelectionMutationOptions extends GraphSceneRuntimeSelectionOptions {
+  context?: GraphBackendContext;
+}
+
+export interface GraphSceneRuntimeObjectSelectionOptions extends GraphSceneRuntimeSelectionMutationOptions {
+  exclusive?: boolean;
 }
 
 const cloneHandle = (handle: GraphRenderHandle): GraphRenderHandle => ({
@@ -51,6 +75,8 @@ export class GraphSceneRuntime {
   private readonly handlesByObjectId = new Map<string, GraphRenderHandle>();
   private readonly defaultLayerId: GraphLayerId;
   private defaultContext: GraphBackendContext;
+  private selectionListeners: GraphRuntimeSelectionListener[] = [];
+  private selectionRevision = 0;
 
   public constructor(options: GraphSceneRuntimeOptions = {}) {
     this.scene = options.scene ?? new GraphSceneStore('scene');
@@ -64,6 +90,7 @@ export class GraphSceneRuntime {
   }
 
   public setBackend(backend: GraphRenderBackend | null, layerId: GraphLayerId = this.defaultLayerId): void {
+    const previousSelection = this.readSelectionItems();
     if (this.backend) {
       for (const handle of this.handlesByObjectId.values()) {
         this.backend.remove(handle);
@@ -77,6 +104,7 @@ export class GraphSceneRuntime {
       this.router.registerBackend(backend, layerId);
       this.renderAll();
     }
+    this.dispatchSelectionChange(previousSelection, 'api');
   }
 
   public mount(host: GraphBackendHost, options: GraphBackendMountOptions = {}): GraphBackendMountResult {
@@ -85,6 +113,16 @@ export class GraphSceneRuntime {
   }
 
   public addObject(
+    node: GraphObjectNode,
+    options: { root?: boolean; replace?: boolean; context?: GraphBackendContext; source?: GraphRuntimeSelectionChangeSource } = {}
+  ): GraphOperationResult<GraphObjectNode> {
+    const previousSelection = this.readSelectionItems();
+    const result = this.addObjectInternal(node, options);
+    if (result.ok) this.dispatchSelectionChange(previousSelection, options.source ?? 'api');
+    return result;
+  }
+
+  private addObjectInternal(
     node: GraphObjectNode,
     options: { root?: boolean; replace?: boolean; context?: GraphBackendContext } = {}
   ): GraphOperationResult<GraphObjectNode> {
@@ -97,9 +135,13 @@ export class GraphSceneRuntime {
   public updateObject(
     objectId: string,
     patch: GraphObjectPatch,
-    context?: GraphBackendContext
+    context?: GraphBackendContext,
+    options: GraphSceneRuntimeSelectionOptions = {}
   ): GraphOperationResult<GraphObjectNode> {
-    return this.updateObjectInternal(objectId, patch, context, { flush: true });
+    const previousSelection = this.readSelectionItems();
+    const result = this.updateObjectInternal(objectId, patch, context, { flush: true });
+    if (result.ok) this.dispatchSelectionChange(previousSelection, options.source ?? 'api');
+    return result;
   }
 
   private updateObjectInternal(
@@ -110,7 +152,7 @@ export class GraphSceneRuntime {
   ): GraphOperationResult<GraphObjectNode> {
     const result = this.scene.updateObject(objectId, patch);
     if (!result.ok || !result.value) return result;
-    if (isSelectedRuntimeNode(result.value)) {
+    if (isGraphRuntimeSelectedNode(result.value)) {
       const moved = this.scene.moveObjectToTop(objectId);
       if (!moved.ok) return { ok: false, diagnostics: moved.diagnostics };
     }
@@ -128,8 +170,14 @@ export class GraphSceneRuntime {
     return result;
   }
 
-  public removeObject(objectId: string): GraphOperationResult<GraphObjectNode> {
-    return this.removeObjectInternal(objectId, { flush: true });
+  public removeObject(
+    objectId: string,
+    options: GraphSceneRuntimeSelectionOptions = {}
+  ): GraphOperationResult<GraphObjectNode> {
+    const previousSelection = this.readSelectionItems();
+    const result = this.removeObjectInternal(objectId, { flush: true });
+    if (result.ok) this.dispatchSelectionChange(previousSelection, options.source ?? 'delete');
+    return result;
   }
 
   public syncObjects(
@@ -139,6 +187,7 @@ export class GraphSceneRuntime {
     const normalized = normalizeRuntimeSyncNodes(nodes, this.scene.id);
     if (!normalized.ok || !normalized.value) return normalized;
 
+    const previousSelection = this.readSelectionItems();
     const nextNodesById = new Map(normalized.value.map((node) => [node.id, node]));
     const dirtyObjectIds: string[] = [];
 
@@ -153,7 +202,7 @@ export class GraphSceneRuntime {
     for (const node of normalized.value) {
       const current = this.scene.getObject(node.id);
       if (!current) {
-        const added = this.addObject(node, { context });
+        const added = this.addObjectInternal(node, { context });
         if (!added.ok) return { ok: false, diagnostics: added.diagnostics };
         dirtyObjectIds.push(node.id);
         continue;
@@ -164,7 +213,7 @@ export class GraphSceneRuntime {
       if (requiresRuntimeSyncReplace(current, node)) {
         const removed = this.removeObjectInternal(node.id, { flush: false });
         if (!removed.ok) return { ok: false, diagnostics: removed.diagnostics };
-        const added = this.addObject(node, { context });
+        const added = this.addObjectInternal(node, { context });
         if (!added.ok) return { ok: false, diagnostics: added.diagnostics };
       } else {
         const updated = this.updateObjectInternal(node.id, createRuntimeSyncPatch(node), context, { flush: false });
@@ -180,7 +229,107 @@ export class GraphSceneRuntime {
       this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds });
     }
 
-    return okResult(this.scene.listObjects());
+    const result = okResult(this.scene.listObjects());
+    this.dispatchSelectionChange(previousSelection, 'sync');
+    return result;
+  }
+
+  public subscribeSelection(listener: GraphRuntimeSelectionListener): () => void {
+    this.selectionListeners.push(listener);
+    const selected = this.getSelectionItems();
+    listener({
+      primary: this.getPrimarySelectionItem(selected),
+      selected,
+      previous: [],
+      reason: 'snapshot',
+      source: 'api',
+      revision: this.selectionRevision
+    });
+    return () => {
+      this.selectionListeners = this.selectionListeners.filter((current) => current !== listener);
+    };
+  }
+
+  public getSelectionItems(): GraphRuntimeSelectionItem[] {
+    return cloneGraphRuntimeSelectionItems(this.readSelectionItems());
+  }
+
+  public selectObject(
+    objectId: string,
+    options: GraphSceneRuntimeObjectSelectionOptions = {}
+  ): GraphOperationResult<GraphObjectNode> {
+    const current = this.scene.getObject(objectId);
+    if (!current) {
+      return errorResult('runtime.missing-object', `Graph object ${objectId} does not exist.`, {
+        scope: 'object',
+        objectId
+      });
+    }
+
+    const previousSelection = this.readSelectionItems();
+    const dirtyObjectIds: string[] = [];
+    let selectedResult: GraphOperationResult<GraphObjectNode> = okResult(current);
+    const exclusive = options.exclusive ?? true;
+    const nodes = this.scene.listObjects();
+
+    if (exclusive) {
+      for (const node of nodes) {
+        if (node.id === objectId || !isGraphRuntimeSelectedNode(node)) continue;
+        const updated = this.updateObjectInternal(
+          node.id,
+          createRuntimeSelectionPatch(node, false),
+          options.context,
+          { flush: false }
+        );
+        if (!updated.ok) return updated;
+        dirtyObjectIds.push(node.id);
+      }
+    }
+
+    const latest = this.scene.getObject(objectId) ?? current;
+    if (!isGraphRuntimeSelectedNode(latest)) {
+      selectedResult = this.updateObjectInternal(
+        objectId,
+        createRuntimeSelectionPatch(latest, true),
+        options.context,
+        { flush: false }
+      );
+      if (!selectedResult.ok) return selectedResult;
+      dirtyObjectIds.push(objectId);
+    }
+
+    if (dirtyObjectIds.length > 0) {
+      this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds });
+    }
+    this.dispatchSelectionChange(previousSelection, options.source ?? 'api');
+    return selectedResult;
+  }
+
+  public clearSelection(
+    options: GraphSceneRuntimeSelectionMutationOptions = {}
+  ): GraphOperationResult<GraphObjectNode[]> {
+    const previousSelection = this.readSelectionItems();
+    const dirtyObjectIds: string[] = [];
+    const changedNodes: GraphObjectNode[] = [];
+
+    for (const node of this.scene.listObjects()) {
+      if (!isGraphRuntimeSelectedNode(node)) continue;
+      const updated = this.updateObjectInternal(
+        node.id,
+        createRuntimeSelectionPatch(node, false),
+        options.context,
+        { flush: false }
+      );
+      if (!updated.ok || !updated.value) return { ok: false, diagnostics: updated.diagnostics };
+      changedNodes.push(updated.value);
+      dirtyObjectIds.push(node.id);
+    }
+
+    if (dirtyObjectIds.length > 0) {
+      this.backend?.flush?.({ timestamp: Date.now(), dirtyObjectIds });
+    }
+    this.dispatchSelectionChange(previousSelection, options.source ?? 'clear');
+    return okResult(changedNodes);
   }
 
   public applyDragToObject(
@@ -225,6 +374,7 @@ export class GraphSceneRuntime {
   }
 
   public clear(): void {
+    const previousSelection = this.readSelectionItems();
     if (this.backend) {
       for (const handle of this.handlesByObjectId.values()) {
         this.backend.remove(handle);
@@ -233,6 +383,7 @@ export class GraphSceneRuntime {
     }
     this.handlesByObjectId.clear();
     this.scene.clear();
+    this.dispatchSelectionChange(previousSelection, 'clear');
   }
 
   public renderAll(context?: GraphBackendContext): void {
@@ -291,11 +442,48 @@ export class GraphSceneRuntime {
     }
     for (const node of nodes) {
       const current = this.scene.getObject(node.id);
-      if (!current || !isSelectedRuntimeNode(current)) continue;
+      if (!current || !isGraphRuntimeSelectedNode(current)) continue;
       const moved = this.scene.moveObjectToTop(node.id);
       if (!moved.ok) return { ok: false, diagnostics: moved.diagnostics };
     }
     return okResult(this.scene.listObjects());
+  }
+
+  private readSelectionItems(): GraphRuntimeSelectionItem[] {
+    return this.scene.listObjects()
+      .filter(isGraphRuntimeSelectedNode)
+      .map((node) => {
+        const handle = this.handlesByObjectId.get(node.id);
+        return createGraphRuntimeSelectionItem(node, {
+          backendId: handle?.backendId,
+          target: handle?.target
+        });
+      });
+  }
+
+  private getPrimarySelectionItem(items: readonly GraphRuntimeSelectionItem[]): GraphRuntimeSelectionItem | null {
+    return items.length > 0 ? cloneGraphRuntimeSelectionItem(items[items.length - 1]) : null;
+  }
+
+  private dispatchSelectionChange(
+    previous: readonly GraphRuntimeSelectionItem[],
+    source: GraphRuntimeSelectionChangeSource
+  ): void {
+    const selected = this.readSelectionItems();
+    if (sameGraphRuntimeSelectionItems(previous, selected)) {
+      return;
+    }
+
+    this.selectionRevision += 1;
+    const event: GraphRuntimeSelectionChangeEvent = {
+      primary: this.getPrimarySelectionItem(selected),
+      selected: cloneGraphRuntimeSelectionItems(selected),
+      previous: cloneGraphRuntimeSelectionItems(previous),
+      reason: resolveGraphRuntimeSelectionChangeReason(previous, selected),
+      source,
+      revision: this.selectionRevision
+    };
+    this.selectionListeners.forEach((listener) => listener(event));
   }
 
   private createContext(node: GraphObjectNode, context?: GraphBackendContext): GraphBackendContext {
@@ -355,8 +543,19 @@ const createRuntimeSyncPatch = (node: GraphObjectNode): GraphObjectPatch => ({
   meta: node.meta ?? null
 });
 
-const isSelectedRuntimeNode = (node: GraphObjectNode): boolean => (
-  node.meta?.selected === true || node.renderHints?.selected === true
-);
+const createRuntimeSelectionPatch = (node: GraphObjectNode, selected: boolean): GraphObjectPatch => ({
+  meta: {
+    ...(node.meta ?? {}),
+    selected
+  },
+  ...(node.renderHints?.selected !== undefined
+    ? {
+        renderHints: {
+          ...node.renderHints,
+          selected
+        }
+      }
+    : {})
+});
 
 export const createGraphSceneRuntime = (options?: GraphSceneRuntimeOptions): GraphSceneRuntime => new GraphSceneRuntime(options);

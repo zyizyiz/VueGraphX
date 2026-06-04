@@ -84,6 +84,11 @@ import type {
   GraphCapabilityDescriptor,
   GraphCapabilityListener,
   GraphCapabilitySnapshot,
+  GraphSelectionChangeEvent,
+  GraphSelectionChangeReason,
+  GraphSelectionChangeSource,
+  GraphSelectionItem,
+  GraphSelectionListener,
   GraphSelectionSnapshot
 } from '../types/capabilities';
 import type {
@@ -119,6 +124,11 @@ export type {
   GraphCapabilityDescriptor,
   GraphCapabilityListener,
   GraphCapabilitySnapshot,
+  GraphSelectionChangeEvent,
+  GraphSelectionChangeReason,
+  GraphSelectionChangeSource,
+  GraphSelectionItem,
+  GraphSelectionListener,
   GraphSelectionSnapshot
 } from '../types/capabilities';
 export type {
@@ -277,6 +287,45 @@ const formatCoreNumber = (value: number): string => Number.isInteger(value) ? St
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 const isEngineMode = (value: unknown): value is EngineMode => value === '2d' || value === '3d' || value === 'geometry';
+
+const cloneSelectionItem = (item: GraphSelectionItem): GraphSelectionItem => ({
+  ...item,
+  ui: item.ui ? { ...item.ui } : undefined,
+  meta: item.meta ? { ...item.meta } : undefined
+});
+
+const cloneSelectionItems = (items: readonly GraphSelectionItem[]): GraphSelectionItem[] => (
+  items.map(cloneSelectionItem)
+);
+
+const getSelectionItemKey = (item: GraphSelectionItem): string => `${item.kind}:${item.id}`;
+
+const sameSelectionItems = (
+  left: readonly GraphSelectionItem[],
+  right: readonly GraphSelectionItem[]
+): boolean => (
+  left.length === right.length
+    && left.every((item, index) => getSelectionItemKey(item) === getSelectionItemKey(right[index]))
+);
+
+const isSelectionSubset = (
+  subset: readonly GraphSelectionItem[],
+  superset: readonly GraphSelectionItem[]
+): boolean => {
+  const supersetKeys = new Set(superset.map(getSelectionItemKey));
+  return subset.every((item) => supersetKeys.has(getSelectionItemKey(item)));
+};
+
+const resolveSelectionChangeReason = (
+  previous: readonly GraphSelectionItem[],
+  selected: readonly GraphSelectionItem[]
+): GraphSelectionChangeReason => {
+  if (selected.length === 0) return 'clear';
+  if (previous.length === 0) return 'select';
+  if (selected.length > previous.length && isSelectionSubset(previous, selected)) return 'select';
+  if (selected.length < previous.length && isSelectionSubset(selected, previous)) return 'deselect';
+  return 'replace';
+};
 
 const readFiniteNumber = (value: unknown): number | null => (
   typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -763,10 +812,17 @@ export class GraphXEngine {
   private selectedShapeId: string | null = null;
   private isClickingObject = false;
   private capabilityListeners: GraphCapabilityListener[] = [];
+  private selectionListeners: GraphSelectionListener[] = [];
   private relationListeners: GraphRelationListener[] = [];
   private viewportListeners: GraphViewportChangeListener[] = [];
   private mutationBatchDepth = 0;
   private pendingCapabilityNotification = false;
+  private pendingSelectionNotification: {
+    previous: GraphSelectionItem[];
+    source: GraphSelectionChangeSource;
+  } | null = null;
+  private lastSelectionItems: GraphSelectionItem[] = [];
+  private selectionRevision = 0;
 
   /** 创建一个绑定到指定 DOM 容器 id 的引擎实例。containerId 指向目标 DOM 容器，该容器应当已经具备明确的宽高，options 会在初始化画板时透传给 JSXGraph。 */
   constructor(containerId: string, options?: GraphXOptions) {
@@ -927,6 +983,26 @@ export class GraphXEngine {
     };
   }
 
+  /** 订阅业务可观察的选中对象变化。订阅后会立即收到一次当前状态，返回值是一个取消订阅函数。 */
+  public subscribeSelection(listener: GraphSelectionListener): () => void {
+    this.selectionListeners.push(listener);
+    const selected = this.getSelectionItems();
+    if (!sameSelectionItems(this.lastSelectionItems, selected)) {
+      this.lastSelectionItems = cloneSelectionItems(selected);
+    }
+    listener({
+      primary: this.getPrimarySelectionItem(selected),
+      selected,
+      previous: [],
+      reason: 'snapshot',
+      source: 'api',
+      revision: this.selectionRevision
+    });
+    return () => {
+      this.selectionListeners = this.selectionListeners.filter((current) => current !== listener);
+    };
+  }
+
   /** 订阅 relation 状态与可用 target 列表。订阅后会立即收到一次当前快照。 */
   public subscribeRelations(listener: GraphRelationListener): () => void {
     this.relationListeners.push(listener);
@@ -1067,6 +1143,11 @@ export class GraphXEngine {
     return this.getCapabilitySnapshot().selection;
   }
 
+  /** 返回业务侧可观察的当前全部选中对象。 */
+  public getSelectionItems(): GraphSelectionItem[] {
+    return cloneSelectionItems(this.readSelectionItems());
+  }
+
   /** 返回当前选中项可用的能力列表。 */
   public getCapabilities(): GraphCapabilityDescriptor[] {
     return this.getCapabilitySnapshot().capabilities;
@@ -1095,6 +1176,96 @@ export class GraphXEngine {
       return;
     }
     this.dispatchCapabilityChange();
+  }
+
+  private notifySelectionChange(source: GraphSelectionChangeSource = 'api'): void {
+    if (this.mutationBatchDepth > 0) {
+      this.pendingSelectionNotification ??= {
+        previous: cloneSelectionItems(this.lastSelectionItems),
+        source
+      };
+      return;
+    }
+    this.dispatchSelectionChange(this.lastSelectionItems, source);
+  }
+
+  private readSelectionItems(): GraphSelectionItem[] {
+    const items: GraphSelectionItem[] = [];
+    if (this.selectedShapeId) {
+      const instance = this.shapeInstances.get(this.selectedShapeId);
+      if (instance) {
+        const target = instance.getCapabilityTarget();
+        items.push(target
+          ? {
+              id: target.entityId,
+              kind: 'shape',
+              entityType: target.entityType,
+              entity: target.entity,
+              ui: target.ui ? { ...target.ui } : undefined
+            }
+          : {
+              id: instance.id,
+              kind: 'shape',
+              entityType: instance.entityType
+            });
+      }
+    }
+
+    for (const object of this.runtimeSceneStore.listObjects()) {
+      if (object.meta?.selected !== true) continue;
+      items.push(this.createRuntimeSelectionItem(object));
+    }
+
+    return items;
+  }
+
+  private createRuntimeSelectionItem(object: GraphObjectNode): GraphSelectionItem {
+    const payload = isRecord(object.payload) ? object.payload : null;
+    const meta = object.meta ? { ...object.meta } : undefined;
+    const commandId = typeof meta?.ownerCommandId === 'string'
+      ? meta.ownerCommandId
+      : this.getCommandIdForCoreObject(object.id) ?? undefined;
+    const objectType = typeof payload?.objectType === 'string' ? payload.objectType : object.type;
+    const ui = isRecord(meta?.ui) ? { ...meta.ui } : undefined;
+
+    return {
+      id: object.id,
+      kind: commandId ? 'command' : object.kind === 'relation' ? 'relation' : 'runtime-object',
+      entityType: object.kind,
+      objectType,
+      commandId,
+      backendId: object.backendHint,
+      entity: object.payload,
+      ui,
+      meta
+    };
+  }
+
+  private getPrimarySelectionItem(items: readonly GraphSelectionItem[]): GraphSelectionItem | null {
+    return items.length > 0 ? cloneSelectionItem(items[items.length - 1]) : null;
+  }
+
+  private dispatchSelectionChange(
+    previous: readonly GraphSelectionItem[],
+    source: GraphSelectionChangeSource
+  ): void {
+    const selected = this.readSelectionItems();
+    if (sameSelectionItems(previous, selected)) {
+      this.lastSelectionItems = cloneSelectionItems(selected);
+      return;
+    }
+
+    this.selectionRevision += 1;
+    const event: GraphSelectionChangeEvent = {
+      primary: this.getPrimarySelectionItem(selected),
+      selected: cloneSelectionItems(selected),
+      previous: cloneSelectionItems(previous),
+      reason: resolveSelectionChangeReason(previous, selected),
+      source,
+      revision: this.selectionRevision
+    };
+    this.lastSelectionItems = cloneSelectionItems(selected);
+    this.selectionListeners.forEach((listener) => listener(event));
   }
 
   private registerRelationTarget(ownerId: string, target: GraphRelationTargetRegistration): void {
@@ -1241,9 +1412,11 @@ export class GraphXEngine {
     this.runInMutationBatch(() => {
       const instance = this.shapeInstances.get(shapeId);
       if (!instance) return;
+      let selectionChanged = false;
       if (this.selectedShapeId === shapeId) {
         this.selectedShapeId = null;
         instance.setSelected(false);
+        selectionChanged = true;
       }
       instance.destroy();
       this.hiddenLineMgr.clearOwnerSources(shapeId);
@@ -1251,11 +1424,13 @@ export class GraphXEngine {
       this.shapeInstances.delete(shapeId);
       this.sceneState.removeShape(shapeId);
       this.notifyCapabilityChange();
+      if (selectionChanged) this.notifySelectionChange('delete');
     });
   }
 
   private clearShapeInstances(): void {
     this.runInMutationBatch(() => {
+      const selectionChanged = this.selectedShapeId !== null;
       this.shapeInstances.forEach((instance) => {
         instance.destroy();
         this.hiddenLineMgr.clearOwnerSources(instance.id);
@@ -1265,6 +1440,7 @@ export class GraphXEngine {
       this.sceneState.clearShapes();
       this.selectedShapeId = null;
       this.notifyCapabilityChange();
+      if (selectionChanged) this.notifySelectionChange('clear');
     });
   }
 
@@ -1282,7 +1458,7 @@ export class GraphXEngine {
     });
   }
 
-  private selectShape(shapeId: string | null): void {
+  private selectShape(shapeId: string | null, source: GraphSelectionChangeSource = 'api'): void {
     this.runInMutationBatch(() => {
       if (this.selectedShapeId === shapeId) return;
 
@@ -1292,11 +1468,20 @@ export class GraphXEngine {
 
       if (shapeId) {
         this.shapeInstances.get(shapeId)?.setSelected(true);
-        return;
+        this.clearCommandCoreSelection();
       }
 
       this.notifyCapabilityChange();
+      this.notifySelectionChange(source);
     });
+  }
+
+  private clearSelectedShape(): boolean {
+    if (this.selectedShapeId === null) return false;
+    const instance = this.shapeInstances.get(this.selectedShapeId);
+    this.selectedShapeId = null;
+    instance?.setSelected(false);
+    return true;
   }
 
   private getSelectedCapabilityTarget(): ShapeCapabilityTarget | null {
@@ -1321,8 +1506,8 @@ export class GraphXEngine {
       const clickableObjects = objs.filter((o: any) => o.elType !== 'image');
       this.isClickingObject = clickableObjects.length > 0;
       const coreObjectId = this.getCoreObjectIdFromJsxGraphObjects(clickableObjects);
-      if (coreObjectId) this.setCommandCoreSelection(coreObjectId);
-      else if (!this.isClickingObject) this.setCommandCoreSelection(null);
+      if (coreObjectId) this.setCommandCoreSelection(coreObjectId, 'pointer');
+      else if (!this.isClickingObject) this.setCommandCoreSelection(null, 'pointer');
       Array.from(this.shapeInstances.values()).forEach((instance) => {
         instance.onBoardDown?.(e, this.isClickingObject);
       });
@@ -1387,7 +1572,7 @@ export class GraphXEngine {
       this.entityMgr.clearAll();
       this.sceneState.clearCommands();
       this.sceneState.clearRelations();
-      this.runtimeSceneStore.clear();
+      this.clearRuntimeSceneStore('clear');
       this.commandCoreObjectIds.clear();
       this.commandSymbols.clear();
       this.commandNumericScope.clear();
@@ -1416,7 +1601,7 @@ export class GraphXEngine {
     this.entityMgr.clearAll();
     this.sceneState.clearCommands();
     this.sceneState.clearRelations();
-    this.runtimeSceneStore.clear();
+    this.clearRuntimeSceneStore('clear');
     this.commandCoreObjectIds.clear();
     this.commandSymbols.clear();
     this.commandNumericScope.clear();
@@ -1503,7 +1688,16 @@ export class GraphXEngine {
 
   /** 对 core runtime object 应用 patch。核心状态先变更，后端再据此更新。 */
   public applyRuntimeObjectPatch(objectId: string, patch: GraphObjectPatch) {
-    return this.runtimeSceneStore.updateObject(objectId, patch);
+    return this.runInMutationBatch(() => {
+      const result = this.runtimeSceneStore.updateObject(objectId, patch);
+      if (result.ok) {
+        if (patch.meta && patch.meta.selected === true) {
+          this.clearSelectedShape();
+        }
+        this.notifySelectionChange('api');
+      }
+      return result;
+    });
   }
 
   /** 执行 renderer-neutral capability；如果目标来自当前 JSXGraph 命令，会同步回兼容渲染路径。 */
@@ -1515,8 +1709,10 @@ export class GraphXEngine {
     const isSceneClearAll = target.scope === 'scene' && capabilityId === 'math.scene.clear-all';
     const isSceneClearSelection = target.scope === 'scene' && capabilityId === 'math.scene.clear-selection';
     if (isSceneClearSelection) {
-      this.setCommandCoreSelection(null);
-      this.selectShape(null);
+      this.runInMutationBatch(() => {
+        this.setCommandCoreSelection(null, 'clear');
+        this.selectShape(null, 'clear');
+      });
       return true;
     }
     if (target.scope === 'object' && target.objectId && capabilityId === 'math.object.select') {
@@ -1527,6 +1723,7 @@ export class GraphXEngine {
     const coordinateMoveObjectIds = target.objectId && capabilityId === 'math.object.move'
       ? this.getCoordinateSystemDragObjectIds(target.objectId)
       : [];
+    const selectedBeforeRuntimeExecution = this.readSelectionItems();
     const result = executeGraphCapability({
       scene: this.runtimeSceneStore,
       capabilityId,
@@ -1537,13 +1734,19 @@ export class GraphXEngine {
 
     if (isSceneClearAll) {
       this.clearBoard();
+      if (selectedBeforeRuntimeExecution.length > 0) this.notifySelectionChange('clear');
       this.notifyCapabilityChange();
       return true;
     }
 
     if (commandId && result.value.action === 'remove') {
       this.removeCommand(commandId);
+      if (selectedBeforeRuntimeExecution.length > 0) this.notifySelectionChange('delete');
       return true;
+    }
+
+    if (!commandId && result.value.action === 'remove' && selectedBeforeRuntimeExecution.length > 0) {
+      this.notifySelectionChange('delete');
     }
 
     if (result.value.action === 'update' && coordinateMoveObjectIds.length > 0) {
@@ -2228,8 +2431,11 @@ export class GraphXEngine {
   }
 
   private removeCommandCoreObjects(commandId: string): void {
+    let selectionChanged = false;
     const objectIds = this.commandCoreObjectIds.get(commandId) ?? [];
     objectIds.forEach((objectId) => {
+      const current = this.runtimeSceneStore.getObject(objectId);
+      if (current?.meta?.selected === true) selectionChanged = true;
       this.removeJsxGraphBackendObject(objectId);
       const removed = this.runtimeSceneStore.removeObject(objectId);
       if (removed.value?.type === 'variable') {
@@ -2245,6 +2451,7 @@ export class GraphXEngine {
     });
     this.commandCoreObjectIds.delete(commandId);
     this.commandRenderPath?.delete(commandId);
+    if (selectionChanged) this.notifySelectionChange('delete');
   }
 
   private getCommandIdForCoreObject(objectId: string): string | null {
@@ -2272,37 +2479,71 @@ export class GraphXEngine {
   }
 
   private setCommandCoreObjectSelected(objectId: string, selected: boolean): boolean {
-    const object = this.runtimeSceneStore.getObject(objectId);
-    if (!object) return false;
-    if (selected && this.selectedShapeId !== null) this.selectShape(null);
-    if ((object.meta?.selected === true) === selected) return true;
+    return this.runInMutationBatch(() => {
+      const object = this.runtimeSceneStore.getObject(objectId);
+      if (!object) return false;
 
-    const result = this.runtimeSceneStore.updateObject(object.id, {
-      meta: {
-        ...(object.meta ?? {}),
-        selected
+      let changed = false;
+      if (selected && this.clearSelectedShape()) changed = true;
+      if ((object.meta?.selected === true) !== selected) {
+        const result = this.runtimeSceneStore.updateObject(object.id, {
+          meta: {
+            ...(object.meta ?? {}),
+            selected
+          }
+        });
+        if (!result.ok || !result.value) return false;
+
+        const commandId = this.getCommandIdForCoreObject(object.id);
+        if (commandId) this.syncCoreCommandMutationToJsxGraph(commandId, result.value, 'math.object.select');
+        changed = true;
       }
-    });
-    if (!result.ok || !result.value) return false;
 
-    const commandId = this.getCommandIdForCoreObject(object.id);
-    if (commandId) this.syncCoreCommandMutationToJsxGraph(commandId, result.value, 'math.object.select');
-    this.notifyCapabilityChange();
-    return true;
+      if (changed) {
+        this.notifyCapabilityChange();
+        this.notifySelectionChange('api');
+      }
+      return true;
+    });
   }
 
-  private setCommandCoreSelection(objectId: string | null): boolean {
-    if (objectId && !this.runtimeSceneStore.getObject(objectId)) return false;
-    if (this.selectedShapeId !== null) this.selectShape(null);
+  private setCommandCoreSelection(objectId: string | null, source: GraphSelectionChangeSource = 'api'): boolean {
+    return this.runInMutationBatch(() => {
+      if (objectId && !this.runtimeSceneStore.getObject(objectId)) return false;
 
+      let changed = false;
+      if (objectId && this.clearSelectedShape()) changed = true;
+      for (const object of this.runtimeSceneStore.listObjects()) {
+        const selected = object.id === objectId;
+        if ((object.meta?.selected === true) === selected) continue;
+        const result = this.runtimeSceneStore.updateObject(object.id, {
+          meta: {
+            ...(object.meta ?? {}),
+            selected
+          }
+        });
+        if (!result.ok || !result.value) continue;
+        changed = true;
+        const commandId = this.getCommandIdForCoreObject(object.id);
+        if (commandId) this.syncCoreCommandMutationToJsxGraph(commandId, result.value, 'math.object.select');
+      }
+
+      if (changed) {
+        this.notifyCapabilityChange();
+        this.notifySelectionChange(source);
+      }
+      return true;
+    });
+  }
+
+  private clearCommandCoreSelection(): boolean {
     let changed = false;
     for (const object of this.runtimeSceneStore.listObjects()) {
-      const selected = object.id === objectId;
-      if ((object.meta?.selected === true) === selected) continue;
+      if (object.meta?.selected !== true) continue;
       const result = this.runtimeSceneStore.updateObject(object.id, {
         meta: {
           ...(object.meta ?? {}),
-          selected
+          selected: false
         }
       });
       if (!result.ok || !result.value) continue;
@@ -2310,9 +2551,13 @@ export class GraphXEngine {
       const commandId = this.getCommandIdForCoreObject(object.id);
       if (commandId) this.syncCoreCommandMutationToJsxGraph(commandId, result.value, 'math.object.select');
     }
+    return changed;
+  }
 
-    if (changed) this.notifyCapabilityChange();
-    return true;
+  private clearRuntimeSceneStore(source: GraphSelectionChangeSource = 'clear'): void {
+    const hadRuntimeSelection = this.runtimeSceneStore.listObjects().some((object) => object.meta?.selected === true);
+    this.runtimeSceneStore.clear();
+    if (hadRuntimeSelection) this.notifySelectionChange(source);
   }
 
   private syncCoreCommandMutationToJsxGraph(commandId: string, object: GraphObjectNode, capabilityId: string): void {
@@ -2557,7 +2802,7 @@ export class GraphXEngine {
     this.boardMgr.destroy();
     this.entityMgr.clearAll();
     this.sceneState.clearAll();
-    this.runtimeSceneStore.clear();
+    this.clearRuntimeSceneStore('clear');
     this.commandCoreObjectIds.clear();
     this.commandSymbols.clear();
     this.jsxGraphCommandHandles?.clear();
@@ -2789,6 +3034,12 @@ export class GraphXEngine {
         if (this.pendingCapabilityNotification) {
           this.pendingCapabilityNotification = false;
           this.dispatchCapabilityChange();
+        }
+
+        if (this.pendingSelectionNotification) {
+          const pending = this.pendingSelectionNotification;
+          this.pendingSelectionNotification = null;
+          this.dispatchSelectionChange(pending.previous, pending.source);
         }
       }
     }

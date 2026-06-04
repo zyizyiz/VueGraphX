@@ -2,6 +2,7 @@ import { type GraphBackendContext, type GraphBackendHost, type GraphBackendMount
 import { type GraphCreateDragPatchOptions } from './dragOperations';
 import { GraphInteractionRouter } from './eventRouter';
 import { GraphSceneStore, type GraphSceneStoreSnapshot } from './sceneDocument';
+import { type GraphRuntimeSelectionChangeSource, type GraphRuntimeSelectionItem, type GraphRuntimeSelectionListener } from './selection';
 export interface GraphSceneRuntimeOptions {
     scene?: GraphSceneStore;
     backend?: GraphRenderBackend;
@@ -11,6 +12,15 @@ export interface GraphSceneRuntimeOptions {
 }
 export interface GraphSceneRuntimeSnapshot extends GraphSceneStoreSnapshot {
     handles: readonly GraphRenderHandle[];
+}
+export interface GraphSceneRuntimeSelectionOptions {
+    source?: GraphRuntimeSelectionChangeSource;
+}
+export interface GraphSceneRuntimeSelectionMutationOptions extends GraphSceneRuntimeSelectionOptions {
+    context?: GraphBackendContext;
+}
+export interface GraphSceneRuntimeObjectSelectionOptions extends GraphSceneRuntimeSelectionMutationOptions {
+    exclusive?: boolean;
 }
 /**
  * Binds the renderer-neutral scene store to one backend without letting the
@@ -24,6 +34,8 @@ export declare class GraphSceneRuntime {
     private readonly handlesByObjectId;
     private readonly defaultLayerId;
     private defaultContext;
+    private selectionListeners;
+    private selectionRevision;
     constructor(options?: GraphSceneRuntimeOptions);
     setBackend(backend: GraphRenderBackend | null, layerId?: GraphLayerId): void;
     mount(host: GraphBackendHost, options?: GraphBackendMountOptions): GraphBackendMountResult;
@@ -31,10 +43,15 @@ export declare class GraphSceneRuntime {
         root?: boolean;
         replace?: boolean;
         context?: GraphBackendContext;
+        source?: GraphRuntimeSelectionChangeSource;
     }): GraphOperationResult<GraphObjectNode>;
-    updateObject(objectId: string, patch: GraphObjectPatch, context?: GraphBackendContext): GraphOperationResult<GraphObjectNode>;
-    removeObject(objectId: string): GraphOperationResult<GraphObjectNode>;
+    updateObject(objectId: string, patch: GraphObjectPatch, context?: GraphBackendContext, options?: GraphSceneRuntimeSelectionOptions): GraphOperationResult<GraphObjectNode>;
+    removeObject(objectId: string, options?: GraphSceneRuntimeSelectionOptions): GraphOperationResult<GraphObjectNode>;
     syncObjects(nodes: readonly GraphObjectNode[], context?: GraphBackendContext): GraphOperationResult<GraphObjectNode[]>;
+    subscribeSelection(listener: GraphRuntimeSelectionListener): () => void;
+    getSelectionItems(): GraphRuntimeSelectionItem[];
+    selectObject(objectId: string, options?: GraphSceneRuntimeObjectSelectionOptions): GraphOperationResult<GraphObjectNode>;
+    clearSelection(options?: GraphSceneRuntimeSelectionMutationOptions): GraphOperationResult<GraphObjectNode[]>;
     applyDragToObject(objectId: string, drag: GraphCreateDragPatchOptions | GraphDragSession): GraphOperationResult<GraphObjectNode>;
     clear(): void;
     renderAll(context?: GraphBackendContext): void;
@@ -43,6 +60,9 @@ export declare class GraphSceneRuntime {
     private renderNode;
     private removeObjectInternal;
     private reorderSceneObjects;
+    private readSelectionItems;
+    private getPrimarySelectionItem;
+    private dispatchSelectionChange;
     private createContext;
     private requireBackend;
 }

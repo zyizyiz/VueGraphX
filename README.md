@@ -133,22 +133,26 @@ engine.createShape('circle', { x: 0, y: 0 });
 如果你希望触摸设备或触控板使用“双指移动=平移、捏合=缩放”，请把 `pan.needTwoFingers` 设为 `true`。  
 `showNavigation` 只控制 JSXGraph 默认导航按钮的显示，不影响 `zoom.wheel` 或 `zoom.pinch`。
 
-### 2. 订阅能力并驱动交互
+### 2. 在 core runtime 订阅选中态并驱动业务 UI
 
 ```typescript
-import type { GraphCapabilitySnapshot } from 'vuegraphx';
+import { GraphSceneRuntime, type GraphRuntimeSelectionChangeEvent } from '@vuegraphx/core';
 
-const unsubscribe = engine.subscribeCapabilities((snapshot: GraphCapabilitySnapshot) => {
-  console.log('当前选中图形:', snapshot.selection);
-  console.log('当前可用能力:', snapshot.capabilities);
+const runtime = new GraphSceneRuntime({ backend: canvasOrBabylonBackend });
+
+const unsubscribeSelection = runtime.subscribeSelection((event: GraphRuntimeSelectionChangeEvent) => {
+  console.log('当前主选中对象:', event.primary);
+  console.log('全部选中对象:', event.selected);
+  console.log('事件来源:', event.source, '原因:', event.reason, '版本:', event.revision);
 });
 
-engine.executeCapability('style.stroke', { color: '#ef4444' });
-engine.executeCapability('resize.value', { value: 3.5 });
-engine.executeCapability('animation.play');
+runtime.selectObject('point-A', { source: 'pointer' });
+runtime.clearSelection({ source: 'clear' });
 
-unsubscribe();
+unsubscribeSelection();
 ```
+
+Canvas2D 与 Babylon3D 后端都通过同一个 `GraphSceneRuntime` 合同暴露选中态；业务方只订阅 runtime 事件，不需要读取 playground 内部状态。`GraphXEngine.subscribeSelection` 仍保留为 JSXGraph 兼容门面的选中态入口。
 
 ### 3. 执行表达式渲染
 

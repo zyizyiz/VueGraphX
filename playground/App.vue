@@ -254,7 +254,12 @@
                 </div>
                 <div v-if="isCoreRendererActive" class="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-[11px] leading-5 text-sky-800">
                   {{ coreRendererPanelMessage }}
-                  <span v-if="coreSelectedObjectId" class="mt-1 block font-semibold">当前选中：{{ coreSelectedObjectId }}</span>
+                  <span v-if="coreRuntimeSelection.primaryObjectId" class="mt-1 block font-semibold">
+                    当前选中：{{ coreRuntimeSelection.primaryObjectId }}
+                  </span>
+                  <span v-if="coreRuntimeSelection.primaryObjectId" class="block text-[10px] text-sky-700">
+                    {{ coreRuntimeSelection.backendId || activeRendererBackend }} · {{ coreRuntimeSelection.primaryKind }}/{{ coreRuntimeSelection.primaryType }} · {{ coreRuntimeSelection.source }} · {{ coreRuntimeSelection.reason }} · rev {{ coreRuntimeSelection.revision }}
+                  </span>
                 </div>
                 <div class="mt-3 grid grid-cols-2 gap-1.5">
                   <div
@@ -392,7 +397,8 @@ import {
   type GraphClientPoint,
   type GraphObjectNode,
   type GraphOperationDiagnostic,
-  type GraphPickResult
+  type GraphPickResult,
+  type GraphRuntimeSelectionChangeEvent
 } from '@vuegraphx/core';
 import { createCanvas2DGraphBackend, type Canvas2DGraphBackend, type CanvasWorldBounds } from '@vuegraphx/backend-canvas2d';
 import {
@@ -503,8 +509,32 @@ const sidebarBottomMaxHeight = ref(920);
 const isSidebarBottomResizing = ref(false);
 const coreViewportBounds = ref<CanvasWorldBounds>({ ...PLAYGROUND_CANVAS_WORLD_BOUNDS });
 const coreInteractionDiagnostics = ref<string[]>([]);
-const coreSelectedObjectId = ref<string>('');
 const businessOverlayRefreshKey = ref(0);
+
+interface CoreRuntimeSelectionProjection {
+  primaryObjectId: string;
+  primaryKind: string;
+  primaryType: string;
+  backendId: string;
+  selectedCount: number;
+  reason: GraphRuntimeSelectionChangeEvent['reason'];
+  source: GraphRuntimeSelectionChangeEvent['source'];
+  revision: number;
+}
+
+const createEmptyCoreRuntimeSelection = (): CoreRuntimeSelectionProjection => ({
+  primaryObjectId: '',
+  primaryKind: '',
+  primaryType: '',
+  backendId: '',
+  selectedCount: 0,
+  reason: 'snapshot',
+  source: 'api',
+  revision: 0
+});
+
+const coreRuntimeSelection = ref<CoreRuntimeSelectionProjection>(createEmptyCoreRuntimeSelection());
+const coreSelectedObjectId = computed(() => coreRuntimeSelection.value.primaryObjectId);
 
 const BUSINESS_OVERLAY_ANCHOR = { dimension: '2d', x: 0, y: 0 } as const;
 const BUSINESS_OVERLAY_OFFSET = { x: 0, y: -18 } as const;
@@ -534,6 +564,7 @@ let corePinchSession: CorePinchSession | null = null;
 let coordinateSystemDragSession: CoordinateSystemDragSession | null = null;
 const corePointers = new Map<number, GraphClientPoint>();
 let disposeViewportChangeSubscription: (() => void) | null = null;
+let disposeCoreRuntimeSelectionSubscription: (() => void) | null = null;
 
 // 当前模式且当前后端可用的 Demo 列表
 const currentDemos = computed(() => (
@@ -697,6 +728,34 @@ const applyCoreViewportBounds = () => {
 const getActiveCoreRuntime = () => (
   isBabylonRendererActive.value ? babylonRuntimeRef.value : canvasRuntimeRef.value
 );
+
+const resetCoreRuntimeSelection = () => {
+  coreRuntimeSelection.value = createEmptyCoreRuntimeSelection();
+};
+
+const handleCoreRuntimeSelectionChange = (event: GraphRuntimeSelectionChangeEvent) => {
+  const primary = event.primary;
+  coreRuntimeSelection.value = {
+    primaryObjectId: primary?.objectId ?? '',
+    primaryKind: primary?.kind ?? '',
+    primaryType: primary?.objectType ?? '',
+    backendId: primary?.backendId ?? '',
+    selectedCount: event.selected.length,
+    reason: event.reason,
+    source: event.source,
+    revision: event.revision
+  };
+};
+
+const stopCoreRuntimeSelectionSubscription = () => {
+  disposeCoreRuntimeSelectionSubscription?.();
+  disposeCoreRuntimeSelectionSubscription = null;
+};
+
+const subscribeCoreRuntimeSelection = (runtime: GraphSceneRuntime) => {
+  stopCoreRuntimeSelectionSubscription();
+  disposeCoreRuntimeSelectionSubscription = runtime.subscribeSelection(handleCoreRuntimeSelectionChange);
+};
 
 const getCoreLocalPoint = (event: Pick<PointerEvent | WheelEvent | DragEvent, 'clientX' | 'clientY'>): GraphClientPoint | null => {
   const element = graphContainerRef.value;
@@ -1084,30 +1143,25 @@ const selectCoreObject = (objectId: string, pick?: GraphPickResult) => {
   const runtime = getActiveCoreRuntime();
   if (!runtime) return;
 
-  for (const node of runtime.scene.listObjects()) {
-    if (node.meta?.selected === true && node.id !== objectId) {
-      runtime.updateObject(node.id, { meta: { ...(node.meta ?? {}), selected: false } });
-    }
+  const selected = runtime.selectObject(objectId, { source: 'pointer' });
+  if (!selected.ok) {
+    pushCoreDiagnostics(selected.diagnostics);
+    return;
   }
-
-  const node = runtime.scene.getObject(objectId);
-  if (node) runtime.updateObject(objectId, { meta: { ...(node.meta ?? {}), selected: true } });
-  coreSelectedObjectId.value = objectId;
   pushCoreInteractionDiagnostic(`selected ${objectId}${pick?.backendId ? ` via ${pick.backendId}` : ''}`);
 };
 
 const clearCoreSelection = (reason = 'selection cleared') => {
   const runtime = getActiveCoreRuntime();
   if (!runtime) return;
-  let cleared = false;
-  for (const node of runtime.scene.listObjects()) {
-    if (node.meta?.selected === true) {
-      runtime.updateObject(node.id, { meta: { ...(node.meta ?? {}), selected: false } });
-      cleared = true;
-    }
+
+  const hadSelection = runtime.getSelectionItems().length > 0;
+  const cleared = runtime.clearSelection({ source: 'pointer' });
+  if (!cleared.ok) {
+    pushCoreDiagnostics(cleared.diagnostics);
+    return;
   }
-  if (coreSelectedObjectId.value || cleared) {
-    coreSelectedObjectId.value = '';
+  if (hadSelection) {
     pushCoreInteractionDiagnostic(reason);
   }
 };
@@ -1347,6 +1401,8 @@ const destroyPrimaryRenderer = () => {
   coordinateSystemDragSession = null;
   corePointers.clear();
   stopViewportChangeSubscription();
+  stopCoreRuntimeSelectionSubscription();
+  resetCoreRuntimeSelection();
   if (engineRef.value) {
     engineRef.value.destroy();
     engineRef.value = null;
@@ -1390,10 +1446,12 @@ const initCanvasRenderer = (options: { syncCommands?: boolean } = {}) => {
     attributes: { worldBounds: coreViewportBounds.value, grid }
   });
   canvasBackendRef.value = backend;
-  canvasRuntimeRef.value = new GraphSceneRuntime({
+  const runtime = new GraphSceneRuntime({
     backend,
     defaultContext: { layerId: 'content' }
   });
+  canvasRuntimeRef.value = runtime;
+  subscribeCoreRuntimeSelection(runtime);
 
   if (options.syncCommands !== false) {
     syncAllToEngine();
@@ -1475,10 +1533,12 @@ const initBabylonRenderer = async (options: { syncCommands?: boolean } = {}) => 
       attributes: { renderMode, worldBounds: coreViewportBounds.value, showAxes: shouldShowCoreAxesForCurrentMode(), grid }
     });
     babylonBackendRef.value = backend;
-    babylonRuntimeRef.value = new GraphSceneRuntime({
+    const babylonRuntime = new GraphSceneRuntime({
       backend,
       defaultContext: { layerId: 'content' }
     });
+    babylonRuntimeRef.value = babylonRuntime;
+    subscribeCoreRuntimeSelection(babylonRuntime);
 
     const overlayBackend = createCanvas2DGraphBackend({
       id: 'playground-canvas2d-overlay',
@@ -1566,7 +1626,7 @@ const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolea
   destroyPrimaryRenderer();
   resetCoreViewportBounds();
   coreInteractionDiagnostics.value = [];
-  coreSelectedObjectId.value = '';
+  resetCoreRuntimeSelection();
 
   await waitForUiPaint();
   await initEngines(options);
@@ -1581,7 +1641,7 @@ const switchRendererBackend = async (backend: PlaygroundRenderBackend) => {
   destroyPrimaryRenderer();
   resetCoreViewportBounds();
   coreInteractionDiagnostics.value = [];
-  coreSelectedObjectId.value = '';
+  resetCoreRuntimeSelection();
   await waitForUiPaint();
   await initEngines({ syncCommands: true });
 };
@@ -1650,7 +1710,7 @@ const removeLine = (id: string) => {
 const clearAll = () => {
   store.clearCommands();
   activeDemo.value = -1;
-  coreSelectedObjectId.value = '';
+  resetCoreRuntimeSelection();
   if (engineRef.value) engineRef.value.clearBoard();
   if (canvasRuntimeRef.value) canvasRuntimeRef.value.clear();
   else if (canvasBackendRef.value) canvasBackendRef.value.clear();
@@ -1661,13 +1721,13 @@ const syncAllToEngine = (options: { keepSelection?: string } = {}) => {
   if (isCanvasRendererActive.value) {
     const runtime = canvasRuntimeRef.value;
     if (!canvasBackendRef.value || !runtime) return;
-    coreSelectedObjectId.value = options.keepSelection ?? '';
+    const selectedObjectId = options.keepSelection ?? coreSelectedObjectId.value;
     const result = buildPlaygroundCanvasScene(store.commands);
     store.commands.forEach((command) => {
       const diagnostic = result.diagnostics.find((item) => item.commandId === command.id);
       store.setCommandError(command.id, diagnostic?.message ?? '');
     });
-    const synced = runtime.syncObjects(applyCoreRuntimeSelection(result.nodes, options.keepSelection));
+    const synced = runtime.syncObjects(applyCoreRuntimeSelection(result.nodes, selectedObjectId));
     if (!synced.ok) pushCoreDiagnostics(synced.diagnostics);
     return;
   }
@@ -1680,14 +1740,14 @@ const syncAllToEngine = (options: { keepSelection?: string } = {}) => {
       });
       return;
     }
-    coreSelectedObjectId.value = options.keepSelection ?? '';
+    const selectedObjectId = options.keepSelection ?? coreSelectedObjectId.value;
     const result = buildPlaygroundLayered3DScene(store.commands);
     store.commands.forEach((command) => {
       const diagnostic = result.babylon.diagnostics.find((item) => item.commandId === command.id)
         ?? result.overlay.diagnostics.find((item) => item.commandId === command.id);
       store.setCommandError(command.id, diagnostic?.message ?? '');
     });
-    const synced = runtime.syncObjects(applyCoreRuntimeSelection(result.babylon.nodes, options.keepSelection));
+    const synced = runtime.syncObjects(applyCoreRuntimeSelection(result.babylon.nodes, selectedObjectId));
     if (!synced.ok) pushCoreDiagnostics(synced.diagnostics);
     const overlayRuntime = canvasRuntimeRef.value;
     if (overlayRuntime) {
@@ -1726,7 +1786,7 @@ const loadSelectedDemo = (idx: number) => {
   if (canvasRuntimeRef.value) canvasRuntimeRef.value.clear();
   if (babylonRuntimeRef.value) babylonRuntimeRef.value.clear();
   resetCoreViewportBounds();
-  coreSelectedObjectId.value = '';
+  resetCoreRuntimeSelection();
   nextTick(() => {
     syncAllToEngine();
   });

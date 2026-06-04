@@ -1,16 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ShapeCapabilityTarget } from '../architecture/capabilities/contracts';
 import type { GraphShapeDefinition, GraphShapeInstance } from '../architecture/shapes/contracts';
+import type { GraphSelectionChangeEvent } from '../types/capabilities';
 import type { EngineMode, GraphXOptions } from '../types/engine';
 import { GraphXEngine } from './GraphXEngine';
 import { GraphRelationState } from './relationState';
 import { GraphSceneState } from './sceneState';
 import { GraphSceneStore } from '@vuegraphx/core';
 
-const createShapeInstance = (id: string, entityType: string, payload?: unknown): GraphShapeInstance => ({
+const createShapeInstance = (
+  id: string,
+  entityType: string,
+  payload?: unknown,
+  capabilityTarget?: ShapeCapabilityTarget | null
+): GraphShapeInstance => ({
   id,
   entityType,
   setSelected: vi.fn(),
-  getCapabilityTarget: () => null,
+  getCapabilityTarget: () => capabilityTarget ?? null,
   getScenePayload: () => payload,
   destroy: vi.fn()
 });
@@ -38,6 +45,20 @@ const createNonSerializableShapeDefinition = (type = 'plain-shape'): GraphShapeD
   supportedModes: 'all',
   createShape(context) {
     return createShapeInstance(context.generateId(type), type);
+  }
+});
+
+const createSelectableShapeDefinition = (type = 'selectable-shape'): GraphShapeDefinition => ({
+  type,
+  supportedModes: 'all',
+  createShape(context) {
+    const id = context.generateId(type);
+    return createShapeInstance(id, type, undefined, {
+      entityType: type,
+      entityId: id,
+      entity: { id, label: 'Selectable shape' },
+      ui: { anchor: 'center' }
+    });
   }
 });
 
@@ -123,9 +144,14 @@ const createFakeEngine = () => {
     selectedShapeId: null,
     isClickingObject: false,
     capabilityListeners: [],
+    selectionListeners: [],
     relationListeners: [],
+    viewportListeners: [],
     mutationBatchDepth: 0,
-    pendingCapabilityNotification: false
+    pendingCapabilityNotification: false,
+    pendingSelectionNotification: null,
+    lastSelectionItems: [],
+    selectionRevision: 0
   });
 
   return engine as GraphXEngine;
@@ -317,6 +343,110 @@ describe('GraphXEngine scene document support', () => {
     expect(engine.getRuntimeSceneSnapshot().objects.map((node) => node.id)).toEqual(['B', 'segment-3']);
   });
 
+  it('notifies business selection subscribers when a shape is selected', () => {
+    const engine = createFakeEngine();
+    const events: GraphSelectionChangeEvent[] = [];
+
+    engine.registerShape(createSelectableShapeDefinition());
+    const unsubscribe = engine.subscribeSelection((event) => events.push(event));
+
+    engine.createShape('selectable-shape');
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      primary: null,
+      selected: [],
+      previous: [],
+      reason: 'snapshot',
+      source: 'api',
+      revision: 0
+    });
+    expect(events[1]).toMatchObject({
+      selected: [{
+        kind: 'shape',
+        entityType: 'selectable-shape',
+        entity: { label: 'Selectable shape' },
+        ui: { anchor: 'center' }
+      }],
+      previous: [],
+      reason: 'select',
+      source: 'api',
+      revision: 1
+    });
+    expect(events[1].selected[0]?.id).toMatch(/^selectable-shape_/);
+    expect(events[1].primary).toEqual(events[1].selected[0]);
+    expect(engine.getSelectionItems()).toEqual(events[1].selected);
+
+    unsubscribe();
+    engine.createShape('selectable-shape');
+    expect(events).toHaveLength(2);
+  });
+
+  it('notifies runtime object selection through the public selection API', () => {
+    const engine = createFakeEngine();
+    const events: GraphSelectionChangeEvent[] = [];
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    engine.subscribeSelection((event) => events.push(event));
+
+    expect(engine.executeRuntimeCapability('math.object.select', {
+      scope: 'object',
+      objectId: 'A'
+    }, true)).toBe(true);
+
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      primary: {
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd_a',
+        objectType: 'point'
+      },
+      selected: [{
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd_a',
+        objectType: 'point'
+      }],
+      previous: [],
+      reason: 'select',
+      source: 'api',
+      revision: 1
+    });
+  });
+
+  it('replaces runtime object selection when a shape becomes selected', () => {
+    const engine = createFakeEngine();
+    const events: GraphSelectionChangeEvent[] = [];
+
+    engine.registerShape(createSelectableShapeDefinition());
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    engine.subscribeSelection((event) => events.push(event));
+
+    expect(engine.executeRuntimeCapability('math.object.select', {
+      scope: 'object',
+      objectId: 'A'
+    }, true)).toBe(true);
+    expect(engine.createShape('selectable-shape')).toBe(true);
+
+    const runtimeObject = engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A');
+    expect(runtimeObject?.meta?.selected).toBe(false);
+    expect(events[events.length - 1]).toMatchObject({
+      selected: [{
+        kind: 'shape',
+        entityType: 'selectable-shape'
+      }],
+      previous: [{
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd_a'
+      }],
+      reason: 'replace',
+      source: 'api',
+      revision: 2
+    });
+  });
+
   it('routes function command DSL through the JSXGraph backend with serializable shared numeric scope', () => {
     const engine = createFakeEngine();
     const created: Array<{ type: string; args: unknown[] }> = [];
@@ -506,6 +636,7 @@ describe('GraphXEngine scene document support', () => {
 
   it('selects clicked JSXGraph backend command objects and syncs stroke-width-only selection state', () => {
     const engine = createFakeEngine();
+    const selectionEvents: GraphSelectionChangeEvent[] = [];
     const created: Array<{ type: string; args: unknown[]; attrs: Record<string, unknown>; element: Record<string, unknown> }> = [];
     const board = (engine as any).boardMgr.board;
     board.containerObj = document.createElement('div');
@@ -518,6 +649,7 @@ describe('GraphXEngine scene document support', () => {
 
     engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
     expect(created[0].element.__vuegraphxCoreObjectId).toBe('A');
+    engine.subscribeSelection((event) => selectionEvents.push(event));
 
     board.getAllObjectsUnderMouse = vi.fn(() => [created[0].element]);
     (engine as any).setupGlobalEvents();
@@ -528,6 +660,17 @@ describe('GraphXEngine scene document support', () => {
     down({});
 
     expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.meta?.selected).toBe(true);
+    expect(selectionEvents[1]).toMatchObject({
+      selected: [{
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd_a',
+        objectType: 'point'
+      }],
+      previous: [],
+      reason: 'select',
+      source: 'pointer'
+    });
     expect(created[1]).toMatchObject({
       type: 'point',
       attrs: {
@@ -540,6 +683,16 @@ describe('GraphXEngine scene document support', () => {
     board.getAllObjectsUnderMouse = vi.fn(() => []);
     down({});
     expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.meta?.selected).toBe(false);
+    expect(selectionEvents[2]).toMatchObject({
+      selected: [],
+      previous: [{
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd_a'
+      }],
+      reason: 'clear',
+      source: 'pointer'
+    });
     expect(created[2]).toMatchObject({
       type: 'point',
       attrs: {
@@ -563,6 +716,64 @@ describe('GraphXEngine scene document support', () => {
 
     expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'A')?.meta?.selected).toBe(false);
     expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'B')?.meta?.selected).toBe(true);
+  });
+
+  it('notifies selection clear events for scene clear-selection', () => {
+    const engine = createFakeEngine();
+    const events: GraphSelectionChangeEvent[] = [];
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    engine.subscribeSelection((event) => events.push(event));
+
+    expect(engine.executeRuntimeCapability('math.object.select', {
+      scope: 'object',
+      objectId: 'A'
+    }, true)).toBe(true);
+    expect(engine.executeRuntimeCapability('math.scene.clear-selection', { scope: 'scene' })).toBe(true);
+
+    expect(events).toHaveLength(3);
+    expect(events[2]).toMatchObject({
+      primary: null,
+      selected: [],
+      previous: [{
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd_a',
+        objectType: 'point'
+      }],
+      reason: 'clear',
+      source: 'clear',
+      revision: 2
+    });
+  });
+
+  it('notifies delete-sourced selection clear when a selected command is removed', () => {
+    const engine = createFakeEngine();
+    const events: GraphSelectionChangeEvent[] = [];
+
+    engine.executeCommand('cmd_a', 'A = (1, 2)', '#0ea5e9');
+    engine.subscribeSelection((event) => events.push(event));
+
+    expect(engine.executeRuntimeCapability('math.object.select', {
+      scope: 'object',
+      objectId: 'A'
+    }, true)).toBe(true);
+    engine.removeCommand('cmd_a');
+
+    expect(events).toHaveLength(3);
+    expect(events[2]).toMatchObject({
+      primary: null,
+      selected: [],
+      previous: [{
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd_a',
+        objectType: 'point'
+      }],
+      reason: 'clear',
+      source: 'delete',
+      revision: 2
+    });
   });
 
   it('routes angle command DSL through the JSXGraph backend adapter', () => {

@@ -233,6 +233,9 @@ describe('GraphXEngine board option cloning', () => {
         clearRelations: vi.fn()
       },
       runtimeSceneStore: new GraphSceneStore('test-runtime-scene'),
+      clearRuntimeSceneStore: vi.fn(() => {
+        fakeEngine.runtimeSceneStore.clear();
+      }),
       commandCoreObjectIds: new Map(),
       commandSymbols: new Map(),
       commandNumericScope: new Map(),

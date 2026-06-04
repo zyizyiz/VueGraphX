@@ -8,6 +8,7 @@ export * from './gridSnapping';
 export * from './backendRegistry';
 export * from './packages';
 export * from './sceneDocument';
+export * from './selection';
 export * from './capabilityModel';
 export * from './capabilityExecutor';
 export * from './eventRouter';

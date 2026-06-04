@@ -30,7 +30,8 @@ import {
   validateGraphRelationSnapshot,
   type GraphBackendHost,
   type GraphObjectNode,
-  type GraphRenderBackend
+  type GraphRenderBackend,
+  type GraphRuntimeSelectionChangeEvent
 } from './index';
 
 const createPointNode = (id: string, x: number, y: number): GraphObjectNode => {
@@ -1611,6 +1612,186 @@ describe('renderer-neutral core runtime contracts', () => {
 
     expect(selected.ok).toBe(true);
     expect(runtime.snapshot().objects.map((node) => node.id)).toEqual(['B', 'A']);
+  });
+
+  it('notifies runtime selection subscribers from core object mutations', () => {
+    const backend = createCoreOnlyTestBackend('runtime-selection');
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+    runtime.addObject(createPointNode('A', 1, 1));
+    runtime.addObject(createPointNode('B', 2, 2));
+
+    const events: GraphRuntimeSelectionChangeEvent[] = [];
+    const unsubscribe = runtime.subscribeSelection((event) => events.push(event));
+
+    expect(events[0]).toMatchObject({
+      primary: null,
+      selected: [],
+      previous: [],
+      reason: 'snapshot',
+      source: 'api',
+      revision: 0
+    });
+
+    const selected = runtime.selectObject('A', { source: 'pointer' });
+    expect(selected.ok).toBe(true);
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      reason: 'select',
+      source: 'pointer',
+      revision: 1,
+      primary: {
+        id: 'A',
+        objectId: 'A',
+        kind: 'object',
+        objectKind: 'shape',
+        objectType: 'point',
+        backendId: 'runtime-selection',
+        target: { scope: 'object', objectId: 'A', backendId: 'runtime-selection' }
+      },
+      selected: [{ id: 'A' }],
+      previous: []
+    });
+    expect(runtime.scene.getObject('A')?.meta?.selected).toBe(true);
+    expect(runtime.snapshot().objects.map((node) => node.id)).toEqual(['B', 'A']);
+
+    const duplicate = runtime.selectObject('A', { source: 'pointer' });
+    expect(duplicate.ok).toBe(true);
+    expect(events).toHaveLength(2);
+
+    const movedSelected = runtime.updateObject('A', {
+      payload: { objectType: 'point', position: { dimension: '2d', x: 4, y: 4 } }
+    });
+    expect(movedSelected.ok).toBe(true);
+    expect(events).toHaveLength(3);
+    expect(events[2]).toMatchObject({
+      reason: 'update',
+      source: 'api',
+      revision: 2,
+      primary: { id: 'A', payload: { position: { x: 4, y: 4 } } },
+      selected: [{ id: 'A' }],
+      previous: [{ id: 'A' }]
+    });
+
+    const replaced = runtime.selectObject('B', { source: 'api' });
+    expect(replaced.ok).toBe(true);
+    expect(events).toHaveLength(4);
+    expect(events[3]).toMatchObject({
+      reason: 'replace',
+      source: 'api',
+      revision: 3,
+      primary: { id: 'B' },
+      selected: [{ id: 'B' }],
+      previous: [{ id: 'A' }]
+    });
+    expect(runtime.scene.getObject('A')?.meta?.selected).toBe(false);
+    expect(runtime.scene.getObject('B')?.meta?.selected).toBe(true);
+
+    const cleared = runtime.clearSelection({ source: 'clear' });
+    expect(cleared.ok).toBe(true);
+    expect(cleared.value?.map((node) => node.id)).toEqual(['B']);
+    expect(events).toHaveLength(5);
+    expect(events[4]).toMatchObject({
+      reason: 'clear',
+      source: 'clear',
+      revision: 4,
+      primary: null,
+      selected: [],
+      previous: [{ id: 'B' }]
+    });
+
+    unsubscribe();
+    runtime.selectObject('A');
+    expect(events).toHaveLength(5);
+  });
+
+  it('emits one runtime selection event per syncObjects batch', () => {
+    const backend = createCoreOnlyTestBackend('runtime-selection-sync');
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+    const events: GraphRuntimeSelectionChangeEvent[] = [];
+    runtime.subscribeSelection((event) => events.push(event));
+
+    const selectedCommandNode = {
+      ...createPointNode('A', 1, 1),
+      meta: { ownerCommandId: 'cmd-A', selected: true }
+    };
+    const firstSync = runtime.syncObjects([
+      selectedCommandNode,
+      createPointNode('B', 2, 2)
+    ]);
+    expect(firstSync.ok).toBe(true);
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      reason: 'select',
+      source: 'sync',
+      revision: 1,
+      primary: {
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd-A',
+        objectType: 'point'
+      },
+      selected: [{ id: 'A' }],
+      previous: []
+    });
+
+    const unchangedSync = runtime.syncObjects([
+      selectedCommandNode,
+      createPointNode('B', 2, 2)
+    ]);
+    expect(unchangedSync.ok).toBe(true);
+    expect(events).toHaveLength(2);
+
+    const updatedSelectedCommandNode = {
+      ...createPointNode('A', 4, 4),
+      meta: { ownerCommandId: 'cmd-A', selected: true }
+    };
+    const updateSync = runtime.syncObjects([
+      updatedSelectedCommandNode,
+      createPointNode('B', 2, 2)
+    ]);
+    expect(updateSync.ok).toBe(true);
+    expect(events).toHaveLength(3);
+    expect(events[2]).toMatchObject({
+      reason: 'update',
+      source: 'sync',
+      revision: 2,
+      primary: {
+        id: 'A',
+        kind: 'command',
+        commandId: 'cmd-A',
+        payload: { position: { x: 4, y: 4 } }
+      },
+      selected: [{ id: 'A' }],
+      previous: [{ id: 'A' }]
+    });
+
+    const replaceSync = runtime.syncObjects([
+      { ...createPointNode('B', 2, 2), meta: { selected: true } }
+    ]);
+    expect(replaceSync.ok).toBe(true);
+    expect(events).toHaveLength(4);
+    expect(events[3]).toMatchObject({
+      reason: 'replace',
+      source: 'sync',
+      revision: 3,
+      primary: { id: 'B' },
+      selected: [{ id: 'B' }],
+      previous: [{ id: 'A' }]
+    });
+
+    const clearSync = runtime.syncObjects([createPointNode('B', 2, 2)]);
+    expect(clearSync.ok).toBe(true);
+    expect(events).toHaveLength(5);
+    expect(events[4]).toMatchObject({
+      reason: 'clear',
+      source: 'sync',
+      revision: 4,
+      primary: null,
+      selected: [],
+      previous: [{ id: 'B' }]
+    });
   });
 
   it('moves coordinate systems with their scoped graph objects and clip bounds', () => {

@@ -91,6 +91,106 @@ export interface GraphSelectionSnapshot {
 }
 
 /**
+ * 业务侧可观察的选中对象类型。
+ */
+export type GraphSelectionItemKind = 'shape' | 'runtime-object' | 'command' | 'relation';
+
+/**
+ * 选中状态变化的原因。
+ */
+export type GraphSelectionChangeReason = 'snapshot' | 'select' | 'deselect' | 'replace' | 'clear';
+
+/**
+ * 选中状态变化的来源。
+ */
+export type GraphSelectionChangeSource = 'pointer' | 'api' | 'scene-load' | 'delete' | 'clear';
+
+/**
+ * 业务侧可直接消费的选中对象描述。
+ */
+export interface GraphSelectionItem {
+  /**
+   * 当前选中对象的稳定 id。
+   */
+  id: string;
+
+  /**
+   * 选中对象所属的运行时类别。
+   */
+  kind: GraphSelectionItemKind;
+
+  /**
+   * shape 或业务实体类型。
+   */
+  entityType?: string;
+
+  /**
+   * renderer-neutral runtime object 类型。
+   */
+  objectType?: string;
+
+  /**
+   * 选中对象所属 command id；仅 command 生成的 runtime object 会提供。
+   */
+  commandId?: string;
+
+  /**
+   * 选中对象偏好的后端标识。
+   */
+  backendId?: string;
+
+  /**
+   * 图形作者或 runtime object 提供的业务数据。
+   */
+  entity?: unknown;
+
+  /**
+   * 与当前选中项相关的 UI 摆放和展示信息。
+   */
+  ui?: Record<string, unknown>;
+
+  /**
+   * 选中对象附带的浅层运行时元数据。
+   */
+  meta?: Record<string, unknown>;
+}
+
+/**
+ * 对外推送的选中状态变化事件。
+ */
+export interface GraphSelectionChangeEvent {
+  /**
+   * 当前主选中对象；没有选中对象时为 null。
+   */
+  primary: GraphSelectionItem | null;
+
+  /**
+   * 当前全部选中对象。当前运行时允许多 runtime object 同时处于 selected 状态。
+   */
+  selected: GraphSelectionItem[];
+
+  /**
+   * 上一次推送时的选中对象列表。
+   */
+  previous: GraphSelectionItem[];
+
+  /**
+   * 选中状态变化原因。
+   */
+  reason: GraphSelectionChangeReason;
+
+  /**
+   * 触发变化的来源。
+   */
+  source: GraphSelectionChangeSource;
+
+  /**
+   * 单调递增的选中状态版本。
+   */
+  revision: number;
+}
+
+/**
  * 引擎当前对外暴露的能力状态快照。
  */
 export interface GraphCapabilitySnapshot {
@@ -109,3 +209,8 @@ export interface GraphCapabilitySnapshot {
  * 用于监听选中项与能力变化的回调。
  */
 export type GraphCapabilityListener = (snapshot: GraphCapabilitySnapshot) => void;
+
+/**
+ * 用于监听选中对象变化的回调。
+ */
+export type GraphSelectionListener = (event: GraphSelectionChangeEvent) => void;

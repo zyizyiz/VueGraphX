@@ -114,22 +114,26 @@ Zoom is not enabled by default in the library; if you want a draggable viewport 
 If you want touch devices or trackpads to behave as “two-finger move = pan, pinch = zoom”, set `pan.needTwoFingers` to `true`.  
 `showNavigation` only controls the default JSXGraph navigation buttons; it does not disable `zoom.wheel` or `zoom.pinch`.
 
-### 2. Subscribe to capabilities and drive UI
+### 2. Subscribe to core runtime selection and drive business UI
 
 ```typescript
-import type { GraphCapabilitySnapshot } from 'vuegraphx';
+import { GraphSceneRuntime, type GraphRuntimeSelectionChangeEvent } from '@vuegraphx/core';
 
-const unsubscribe = engine.subscribeCapabilities((snapshot: GraphCapabilitySnapshot) => {
-  console.log('Current selection:', snapshot.selection);
-  console.log('Available capabilities:', snapshot.capabilities);
+const runtime = new GraphSceneRuntime({ backend: canvasOrBabylonBackend });
+
+const unsubscribeSelection = runtime.subscribeSelection((event: GraphRuntimeSelectionChangeEvent) => {
+  console.log('Primary selection:', event.primary);
+  console.log('All selected objects:', event.selected);
+  console.log('Source:', event.source, 'reason:', event.reason, 'revision:', event.revision);
 });
 
-engine.executeCapability('style.stroke', { color: '#ef4444' });
-engine.executeCapability('resize.value', { value: 3.5 });
-engine.executeCapability('animation.play');
+runtime.selectObject('point-A', { source: 'pointer' });
+runtime.clearSelection({ source: 'clear' });
 
-unsubscribe();
+unsubscribeSelection();
 ```
+
+Canvas2D and Babylon3D backends expose selection through the same `GraphSceneRuntime` contract. Product code should subscribe to runtime events instead of reading playground state. `GraphXEngine.subscribeSelection` remains available as the JSXGraph compatibility facade.
 
 ### 3. Render expressions
 
