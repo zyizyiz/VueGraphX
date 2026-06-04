@@ -10,6 +10,8 @@ import {
   resolveGraphViewportGridOptions,
   resolveGraphViewportGridStep,
   STANDARD_COORDINATE_UI,
+  STANDARD_GEOMETRY_ANNOTATION_UI,
+  STANDARD_GEOMETRY_MARKER_UI,
   resolveStandardCoordinateLabelPixelOffset,
   type GraphBackendContext,
   type GraphBackendMountOptions,
@@ -416,7 +418,7 @@ export class JsxGraphRuntime implements JsxGraphRuntimePort {
       const descriptor = resolveGraphTextRenderDescriptor(node);
       const anchor = resolveGraphTextAnchor(node);
       if (descriptor && anchor?.dimension === '2d') {
-        const renderedText = renderTextForJsxGraph(descriptor, board, () => this.getTextVisualZoomScale(board));
+        const renderedText = renderTextForJsxGraph(descriptor, board, () => this.getTextVisualZoomScale(board), node.renderHints);
         return normalizeElements(board.create('text', [anchor.x, anchor.y, renderedText.text], {
           ...attrs,
           ...renderedText.attributes
@@ -645,22 +647,63 @@ const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext):
   const name = typeof hints.name === 'string' ? hints.name : node.id;
   const selected = isSelectedNode(node);
   const strokeColor = typeof hints.strokeColor === 'string' ? hints.strokeColor : '#0ea5e9';
-  const fillColor = typeof hints.fillColor === 'string' ? hints.fillColor : strokeColor;
+  const pointStrokeColor = node.type === 'point' && typeof hints.pointStrokeColor === 'string' ? hints.pointStrokeColor : strokeColor;
+  const fillColor = node.type === 'point' && typeof hints.pointFillColor === 'string'
+    ? hints.pointFillColor
+    : typeof hints.fillColor === 'string'
+      ? hints.fillColor
+      : strokeColor;
   const lineDash = readLineDashPattern(hints.lineDash);
-  const strokeWidth = typeof hints.strokeWidth === 'number' ? hints.strokeWidth : lineDash ? JSXGRAPH_DASH_STROKE_WIDTH : 2;
+  const baseStrokeWidth = typeof hints.strokeWidth === 'number' ? hints.strokeWidth : lineDash ? JSXGRAPH_DASH_STROKE_WIDTH : 2;
+  const strokeWidth = node.type === 'point' && typeof hints.pointStrokeWidth === 'number' ? hints.pointStrokeWidth : baseStrokeWidth;
+  const pointRadius = readNumber(hints.radius, STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx);
+  const pointSize = resolveJsxGraphPointSize(pointRadius, strokeWidth);
   return {
     name,
     withLabel: Boolean(name),
     highlight: false,
-    strokeColor,
+    strokeColor: node.type === 'point' ? pointStrokeColor : strokeColor,
     fillColor,
-    fillOpacity: readNumber(hints.fillOpacity, 0.15),
+    fillOpacity: node.type === 'point' ? readNumber(hints.fillOpacity, 1) : readNumber(hints.fillOpacity, 0.15),
     strokeWidth: selected ? resolveSelectedStrokeWidth(strokeWidth) : strokeWidth,
-    size: readNumber(hints.radius, 3),
+    size: node.type === 'point' ? pointSize : readNumber(hints.radius, 3),
     visible: hints.visible !== false,
     fixed: isJsxGraphDragDisabled(node),
     linecap: readJsxGraphLineCap(hints.lineCap, isJsxGraphDragDisabled(node) ? 'butt' : 'round'),
+    ...(node.type === 'point' ? {
+      highlightStrokeColor: pointStrokeColor,
+      highlightFillColor: fillColor,
+      highlightFillOpacity: readNumber(hints.fillOpacity, 1),
+      face: 'o',
+      sizeUnit: 'screen',
+      zoom: false,
+      label: createJsxGraphPointLabelAttributes(hints)
+    } : {}),
     ...(lineDash ? { dash: JSXGRAPH_STANDARD_DASH_INDEX, dashScale: false } : {})
+  };
+};
+
+const resolveJsxGraphPointSize = (visualOuterRadius: number, strokeWidth: number): number => (
+  Math.max(0, visualOuterRadius - 1 - strokeWidth / 2)
+);
+
+const createJsxGraphPointLabelAttributes = (hints: Record<string, unknown>): Record<string, unknown> => {
+  const textColor = readSafeCssValue(hints.textColor) ?? STANDARD_GEOMETRY_ANNOTATION_UI.textColor;
+  const fontFamily = readSafeCssValue(hints.fontFamily) ?? STANDARD_GEOMETRY_ANNOTATION_UI.textFontFamily;
+  const fontWeight = readSafeCssValue(hints.fontWeight) ?? String(STANDARD_GEOMETRY_ANNOTATION_UI.textFontWeight);
+  const lineHeight = readNumber(hints.lineHeight, STANDARD_GEOMETRY_ANNOTATION_UI.textLineHeightPx);
+  return {
+    strokeColor: textColor,
+    highlightStrokeColor: textColor,
+    fontSize: readNumber(hints.fontSize, STANDARD_GEOMETRY_ANNOTATION_UI.textFontSizePx),
+    fontUnit: 'px',
+    anchorX: 'left',
+    anchorY: 'top',
+    offset: [
+      readNumber(hints.textOffsetX, STANDARD_GEOMETRY_ANNOTATION_UI.textOffsetXPx),
+      readNumber(hints.textOffsetY, STANDARD_GEOMETRY_ANNOTATION_UI.textOffsetYPx)
+    ],
+    cssStyle: `font-family:${fontFamily};font-weight:${fontWeight};line-height:${formatCssNumber(lineHeight)}px;`
   };
 };
 
@@ -705,14 +748,15 @@ const isJsxGraphDragDisabled = (node: GraphObjectNode): boolean => {
 const renderTextForJsxGraph = (
   descriptor: GraphTextRenderDescriptor,
   board: JsxGraphBoardLike,
-  readVisualScale: () => number
+  readVisualScale: () => number,
+  renderHints: Record<string, unknown> | undefined
 ): { text: string | (() => string); attributes: Record<string, unknown> } => {
   if (descriptor.format === 'latex') ensureKatexStyles(resolveBoardDocument(board));
   const html = descriptor.format === 'latex'
     ? renderLatexHtmlAndMathMl(descriptor)
     : escapeHtml(descriptor.text);
   return {
-    text: () => wrapTextHtmlForJsxGraph(html, readVisualScale(), descriptor.format === 'latex' ? 'latex' : 'plain'),
+    text: () => wrapTextHtmlForJsxGraph(html, readVisualScale(), descriptor.format === 'latex' ? 'latex' : 'plain', renderHints),
     attributes: {
       anchorX: 'left',
       anchorY: 'top',
@@ -734,10 +778,44 @@ const renderLatexHtmlAndMathMl = (descriptor: GraphTextRenderDescriptor): string
   })
 );
 
-const wrapTextHtmlForJsxGraph = (html: string, visualScale: number, format: 'latex' | 'plain'): string => {
-  const fontSize = formatCssNumber(JSXGRAPH_TEXT_BASE_FONT_SIZE * normalizeVisualZoomScale(visualScale));
+const wrapTextHtmlForJsxGraph = (
+  html: string,
+  visualScale: number,
+  format: 'latex' | 'plain',
+  renderHints: Record<string, unknown> | undefined
+): string => {
+  const scale = normalizeVisualZoomScale(visualScale);
+  const fontSize = formatCssNumber(readNumber(renderHints?.fontSize, JSXGRAPH_TEXT_BASE_FONT_SIZE) * scale);
   const className = format === 'latex' ? 'vuegraphx-jsxgraph-latex' : 'vuegraphx-jsxgraph-text';
-  return `<span class="${className}" style="display:inline-block;font-size:${fontSize}px;line-height:1.2;color:inherit;background:transparent;border:0;box-shadow:none;">${html}</span>`;
+  const textColor = readSafeCssValue(renderHints?.textColor) ?? readSafeCssValue(renderHints?.strokeColor) ?? 'inherit';
+  const backgroundColor = readSafeCssValue(renderHints?.textBackgroundColor) ?? 'transparent';
+  const borderColor = readSafeCssValue(renderHints?.textBorderColor);
+  const borderWidth = readNumber(renderHints?.textBorderWidth, 1) * scale;
+  const borderRadius = readNumber(renderHints?.textBorderRadius, 0) * scale;
+  const paddingX = readNumber(renderHints?.textPaddingX, 0) * scale;
+  const paddingY = readNumber(renderHints?.textPaddingY, 0) * scale;
+  const offsetX = readNumber(renderHints?.textOffsetX, 0) * scale;
+  const offsetY = readNumber(renderHints?.textOffsetY, 0) * scale;
+  const shadowColor = readSafeCssValue(renderHints?.textShadowColor);
+  const shadowBlur = readNumber(renderHints?.textShadowBlur, 0) * scale;
+  const shadowOffsetX = readNumber(renderHints?.textShadowOffsetX, 0) * scale;
+  const shadowOffsetY = readNumber(renderHints?.textShadowOffsetY, 0) * scale;
+  const explicitFont = readSafeCssValue(renderHints?.font);
+  const lineHeight = readNumber(renderHints?.lineHeight, 1.2);
+  const lineHeightRule = lineHeight > 4
+    ? `${formatCssNumber(lineHeight * scale)}px`
+    : formatCssNumber(lineHeight);
+  const fontRules = explicitFont
+    ? `font:${explicitFont};`
+    : `font-size:${fontSize}px;line-height:${lineHeightRule};font-weight:${readSafeCssValue(renderHints?.fontWeight) ?? 'inherit'};font-family:${readSafeCssValue(renderHints?.fontFamily) ?? 'inherit'};`;
+  const shadow = shadowColor
+    ? `${formatCssNumber(shadowOffsetX)}px ${formatCssNumber(shadowOffsetY)}px ${formatCssNumber(shadowBlur)}px ${shadowColor}`
+    : 'none';
+  const transform = offsetX || offsetY
+    ? `transform:translate(${formatCssNumber(offsetX)}px, ${formatCssNumber(offsetY)}px);`
+    : '';
+  const opacity = formatCssNumber(readNumber(renderHints?.textOpacity, readNumber(renderHints?.opacity, 1)));
+  return `<span class="${className}" style="display:inline-block;${fontRules}${transform}color:${textColor};background:${backgroundColor};border:${borderColor ? `${formatCssNumber(borderWidth)}px solid ${borderColor}` : '0'};border-radius:${formatCssNumber(borderRadius)}px;padding:${formatCssNumber(paddingY)}px ${formatCssNumber(paddingX)}px;box-shadow:${shadow};text-shadow:${shadow};opacity:${opacity};">${html}</span>`;
 };
 
 const ensureKatexStyles = (doc: Document | null): void => {
@@ -780,6 +858,13 @@ const escapeHtml = (value: string): string => (
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;')
 );
+
+const readSafeCssValue = (value: unknown): string | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed && !/[;"<>]/.test(trimmed) ? trimmed : null;
+};
 
 const normalizeElements = (value: JsxGraphElement | JsxGraphElement[] | null | undefined): JsxGraphElement[] => {
   if (!value) return [];

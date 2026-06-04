@@ -85,6 +85,33 @@ export interface GraphSceneStyleIr {
   opacity?: number;
   visible?: boolean;
   lineDash?: readonly number[];
+  radius?: number;
+  pointFillColor?: string;
+  pointStrokeColor?: string;
+  pointStrokeWidth?: number;
+  pointShadowColor?: string;
+  pointShadowBlur?: number;
+  pointShadowOffsetX?: number;
+  pointShadowOffsetY?: number;
+  textColor?: string;
+  textOpacity?: number;
+  font?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: string | number;
+  lineHeight?: number;
+  textBackgroundColor?: string;
+  textBorderColor?: string;
+  textBorderWidth?: number;
+  textBorderRadius?: number;
+  textPaddingX?: number;
+  textPaddingY?: number;
+  textOffsetX?: number;
+  textOffsetY?: number;
+  textShadowColor?: string;
+  textShadowBlur?: number;
+  textShadowOffsetX?: number;
+  textShadowOffsetY?: number;
 }
 
 export interface GraphSceneObjectIrBase<Type extends GraphSceneObjectIrType> {
@@ -363,6 +390,8 @@ export const createGraphSceneObjectIrNode = (
     return { ok: false, diagnostics: payloadResult.diagnostics };
   }
 
+  const renderHints = mergeSceneStyleRenderHints(payloadResult.value.style, input.renderHints);
+
   return okResult(createGraphObjectNode({
     id: input.id,
     kind: input.kind ?? defaultGraphObjectKindForSceneObjectIr(input.objectType),
@@ -374,10 +403,26 @@ export const createGraphSceneObjectIrNode = (
     children: input.children,
     relations: input.relations,
     capabilities: input.capabilities,
-    renderHints: input.renderHints,
+    renderHints,
     meta: input.meta
   }) as GraphSceneObjectIrNode);
 };
+
+const mergeSceneStyleRenderHints = (
+  style: GraphSceneStyleIr | undefined,
+  renderHints: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined => {
+  if (!style) return renderHints;
+  return {
+    ...cloneSceneStyleForRenderHints(style),
+    ...(renderHints ?? {})
+  };
+};
+
+const cloneSceneStyleForRenderHints = (style: GraphSceneStyleIr): Record<string, unknown> => ({
+  ...style,
+  ...(style.lineDash ? { lineDash: [...style.lineDash] } : {})
+});
 
 const objectTarget = (objectId: string | undefined): GraphRuntimeTargetRef => (
   objectId ? { scope: 'object', objectId } : { scope: 'scene' }
@@ -414,6 +459,8 @@ const isString = (value: unknown): value is string => typeof value === 'string' 
 const isOptionalString = (value: unknown): boolean => value === undefined || typeof value === 'string';
 
 const isOptionalNumber = (value: unknown): boolean => value === undefined || isFiniteNumber(value);
+
+const isOptionalStringOrNumber = (value: unknown): boolean => value === undefined || typeof value === 'string' || isFiniteNumber(value);
 
 const isOptionalBoolean = (value: unknown): boolean => value === undefined || typeof value === 'boolean';
 
@@ -578,7 +625,34 @@ const isSceneStyleIr = (value: unknown): value is GraphSceneStyleIr => {
     && isOptionalNumber(style.strokeWidth)
     && isOptionalNumber(style.opacity)
     && (style.visible === undefined || typeof style.visible === 'boolean')
-    && (style.lineDash === undefined || isNumberArray(style.lineDash));
+    && (style.lineDash === undefined || isNumberArray(style.lineDash))
+    && isOptionalNumber(style.radius)
+    && isOptionalString(style.pointFillColor)
+    && isOptionalString(style.pointStrokeColor)
+    && isOptionalNumber(style.pointStrokeWidth)
+    && isOptionalString(style.pointShadowColor)
+    && isOptionalNumber(style.pointShadowBlur)
+    && isOptionalNumber(style.pointShadowOffsetX)
+    && isOptionalNumber(style.pointShadowOffsetY)
+    && isOptionalString(style.textColor)
+    && isOptionalNumber(style.textOpacity)
+    && isOptionalString(style.font)
+    && isOptionalNumber(style.fontSize)
+    && isOptionalString(style.fontFamily)
+    && isOptionalStringOrNumber(style.fontWeight)
+    && isOptionalNumber(style.lineHeight)
+    && isOptionalString(style.textBackgroundColor)
+    && isOptionalString(style.textBorderColor)
+    && isOptionalNumber(style.textBorderWidth)
+    && isOptionalNumber(style.textBorderRadius)
+    && isOptionalNumber(style.textPaddingX)
+    && isOptionalNumber(style.textPaddingY)
+    && isOptionalNumber(style.textOffsetX)
+    && isOptionalNumber(style.textOffsetY)
+    && isOptionalString(style.textShadowColor)
+    && isOptionalNumber(style.textShadowBlur)
+    && isOptionalNumber(style.textShadowOffsetX)
+    && isOptionalNumber(style.textShadowOffsetY);
 };
 
 const isLineDefinition = (value: unknown): value is GraphLineDefinitionIr => {

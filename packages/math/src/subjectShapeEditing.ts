@@ -21,7 +21,15 @@ import type {
   SubjectRayOverlayTarget,
   SubjectSegmentOverlayTarget
 } from './subjectOverlays';
-import type { SubjectGeometryBoundsMode, SubjectGeometryGridSnapOptions } from './subjectTransforms';
+import {
+  resolveSubjectGeometryGridSnapOptions,
+  shouldApplySubjectGeometryGridSnap,
+  snapSubjectGeometryPointToGrid,
+  type SubjectGeometryBoundsMode,
+  type SubjectGeometryDragPhase,
+  type SubjectGeometryGridSnapMetric,
+  type SubjectGeometryGridSnapOptions
+} from './subjectTransforms';
 
 export type SubjectShapeEditTarget =
   | SubjectPolygonOverlayTarget
@@ -55,6 +63,7 @@ export interface SubjectShapeEditOperation {
   handleKind?: SubjectShapeEditHandleKind;
   index?: number;
   point: MathPoint2D;
+  dragPhase?: SubjectGeometryDragPhase;
   meta?: Record<string, unknown>;
 }
 
@@ -67,6 +76,7 @@ export interface SubjectShapeEditOptions {
   bounds?: MathBounds2D;
   boundsMode?: SubjectGeometryBoundsMode;
   snapToGrid?: boolean | SubjectGeometryGridSnapOptions;
+  snapMetric?: SubjectGeometryGridSnapMetric;
   minLength?: number;
   minRadius?: number;
   minPolygonArea?: number;
@@ -174,7 +184,14 @@ export const createSubjectShapeEditModel = <Target extends SubjectShapeEditTarge
     return createEditModel(target, operation, before, before, false, undefined, beforeHandles, beforeHandles, [], diagnostics, options.meta);
   }
 
-  const snappedPoint = snapEditPointIfNeeded(operation.point, options.snapToGrid, diagnostics, target.id);
+  const snappedPoint = snapEditPointIfNeeded(
+    operation.point,
+    options.snapToGrid,
+    options.snapMetric,
+    operation.dragPhase,
+    diagnostics,
+    target.id
+  );
   const edited = applyHandleEdit(target, activeHandle, snappedPoint) as Target;
   const validEdited = isValidEditTarget(edited, options);
   if (!validEdited) {
@@ -292,19 +309,28 @@ const applyHandleEdit = (
 const snapEditPointIfNeeded = (
   point: MathPoint2D,
   input: boolean | SubjectGeometryGridSnapOptions | undefined,
+  metric: SubjectGeometryGridSnapMetric | undefined,
+  dragPhase: SubjectShapeEditOperation['dragPhase'],
   diagnostics: SubjectShapeEditDiagnostic[],
   targetId: string
 ): MathPoint2D => {
-  const snap = resolveGridSnapOptions(input);
+  const snap = resolveSubjectGeometryGridSnapOptions(input, { tolerance: Infinity });
   if (!snap.enabled) return clonePoint(point);
-  const snapped = snapPointToGrid(point, snap);
-  if (distance2D(point, snapped) > snap.tolerance) return clonePoint(point);
+  if (snap.phase === 'end' && dragPhase === 'move') return clonePoint(point);
+  const snapped = snapSubjectGeometryPointToGrid(point, snap);
+  const snapDecision = shouldApplySubjectGeometryGridSnap(point, snapped, snap, metric);
+  if (!snapDecision.applied) return clonePoint(point);
   diagnostics.push({
     code: 'subject-shape-edit.snap-applied',
     severity: 'info',
     message: `Subject shape edit point snapped to (${formatNumber(snapped.x)}, ${formatNumber(snapped.y)}).`,
     targetId,
-    data: { before: clonePoint(point), after: snapped }
+    data: {
+      before: clonePoint(point),
+      after: snapped,
+      coordinateDistance: snapDecision.coordinateDistance,
+      ...(snapDecision.pixelDistance === undefined ? {} : { pixelDistance: snapDecision.pixelDistance })
+    }
   });
   return snapped;
 };
@@ -448,28 +474,6 @@ const translationToFitBounds = (
   else if (current.maxY > allowed.maxY) y = allowed.maxY - current.maxY;
   return point2D(x, y);
 };
-
-const resolveGridSnapOptions = (
-  input: boolean | SubjectGeometryGridSnapOptions | undefined
-): Required<SubjectGeometryGridSnapOptions> => {
-  if (input === true) return { enabled: true, step: 1, origin: point2D(0, 0), tolerance: Infinity };
-  if (!input) return { enabled: false, step: 1, origin: point2D(0, 0), tolerance: 0 };
-  const step = typeof input.step === 'number' && Number.isFinite(input.step) && input.step > GRAPH_MATH_EPSILON ? input.step : 1;
-  return {
-    enabled: input.enabled !== false,
-    step,
-    origin: input.origin ? clonePoint(input.origin) : point2D(0, 0),
-    tolerance: typeof input.tolerance === 'number' && Number.isFinite(input.tolerance) ? Math.max(0, input.tolerance) : Infinity
-  };
-};
-
-const snapPointToGrid = (
-  point: MathPoint2D,
-  snap: Required<SubjectGeometryGridSnapOptions>
-): MathPoint2D => ({
-  x: snap.origin.x + Math.round((point.x - snap.origin.x) / snap.step) * snap.step,
-  y: snap.origin.y + Math.round((point.y - snap.origin.y) / snap.step) * snap.step
-});
 
 const cloneTarget = <Target extends SubjectShapeEditTarget>(target: Target): Target => {
   if (target.kind === 'polygon') return { ...target, vertices: target.vertices.map(clonePoint), meta: cloneMeta(target.meta) } as Target;

@@ -36,6 +36,33 @@ export interface GraphSceneStyleIr {
     opacity?: number;
     visible?: boolean;
     lineDash?: readonly number[];
+    radius?: number;
+    pointFillColor?: string;
+    pointStrokeColor?: string;
+    pointStrokeWidth?: number;
+    pointShadowColor?: string;
+    pointShadowBlur?: number;
+    pointShadowOffsetX?: number;
+    pointShadowOffsetY?: number;
+    textColor?: string;
+    textOpacity?: number;
+    font?: string;
+    fontSize?: number;
+    fontFamily?: string;
+    fontWeight?: string | number;
+    lineHeight?: number;
+    textBackgroundColor?: string;
+    textBorderColor?: string;
+    textBorderWidth?: number;
+    textBorderRadius?: number;
+    textPaddingX?: number;
+    textPaddingY?: number;
+    textOffsetX?: number;
+    textOffsetY?: number;
+    textShadowColor?: string;
+    textShadowBlur?: number;
+    textShadowOffsetX?: number;
+    textShadowOffsetY?: number;
 }
 export interface GraphSceneObjectIrBase<Type extends GraphSceneObjectIrType> {
     schemaVersion?: typeof GRAPH_SCENE_OBJECT_IR_VERSION;

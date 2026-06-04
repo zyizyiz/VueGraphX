@@ -128,6 +128,103 @@ const readTestHitGroups = (node: GraphObjectNode): string[] => {
 };
 
 describe('renderer-neutral core runtime contracts', () => {
+  it('accepts generic point and text visual style hints in scene object IR payloads', () => {
+    const result = createGraphSceneObjectIrNode({
+      id: 'styled-point',
+      objectType: 'point',
+      payload: {
+        objectType: 'point',
+        position: { dimension: '2d', x: 1, y: 2 },
+        style: {
+          radius: 4,
+          pointFillColor: '#FFFFFF',
+          pointStrokeColor: '#333333',
+          pointStrokeWidth: 1.5,
+          pointShadowColor: 'rgba(0,0,0,0.2)',
+          pointShadowBlur: 2,
+          pointShadowOffsetX: 1,
+          pointShadowOffsetY: 1,
+          textColor: '#FF3333',
+          textOpacity: 0.9,
+          fontSize: 14,
+          fontFamily: 'PingFang SC, Microsoft YaHei, Arial, sans-serif',
+          fontWeight: 500,
+          lineHeight: 14,
+          textBackgroundColor: '#FFFFFF',
+          textBorderColor: '#333333',
+          textBorderWidth: 1.5,
+          textBorderRadius: 3,
+          textPaddingX: 4,
+          textPaddingY: 2,
+          textOffsetX: 6,
+          textOffsetY: -6,
+          textShadowColor: 'rgba(0,0,0,0.16)',
+          textShadowBlur: 2,
+          textShadowOffsetX: 0,
+          textShadowOffsetY: 1
+        }
+      },
+      layerId: 'content'
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.value?.payload).toMatchObject({
+      style: {
+        pointFillColor: '#FFFFFF',
+        pointStrokeWidth: 1.5,
+        textColor: '#FF3333',
+        fontWeight: 500,
+        textOffsetY: -6
+      }
+    });
+    expect(result.value?.renderHints).toMatchObject({
+      radius: 4,
+      pointFillColor: '#FFFFFF',
+      pointStrokeColor: '#333333',
+      pointStrokeWidth: 1.5,
+      pointShadowColor: 'rgba(0,0,0,0.2)',
+      textColor: '#FF3333',
+      textOpacity: 0.9,
+      fontSize: 14,
+      fontFamily: 'PingFang SC, Microsoft YaHei, Arial, sans-serif',
+      fontWeight: 500,
+      lineHeight: 14,
+      textBackgroundColor: '#FFFFFF',
+      textBorderColor: '#333333',
+      textOffsetX: 6,
+      textOffsetY: -6,
+      textShadowColor: 'rgba(0,0,0,0.16)'
+    });
+  });
+
+  it('lets explicit render hints override scene object IR style defaults', () => {
+    const result = createGraphSceneObjectIrNode({
+      id: 'styled-point-override',
+      objectType: 'point',
+      payload: {
+        objectType: 'point',
+        position: { dimension: '2d', x: 1, y: 2 },
+        style: {
+          strokeColor: '#111827',
+          pointFillColor: '#FFFFFF',
+          lineDash: [4, 8]
+        }
+      },
+      renderHints: {
+        strokeColor: '#FF3333',
+        selected: true
+      }
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.value?.renderHints).toMatchObject({
+      strokeColor: '#FF3333',
+      pointFillColor: '#FFFFFF',
+      selected: true
+    });
+    expect(result.value?.renderHints?.lineDash).toEqual([4, 8]);
+  });
+
   it('defines the active math interaction contract without replacing legacy backend booleans', () => {
     expect(GRAPH_MATH_INTERACTION_CAPABILITY_PATHS).toEqual([
       'viewport.zoom',

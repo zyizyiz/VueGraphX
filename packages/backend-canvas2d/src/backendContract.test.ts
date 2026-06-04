@@ -51,7 +51,7 @@ type CanvasDrawOp =
 
 const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; ops: CanvasDrawOp[] } => {
   const ops: CanvasDrawOp[] = [];
-  const stack: Array<Pick<CanvasRenderingContext2D, 'strokeStyle' | 'fillStyle' | 'lineWidth' | 'lineCap' | 'lineJoin' | 'font' | 'globalAlpha' | 'textAlign' | 'textBaseline'>> = [];
+  const stack: Array<Pick<CanvasRenderingContext2D, 'strokeStyle' | 'fillStyle' | 'lineWidth' | 'lineCap' | 'lineJoin' | 'font' | 'globalAlpha' | 'textAlign' | 'textBaseline' | 'shadowColor' | 'shadowBlur' | 'shadowOffsetX' | 'shadowOffsetY'>> = [];
   let lineToCount = 0;
   const context: any = {
     strokeStyle: '#000000',
@@ -63,6 +63,10 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
     globalAlpha: 1,
     textAlign: 'start',
     textBaseline: 'alphabetic',
+    shadowColor: 'transparent',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
     save() {
       stack.push({
         strokeStyle: this.strokeStyle,
@@ -73,7 +77,11 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
         font: this.font,
         globalAlpha: this.globalAlpha,
         textAlign: this.textAlign,
-        textBaseline: this.textBaseline
+        textBaseline: this.textBaseline,
+        shadowColor: this.shadowColor,
+        shadowBlur: this.shadowBlur,
+        shadowOffsetX: this.shadowOffsetX,
+        shadowOffsetY: this.shadowOffsetY
       });
     },
     restore() {
@@ -88,6 +96,10 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
       this.globalAlpha = entry.globalAlpha;
       this.textAlign = entry.textAlign;
       this.textBaseline = entry.textBaseline;
+      this.shadowColor = entry.shadowColor;
+      this.shadowBlur = entry.shadowBlur;
+      this.shadowOffsetX = entry.shadowOffsetX;
+      this.shadowOffsetY = entry.shadowOffsetY;
     },
     beginPath() {
       lineToCount = 0;
@@ -121,6 +133,9 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
     rect(x: number, y: number, width: number, height: number) {
       ops.push({ name: 'rect', x, y, width, height });
     },
+    roundRect(x: number, y: number, width: number, height: number, radius: number) {
+      ops.push({ name: 'roundRect', x, y, width, height, radius });
+    },
     clip() {
       ops.push({ name: 'clip' });
     },
@@ -129,6 +144,9 @@ const createRecordingCanvasContext = (): { context: CanvasRenderingContext2D; op
     },
     strokeText(text: string, x: number, y: number) {
       ops.push({ name: 'strokeText', text, x, y, font: String(this.font), strokeStyle: String(this.strokeStyle) });
+    },
+    measureText(text: string) {
+      return { width: text.length * 7 };
     },
     clearRect() {
       ops.push({ name: 'clearRect' });
@@ -625,7 +643,7 @@ describe('shared backend contract adapters', () => {
       expect.objectContaining({ name: 'lineTo', x: 200, y: 12 }),
       expect.objectContaining({ name: 'fillText', text: 'x', x: 388, y: 100, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
       expect.objectContaining({ name: 'fillText', text: 'y', x: 180, y: -14, font: 'bold 24px "Songti SC", "STSong", "SimSun", serif' }),
-      expect.objectContaining({ name: 'arc', radius: 8 })
+      expect.objectContaining({ name: 'arc', radius: 6 })
     ]));
     expect(ops).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'stroke', strokeStyle: '#666666', lineWidth: 2.4 })
@@ -896,6 +914,99 @@ describe('shared backend contract adapters', () => {
       expect.objectContaining({ name: 'fill', fillStyle: '#0ea5e9' }),
       expect.objectContaining({ name: 'arc', strokeStyle: '#0ea5e9' }),
       expect.objectContaining({ name: 'stroke', strokeStyle: '#0ea5e9', lineWidth: 6 })
+    ]));
+
+    backend.destroy();
+  });
+
+  it('renders Canvas2D point-specific marker fill and stroke hints', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-point-marker-style',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, bottom: -10, right: 10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      ...pointNode,
+      renderHints: {
+        strokeColor: '#0ea5e9',
+        pointFillColor: '#FFFFFF',
+        pointStrokeColor: '#333333',
+        pointStrokeWidth: 1.5,
+        radius: 4
+      }
+    }).ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'arc', radius: 3.25, fillStyle: '#FFFFFF', strokeStyle: '#333333' }),
+      expect.objectContaining({ name: 'fill', fillStyle: '#FFFFFF' }),
+      expect.objectContaining({ name: 'stroke', strokeStyle: '#333333', lineWidth: 1.5 })
+    ]));
+
+    backend.destroy();
+  });
+
+  it('renders Canvas2D text visual hints for annotation labels', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-text-annotation-style',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, bottom: -10, right: 10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      id: 'annotation-label',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        objectType: 'text',
+        point: { x: 0, y: 0 },
+        text: 'label'
+      },
+      renderHints: {
+        textColor: '#FF3333',
+        fontSize: 14,
+        fontFamily: 'PingFang SC, Microsoft YaHei, Arial, sans-serif',
+        fontWeight: 500,
+        lineHeight: 14,
+        textBackgroundColor: '#FFFFFF',
+        textBorderColor: '#333333',
+        textBorderWidth: 1.5,
+        textBorderRadius: 3,
+        textPaddingX: 4,
+        textPaddingY: 2,
+        textOffsetX: 6,
+        textOffsetY: -6
+      },
+      layerId: 'overlay'
+    }).ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'translate', x: 106, y: 94 }),
+      expect.objectContaining({ name: 'roundRect', x: -4, y: -2, width: 43, height: 18, radius: 3 }),
+      expect.objectContaining({ name: 'fill', fillStyle: '#FFFFFF' }),
+      expect.objectContaining({ name: 'stroke', strokeStyle: '#333333', lineWidth: 1.5 }),
+      expect.objectContaining({
+        name: 'fillText',
+        text: 'label',
+        x: 0,
+        y: 0,
+        fillStyle: '#FF3333',
+        font: '500 14px/14px PingFang SC, Microsoft YaHei, Arial, sans-serif'
+      })
     ]));
 
     backend.destroy();

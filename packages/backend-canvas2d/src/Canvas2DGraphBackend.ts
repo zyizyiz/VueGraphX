@@ -89,6 +89,27 @@ interface CanvasTextLayout {
   point: { x: number; y: number };
 }
 
+interface CanvasTextVisualStyle {
+  font: string;
+  visualScale: number;
+  fillStyle: string;
+  alpha?: number;
+  textAlign?: CanvasTextAlign;
+  textBaseline?: CanvasTextBaseline;
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  paddingX?: number;
+  paddingY?: number;
+  offsetX?: number;
+  offsetY?: number;
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+}
+
 type BackendSupportStatus = 'success' | 'unsupported' | 'partial-support';
 
 const CANVAS2D_SUPPORTED_TYPES = new Set([
@@ -449,11 +470,11 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
       }
       if (payload.measurementKind === 'angle' && payload.points && payload.points.length >= 3) {
         this.drawAngle(payload.points);
-        this.drawMeasurement(payload);
+        this.drawMeasurement(payload, node);
         this.context.restore();
         return;
       }
-      this.drawMeasurement(payload);
+      this.drawMeasurement(payload, node);
       this.context.restore();
       return;
     }
@@ -461,17 +482,15 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     if (payload.point) {
       const point = this.projectPoint(payload.point);
       if (node.type === 'text' && payload.text) {
-        this.context.font = scaleCssFont(readString(node.renderHints?.font, '14px sans-serif'), visualScale);
+        this.context.font = scaleCssFont(readCanvasTextFont(node.renderHints, '14px sans-serif'), visualScale);
         this.context.fillText(payload.text, point.x, point.y);
       } else {
-        const radius = readNumber(node.renderHints?.radius, 4) * visualScale;
-        this.context.beginPath();
-        this.context.fillStyle = strokeColor;
-        this.context.strokeStyle = strokeColor;
-        this.context.lineWidth = Math.max(strokeWidth, 2 * visualScale);
-        this.context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-        this.context.fill();
-        this.context.stroke();
+        this.drawPointMarker(point, node, {
+          strokeColor,
+          baseStrokeWidth,
+          selected,
+          visualScale
+        });
       }
       this.context.restore();
       return;
@@ -888,10 +907,11 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const visualScale = this.getTextVisualZoomScale();
     const text = layout.descriptor.latex ?? layout.descriptor.text;
     this.drawScaledTextAt(text, point, {
-      font: readString(node.renderHints?.font, '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif'),
+      font: readCanvasTextFont(node.renderHints, '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif'),
       visualScale,
       fillStyle: readString(node.renderHints?.textColor, readString(node.renderHints?.strokeColor, '#0f172a')),
-      alpha: readNumber(node.renderHints?.textOpacity, 1)
+      alpha: readNumber(node.renderHints?.textOpacity, readNumber(node.renderHints?.opacity, 1)),
+      ...readCanvasTextBoxStyle(node.renderHints)
     });
   }
 
@@ -900,24 +920,27 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const point = this.projectPoint(layout.point);
     const label = document.createElement('div');
     const visualScale = this.getTextVisualZoomScale();
+    const boxStyle = readCanvasTextBoxStyle(node.renderHints);
+    const offsetX = (boxStyle.offsetX ?? 0) * visualScale;
+    const offsetY = (boxStyle.offsetY ?? 0) * visualScale;
     label.setAttribute('data-vuegraphx-object-id', node.id);
     label.innerHTML = renderLatexHtmlAndMathMl(layout.descriptor);
     Object.assign(label.style, {
       position: 'absolute',
       left: '0',
       top: '0',
-      transform: createDomLabelTransform(point, visualScale),
+      transform: createDomLabelTransform({ x: point.x + offsetX, y: point.y + offsetY }, visualScale),
       transformOrigin: '0 0',
-      color: readString(node.renderHints?.strokeColor, '#0f172a'),
-      background: 'transparent',
-      border: '0',
-      borderRadius: '0',
-      padding: '0',
-      font: readString(node.renderHints?.font, '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif'),
+      color: readString(node.renderHints?.textColor, readString(node.renderHints?.strokeColor, '#0f172a')),
+      background: boxStyle.backgroundColor ?? 'transparent',
+      border: boxStyle.borderColor ? `${formatCssNumber(boxStyle.borderWidth ?? 1)}px solid ${boxStyle.borderColor}` : '0',
+      borderRadius: `${formatCssNumber(boxStyle.borderRadius ?? 0)}px`,
+      padding: `${formatCssNumber(boxStyle.paddingY ?? 0)}px ${formatCssNumber(boxStyle.paddingX ?? 0)}px`,
+      font: readCanvasTextFont(node.renderHints, '600 14px/1.25 Arial, "Microsoft YaHei", "PingFang SC", sans-serif'),
       whiteSpace: 'nowrap',
-      opacity: '1',
-      textShadow: 'none',
-      boxShadow: 'none',
+      opacity: `${readNumber(node.renderHints?.textOpacity, readNumber(node.renderHints?.opacity, 1))}`,
+      textShadow: boxStyle.shadowColor ? `${formatCssNumber(boxStyle.shadowOffsetX ?? 0)}px ${formatCssNumber(boxStyle.shadowOffsetY ?? 0)}px ${formatCssNumber(boxStyle.shadowBlur ?? 0)}px ${boxStyle.shadowColor}` : 'none',
+      boxShadow: boxStyle.shadowColor ? `${formatCssNumber(boxStyle.shadowOffsetX ?? 0)}px ${formatCssNumber(boxStyle.shadowOffsetY ?? 0)}px ${formatCssNumber(boxStyle.shadowBlur ?? 0)}px ${boxStyle.shadowColor}` : 'none',
       contain: 'layout paint style',
       willChange: 'transform',
       pointerEvents: 'none'
@@ -925,41 +948,102 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     this.labelLayer.appendChild(label);
   }
 
-  private drawMeasurement(payload: CanvasDrawablePayload): void {
+  private drawMeasurement(payload: CanvasDrawablePayload, node: GraphObjectNode): void {
     if (!this.context || !payload.point) return;
     const point = this.projectPoint(payload.point);
     const label = payload.text ?? `${payload.measurementKind ?? 'measure'}: ${formatNumber(payload.value)}`;
     const visualScale = this.getTextVisualZoomScale();
     this.drawScaledTextAt(label, { x: point.x + 8, y: point.y - 8 }, {
-      font: '12px sans-serif',
+      font: readCanvasTextFont(node.renderHints, '12px sans-serif'),
       visualScale,
-      fillStyle: '#334155'
+      fillStyle: readString(node.renderHints?.textColor, readString(node.renderHints?.strokeColor, '#334155')),
+      alpha: readNumber(node.renderHints?.textOpacity, readNumber(node.renderHints?.opacity, 1)),
+      ...readCanvasTextBoxStyle(node.renderHints)
     });
   }
 
   private drawScaledTextAt(
     text: string,
     point: { x: number; y: number },
-    options: {
-      font: string;
-      visualScale: number;
-      fillStyle: string;
-      alpha?: number;
-      textAlign?: CanvasTextAlign;
-      textBaseline?: CanvasTextBaseline;
-    }
+    options: CanvasTextVisualStyle
   ): void {
     if (!this.context) return;
+    const offsetX = (options.offsetX ?? 0) * options.visualScale;
+    const offsetY = (options.offsetY ?? 0) * options.visualScale;
+    const paddingX = options.paddingX ?? 0;
+    const paddingY = options.paddingY ?? 0;
     this.context.save();
-    this.context.translate(point.x, point.y);
+    this.context.translate(point.x + offsetX, point.y + offsetY);
     this.context.scale(options.visualScale, options.visualScale);
     this.context.font = options.font;
     this.context.textAlign = options.textAlign ?? 'left';
     this.context.textBaseline = options.textBaseline ?? 'top';
-    this.context.fillStyle = options.fillStyle;
     this.context.globalAlpha = options.alpha ?? 1;
+    if (options.shadowColor) {
+      this.context.shadowColor = options.shadowColor;
+      this.context.shadowBlur = options.shadowBlur ?? 0;
+      this.context.shadowOffsetX = options.shadowOffsetX ?? 0;
+      this.context.shadowOffsetY = options.shadowOffsetY ?? 0;
+    }
+    if (options.backgroundColor || options.borderColor) {
+      const metrics = measureCanvasText(this.context, text, options.font);
+      const width = metrics.width + paddingX * 2;
+      const height = metrics.height + paddingY * 2;
+      const x = -paddingX;
+      const y = -paddingY;
+      this.drawTextBox({ x, y, width, height, radius: options.borderRadius ?? 0 });
+      if (options.backgroundColor) {
+        this.context.fillStyle = options.backgroundColor;
+        this.context.fill();
+      }
+      if (options.borderColor) {
+        this.context.strokeStyle = options.borderColor;
+        this.context.lineWidth = options.borderWidth ?? 1;
+        this.context.stroke();
+      }
+    }
+    this.context.fillStyle = options.fillStyle;
     this.context.fillText(text, 0, 0);
     this.context.restore();
+  }
+
+  private drawTextBox(options: { x: number; y: number; width: number; height: number; radius: number }): void {
+    if (!this.context) return;
+    this.context.beginPath();
+    if (typeof this.context.roundRect === 'function') {
+      this.context.roundRect(options.x, options.y, options.width, options.height, Math.max(0, options.radius));
+      return;
+    }
+    this.context.rect(options.x, options.y, options.width, options.height);
+  }
+
+  private drawPointMarker(
+    point: { x: number; y: number },
+    node: GraphObjectNode,
+    options: { strokeColor: string; baseStrokeWidth: number; selected: boolean; visualScale: number }
+  ): void {
+    if (!this.context) return;
+    const hints: Record<string, unknown> = node.renderHints ?? {};
+    const visualRadius = readNumber(hints.radius, 4) * options.visualScale;
+    const fillColor = readString(hints.pointFillColor, options.strokeColor);
+    const strokeColor = readString(hints.pointStrokeColor, options.strokeColor);
+    const baseStrokeWidth = readNumber(hints.pointStrokeWidth, options.baseStrokeWidth);
+    const strokeWidth = (options.selected ? resolveSelectedStrokeWidth(baseStrokeWidth) : baseStrokeWidth) * options.visualScale;
+    const pathRadius = Math.max(0, visualRadius - strokeWidth / 2);
+    this.context.beginPath();
+    this.context.fillStyle = fillColor;
+    this.context.strokeStyle = strokeColor;
+    this.context.lineWidth = strokeWidth;
+    const shadowColor = readOptionalString(hints.pointShadowColor);
+    if (shadowColor) {
+      this.context.shadowColor = shadowColor;
+      this.context.shadowBlur = readNumber(hints.pointShadowBlur, 0) * options.visualScale;
+      this.context.shadowOffsetX = readNumber(hints.pointShadowOffsetX, 0) * options.visualScale;
+      this.context.shadowOffsetY = readNumber(hints.pointShadowOffsetY, 0) * options.visualScale;
+    }
+    this.context.arc(point.x, point.y, pathRadius, 0, Math.PI * 2);
+    this.context.fill();
+    this.context.stroke();
   }
 
   private drawEllipse(centerPoint: { x: number; y: number }, radiusX: number, radiusY: number, rotationRadians: number): void {
@@ -1124,7 +1208,55 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
 }
 
 const readString = (value: unknown, fallback: string): string => typeof value === 'string' ? value : fallback;
+const readOptionalString = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const readCanvasTextFont = (hints: Record<string, unknown> | undefined, fallback: string): string => {
+  const explicit = readOptionalString(hints?.font);
+  if (explicit) return explicit;
+  const fontSize = readNumber(hints?.fontSize, NaN);
+  if (!Number.isFinite(fontSize) || fontSize <= 0) return fallback;
+  const fontWeight = typeof hints?.fontWeight === 'number' || typeof hints?.fontWeight === 'string'
+    ? hints.fontWeight
+    : 500;
+  const lineHeight = readNumber(hints?.lineHeight, fontSize * 1.2);
+  const fontFamily = readOptionalString(hints?.fontFamily) ?? 'Arial, "Microsoft YaHei", "PingFang SC", sans-serif';
+  return `${fontWeight} ${formatCssNumber(fontSize)}px/${formatCssNumber(lineHeight)}px ${fontFamily}`;
+};
+const readCanvasTextBoxStyle = (hints: Record<string, unknown> | undefined): Partial<CanvasTextVisualStyle> => ({
+  backgroundColor: readOptionalString(hints?.textBackgroundColor),
+  borderColor: readOptionalString(hints?.textBorderColor),
+  borderWidth: readNumber(hints?.textBorderWidth, 1),
+  borderRadius: readNumber(hints?.textBorderRadius, 0),
+  paddingX: readNumber(hints?.textPaddingX, 0),
+  paddingY: readNumber(hints?.textPaddingY, 0),
+  offsetX: readNumber(hints?.textOffsetX, 0),
+  offsetY: readNumber(hints?.textOffsetY, 0),
+  shadowColor: readOptionalString(hints?.textShadowColor),
+  shadowBlur: readNumber(hints?.textShadowBlur, 0),
+  shadowOffsetX: readNumber(hints?.textShadowOffsetX, 0),
+  shadowOffsetY: readNumber(hints?.textShadowOffsetY, 0)
+});
+const measureCanvasText = (
+  context: CanvasRenderingContext2D,
+  text: string,
+  font: string
+): { width: number; height: number } => {
+  const width = typeof context.measureText === 'function'
+    ? context.measureText(text).width
+    : text.length * Math.max(7, readFontPixelSize(font) * 0.52);
+  return {
+    width,
+    height: readFontLineHeightPixelSize(font)
+  };
+};
+const readFontPixelSize = (font: string): number => {
+  const match = font.match(/(\d+(?:\.\d+)?)px/);
+  return match ? Number(match[1]) : 14;
+};
+const readFontLineHeightPixelSize = (font: string): number => {
+  const match = font.match(/\/\s*(\d+(?:\.\d+)?)px/);
+  return match ? Number(match[1]) : readFontPixelSize(font) * 1.2;
+};
 const readLineDashPattern = (value: unknown): number[] | null => (
   Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry > 0)
     ? [...value]

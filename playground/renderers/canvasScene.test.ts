@@ -100,6 +100,104 @@ describe('buildPlaygroundCanvasScene', () => {
     expect(result.nodes.find((node) => node.id === 'label')?.payload).toEqual({ point: { x: -2, y: 0 }, text: 'origin' });
   });
 
+  it('maps operation-area point and annotation style options into render hints', () => {
+    const result = buildPlaygroundCanvasScene([
+      {
+        id: 'p',
+        expression: 'P = Point(1, 1)',
+        color: '#4DA6FF',
+        options: {
+          pointFillColor: '#FFFFFF',
+          pointStrokeColor: '#333333',
+          pointStrokeWidth: 1.5,
+          size: 4
+        }
+      },
+      {
+        id: 'label',
+        expression: 'label = Text(P, "P")',
+        color: '#FF3333',
+        options: {
+          textColor: '#FF3333',
+          fontSize: 14,
+          fontFamily: 'PingFang SC, Microsoft YaHei, Arial, sans-serif',
+          fontWeight: 500,
+          lineHeight: 14,
+          textOffsetX: 6,
+          textOffsetY: -6,
+          textBackgroundColor: '#FFFFFF',
+          textBorderColor: '#333333',
+          textBorderWidth: 1.5,
+          textPaddingX: 4,
+          textPaddingY: 2
+        }
+      }
+    ]);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes.find((node) => node.id === 'P')?.renderHints).toMatchObject({
+      radius: 4,
+      pointFillColor: '#FFFFFF',
+      pointStrokeColor: '#333333',
+      pointStrokeWidth: 1.5
+    });
+    expect(result.nodes.find((node) => node.id === 'label')?.renderHints).toMatchObject({
+      textColor: '#FF3333',
+      fontSize: 14,
+      fontFamily: 'PingFang SC, Microsoft YaHei, Arial, sans-serif',
+      fontWeight: 500,
+      lineHeight: 14,
+      textOffsetX: 6,
+      textOffsetY: -6,
+      textBackgroundColor: '#FFFFFF',
+      textBorderColor: '#333333',
+      textBorderWidth: 1.5,
+      textPaddingX: 4,
+      textPaddingY: 2
+    });
+  });
+
+  it('uses standard marker defaults for playground points', () => {
+    const result = buildPlaygroundCanvasScene([
+      {
+        id: 'p',
+        expression: 'P = Point(1, 1)',
+        color: '#4DA6FF'
+      }
+    ]);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes.find((node) => node.id === 'P')?.renderHints).toMatchObject({
+      strokeColor: '#4DA6FF',
+      radius: 4,
+      pointFillColor: '#FFFFFF',
+      pointStrokeColor: '#333333',
+      pointStrokeWidth: 1.5
+    });
+  });
+
+  it('uses standard annotation defaults for playground text', () => {
+    const result = buildPlaygroundCanvasScene([
+      {
+        id: 'label',
+        expression: 'label = Text(1, 1, "A")',
+        color: '#4DA6FF'
+      }
+    ]);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes.find((node) => node.id === 'label')?.renderHints).toMatchObject({
+      strokeColor: '#4DA6FF',
+      textColor: 'rgba(0, 0, 0, 0.85)',
+      fontSize: 14,
+      fontFamily: 'PingFang SC, Microsoft YaHei, Arial, sans-serif',
+      fontWeight: 500,
+      lineHeight: 14,
+      textOffsetX: 5,
+      textOffsetY: -10
+    });
+  });
+
 
 
   it('builds Canvas2D nodes for functions, conics, relations, transforms, and measurements', () => {

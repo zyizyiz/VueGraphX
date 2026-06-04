@@ -5,6 +5,10 @@ import {
   SUBJECT_OVERLAY_DASH_STROKE_WIDTH
 } from '@vuegraphx/math';
 import {
+  STANDARD_GEOMETRY_ANNOTATION_UI,
+  STANDARD_GEOMETRY_MARKER_UI
+} from '@vuegraphx/core';
+import {
   alignOperationCoordinateSystemOriginToGrid,
   clampOperationCoordinateSystemOrigin,
   createOperationShapeEditCommands,
@@ -13,6 +17,7 @@ import {
   createOperationScopedCommands,
   findOperationToolById,
   formatOperationPointTuple,
+  OPERATION_SHAPE_EDIT_DEFAULT_SNAP,
   operationToolGroups,
   resolveOperationCommandOrigin,
   updateOperationCoordinateSystemOrigin
@@ -121,6 +126,15 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     const intercept = tool!.commands.find((command) => command.expr.includes('"x 轴交点:'));
     expect(vertex?.options?.strokeColor).toBe(SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.vertex);
     expect(intercept?.options?.strokeColor).toBe(SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.intercept);
+    expect(vertex?.options).toMatchObject({
+      textColor: STANDARD_GEOMETRY_ANNOTATION_UI.textColor,
+      fontSize: STANDARD_GEOMETRY_ANNOTATION_UI.textFontSizePx,
+      fontFamily: STANDARD_GEOMETRY_ANNOTATION_UI.textFontFamily,
+      fontWeight: STANDARD_GEOMETRY_ANNOTATION_UI.textFontWeight,
+      lineHeight: STANDARD_GEOMETRY_ANNOTATION_UI.textLineHeightPx,
+      textOffsetX: STANDARD_GEOMETRY_ANNOTATION_UI.textOffsetXPx,
+      textOffsetY: STANDARD_GEOMETRY_ANNOTATION_UI.textOffsetYPx
+    });
   });
 
   it('exposes a trigonometry operation tool with pi tick policy scoped to the generated coordinate system', () => {
@@ -187,6 +201,13 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     expect(editTool).toBeDefined();
     expect(constructionTool).toBeDefined();
     expect(editTool!.interaction).toEqual({ kind: 'geometry-shape-edit' });
+    expect(OPERATION_SHAPE_EDIT_DEFAULT_SNAP).toEqual({
+      enabled: true,
+      step: 0.5,
+      origin: { x: 0, y: 0 },
+      phase: 'end',
+      tolerancePx: 12
+    });
     expect(findOperationToolById('geometry-shape-edit-preview')).toBe(editTool);
 
     const editExpressions = editTool!.commands.map((command) => command.expr);
@@ -222,6 +243,18 @@ describe('updateOperationCoordinateSystemOrigin', () => {
       'edit_1_E3 = (-1.5, 2.5)',
       'edit_1_after = Polygon(edit_1_E1, edit_1_E2, edit_1_E3)'
     ]);
+    expect(commands[0].options).toMatchObject({
+      pointFillColor: STANDARD_GEOMETRY_MARKER_UI.pointFillColor,
+      pointStrokeColor: STANDARD_GEOMETRY_MARKER_UI.pointStrokeColor,
+      pointStrokeWidth: STANDARD_GEOMETRY_MARKER_UI.pointStrokeWidthPx,
+      size: STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx
+    });
+    expect(commands[4].options).toMatchObject({
+      pointFillColor: STANDARD_GEOMETRY_MARKER_UI.pointFillColor,
+      pointStrokeColor: '#0F766E',
+      pointStrokeWidth: STANDARD_GEOMETRY_MARKER_UI.pointStrokeWidthPx,
+      size: STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx
+    });
     expect(createOperationShapeEditVertexCommand('edit_1', 1, { x: 1.25, y: -0.5 })).toBe('edit_1_E2 = (1.25, -0.5)');
     expect(formatOperationPointTuple({ x: 0.333333, y: -0 })).toBe('(0.333, 0)');
   });

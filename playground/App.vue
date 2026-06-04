@@ -429,6 +429,9 @@ import {
   createSubjectShapeEditHandles,
   createSubjectShapeEditModel,
   type MathPoint2D,
+  type SubjectGeometryDragPhase,
+  type SubjectGeometryGridSnapMetric,
+  type SubjectGeometryGridSnapOptions,
   type SubjectShapeEditHandleDescriptor
 } from '@vuegraphx/math';
 import { createCanvas2DGraphBackend, type Canvas2DGraphBackend, type CanvasWorldBounds } from '@vuegraphx/backend-canvas2d';
@@ -455,6 +458,7 @@ import OperationPanel from './components/OperationPanel.vue';
 import RelationPanel from './components/RelationPanel.vue';
 import {
   OPERATION_COMMANDS_MIME,
+  OPERATION_SHAPE_EDIT_DEFAULT_SNAP,
   OPERATION_TOOL_MIME,
   alignOperationCoordinateSystemOriginToGrid,
   clampOperationCoordinateSystemOrigin,
@@ -635,6 +639,7 @@ interface OperationShapeEditSession {
   commandPrefix: string;
   coordinateSystem: OperationCoordinateSystemRuntimeOptions;
   target: OperationShapeEditPolygonTarget;
+  snapToGrid: boolean | SubjectGeometryGridSnapOptions;
   commandIdsByVertex: readonly string[];
 }
 
@@ -947,13 +952,13 @@ const handleActivateOperationTool = (tool: OperationTool, dropPoint: GraphClient
     dropPoint
   });
   if (tool.interaction?.kind === 'geometry-shape-edit') {
-    createOperationShapeEditSession(tool.id, dropPoint);
+    createOperationShapeEditSession(tool, dropPoint);
     return;
   }
   handleCreateOperationCommands(tool.commands, dropPoint);
 };
 
-const createOperationShapeEditSession = (toolId: string, dropPoint: GraphClientPoint | null = null) => {
+const createOperationShapeEditSession = (tool: OperationTool, dropPoint: GraphClientPoint | null = null) => {
   if (store.activeMode !== 'operation') return;
   clearOperationShapeEditSession();
   activeDemo.value = -1;
@@ -987,20 +992,26 @@ const createOperationShapeEditSession = (toolId: string, dropPoint: GraphClientP
     return;
   }
 
+  const snapToGrid = tool.interaction?.kind === 'geometry-shape-edit'
+    ? tool.interaction.snapToGrid ?? OPERATION_SHAPE_EDIT_DEFAULT_SNAP
+    : OPERATION_SHAPE_EDIT_DEFAULT_SNAP;
+
   operationShapeEditSession.value = {
-    toolId,
+    toolId: tool.id,
     coordinateSystemId,
     commandPrefix,
     coordinateSystem,
     target,
+    snapToGrid,
     commandIdsByVertex
   };
   debugOperationShapeEdit('session created', {
-    toolId,
+    toolId: tool.id,
     coordinateSystemId,
     commandPrefix,
     origin,
     coordinateSystem,
+    snapToGrid,
     commandIdsByVertex,
     vertices: target.vertices
   });
@@ -1036,11 +1047,12 @@ const startOperationShapeEditHandleDrag = (event: PointerEvent, handleId: string
   debugOperationShapeEdit('pointerdown', {
     pointerId: event.pointerId,
     handleId,
+    dragPhase: 'move',
     client: { x: event.clientX, y: event.clientY },
     elementClass: element.className,
     elementFromPoint: describeElementAtPoint(event.clientX, event.clientY)
   });
-  applyOperationShapeEditDrag(event);
+  applyOperationShapeEditDrag(event, 'move');
   suppressOperationShapeEditEvent(event);
 };
 
@@ -1049,25 +1061,28 @@ const handleOperationShapeEditHandleMove = (event: PointerEvent) => {
   debugOperationShapeEdit('pointermove', {
     pointerId: event.pointerId,
     handleId: operationShapeEditDragSession.handleId,
+    dragPhase: 'move',
     client: { x: event.clientX, y: event.clientY }
   });
-  applyOperationShapeEditDrag(event);
+  applyOperationShapeEditDrag(event, 'move');
   suppressOperationShapeEditEvent(event);
 };
 
 const handleOperationShapeEditHandleUp = (event: PointerEvent) => {
   if (operationShapeEditDragSession?.pointerId !== event.pointerId) return;
+  const dragPhase: SubjectGeometryDragPhase = event.type === 'pointerup' ? 'end' : 'move';
   debugOperationShapeEdit(event.type, {
     pointerId: event.pointerId,
     handleId: operationShapeEditDragSession.handleId,
+    dragPhase,
     client: { x: event.clientX, y: event.clientY }
   });
-  applyOperationShapeEditDrag(event);
+  applyOperationShapeEditDrag(event, dragPhase);
   clearOperationShapeEditDragSession();
   suppressOperationShapeEditEvent(event);
 };
 
-const applyOperationShapeEditDrag = (event: PointerEvent) => {
+const applyOperationShapeEditDrag = (event: PointerEvent, dragPhase: SubjectGeometryDragPhase) => {
   const dragSession = operationShapeEditDragSession;
   const session = operationShapeEditSession.value;
   if (!dragSession || !session) return;
@@ -1077,6 +1092,7 @@ const applyOperationShapeEditDrag = (event: PointerEvent) => {
     debugOperationShapeEdit('drag ignored: local point unavailable', {
       pointerId: event.pointerId,
       handleId: dragSession.handleId,
+      dragPhase,
       client: { x: event.clientX, y: event.clientY }
     });
     return;
@@ -1084,7 +1100,8 @@ const applyOperationShapeEditDrag = (event: PointerEvent) => {
   const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
   const model = createSubjectShapeEditModel(session.target, {
     handleId: dragSession.handleId,
-    point
+    point,
+    dragPhase
   }, {
     bounds: {
       minX: coordinateSystem.xRange.min,
@@ -1093,7 +1110,8 @@ const applyOperationShapeEditDrag = (event: PointerEvent) => {
       maxY: coordinateSystem.yRange.max
     },
     boundsMode: 'reject',
-    snapToGrid: { enabled: true, step: 0.5, tolerance: 0.25 },
+    snapToGrid: session.snapToGrid,
+    snapMetric: getOperationShapeEditSnapMetric(coordinateSystem),
     minPolygonArea: 0.05
   });
   if (!model.applied || model.after.kind !== 'polygon') {
@@ -1102,6 +1120,7 @@ const applyOperationShapeEditDrag = (event: PointerEvent) => {
     debugOperationShapeEdit('drag rejected', {
       pointerId: event.pointerId,
       handleId: dragSession.handleId,
+      dragPhase,
       localPoint: point,
       diagnostics: model.diagnostics
     });
@@ -1120,6 +1139,7 @@ const applyOperationShapeEditDrag = (event: PointerEvent) => {
   debugOperationShapeEdit('drag applied', {
     pointerId: event.pointerId,
     handleId: dragSession.handleId,
+    dragPhase,
     localPoint: point,
     vertices: nextSession.target.vertices,
     diagnostics: model.diagnostics,
@@ -1139,6 +1159,25 @@ const getOperationShapeEditLocalPoint = (
   const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
   const worldPoint = getWorldPointForCanvasPoint(localPoint);
   return clampOperationShapeEditPoint(operationWorldPointToLocal(worldPoint, coordinateSystem), coordinateSystem);
+};
+
+const getOperationShapeEditSnapMetric = (
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): SubjectGeometryGridSnapMetric => {
+  const viewport = getGraphViewportSize();
+  const bounds = getOperationVisiblePlacementBounds();
+  const spanX = Math.abs(bounds.right - bounds.left);
+  const spanY = Math.abs(bounds.top - bounds.bottom);
+  const unitScale = Number.isFinite(coordinateSystem.unitScale) && coordinateSystem.unitScale > 0
+    ? coordinateSystem.unitScale
+    : 1;
+
+  return {
+    pixelsPerUnit: {
+      x: spanX > 1e-9 ? Math.max(1, viewport.width) * unitScale / spanX : undefined,
+      y: spanY > 1e-9 ? Math.max(1, viewport.height) * unitScale / spanY : undefined
+    }
+  };
 };
 
 const updateOperationShapeEditCommands = (session: OperationShapeEditSession) => {
@@ -2330,38 +2369,58 @@ body.sidebar-resize-active {
 
 .operation-shape-edit-handle {
   position: absolute;
-  width: 1.45rem;
-  height: 1.45rem;
+  width: 28px;
+  height: 28px;
   transform: translate(-50%, -50%);
-  border: 2px solid #0f766e;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #0f766e;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.85);
   cursor: grab;
   touch-action: none;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  transition: transform 120ms ease;
+}
+
+.operation-shape-edit-handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid #333333;
+  border-radius: 999px;
+  background: #ffffff;
+  box-sizing: border-box;
+  transition: box-shadow 120ms ease;
 }
 
 .operation-shape-edit-handle span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  font-size: 0.68rem;
-  font-weight: 800;
-  line-height: 1;
+  position: absolute;
+  left: calc(50% + 5px);
+  top: calc(50% - 10px);
+  display: block;
+  width: 10px;
+  height: 14px;
+  font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 14px;
+  color: rgba(0, 0, 0, 0.85);
+  pointer-events: none;
 }
 
 .operation-shape-edit-handle:hover,
 .operation-shape-edit-handle:focus-visible,
 .operation-shape-edit-handle-active {
-  border-color: #0d9488;
-  background: #ccfbf1;
-  box-shadow: 0 10px 26px rgba(13, 148, 136, 0.3);
   outline: none;
-  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.operation-shape-edit-handle:hover::before,
+.operation-shape-edit-handle:focus-visible::before,
+.operation-shape-edit-handle-active::before {
+  box-shadow: 0 0 0 3px rgba(51, 51, 51, 0.12);
 }
 
 .operation-shape-edit-handle-active,

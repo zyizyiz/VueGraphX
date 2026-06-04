@@ -51,6 +51,69 @@ describe('subject shape editing', () => {
     expect(model.diagnostics.map((diagnostic) => diagnostic.code)).toContain('subject-shape-edit.snap-applied');
   });
 
+  it('defers end-phase grid snapping while a handle is still moving', () => {
+    const model = createSubjectShapeEditModel(triangle, {
+      handleKind: 'vertex',
+      index: 2,
+      point: point2D(1.04, 2.96),
+      dragPhase: 'move'
+    }, {
+      snapToGrid: { enabled: true, step: 0.5, tolerance: 0.08, phase: 'end' }
+    });
+
+    expect(model.after.kind).toBe('polygon');
+    if (model.after.kind !== 'polygon') throw new Error('expected polygon');
+    expect(model.after.vertices[2]).toEqual({ x: 1.04, y: 2.96 });
+    expect(model.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('subject-shape-edit.snap-applied');
+  });
+
+  it('applies end-phase grid snapping only inside the configured pixel tolerance', () => {
+    const near = createSubjectShapeEditModel(triangle, {
+      handleKind: 'vertex',
+      index: 2,
+      point: point2D(1.04, 2.96),
+      dragPhase: 'end'
+    }, {
+      snapToGrid: { enabled: true, step: 0.5, tolerancePx: 6, phase: 'end' },
+      snapMetric: { pixelsPerUnit: 100 }
+    });
+    expect(near.after.kind).toBe('polygon');
+    if (near.after.kind !== 'polygon') throw new Error('expected polygon');
+    expect(near.after.vertices[2]).toEqual({ x: 1, y: 3 });
+    expect(near.diagnostics.map((diagnostic) => diagnostic.code)).toContain('subject-shape-edit.snap-applied');
+    expect(near.diagnostics.find((diagnostic) => diagnostic.code === 'subject-shape-edit.snap-applied')?.data?.pixelDistance).toBeCloseTo(5.657, 3);
+
+    const far = createSubjectShapeEditModel(triangle, {
+      handleKind: 'vertex',
+      index: 2,
+      point: point2D(1.04, 2.96),
+      dragPhase: 'end'
+    }, {
+      snapToGrid: { enabled: true, step: 0.5, tolerancePx: 5, phase: 'end' },
+      snapMetric: { pixelsPerUnit: 100 }
+    });
+    expect(far.after.kind).toBe('polygon');
+    if (far.after.kind !== 'polygon') throw new Error('expected polygon');
+    expect(far.after.vertices[2]).toEqual({ x: 1.04, y: 2.96 });
+    expect(far.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('subject-shape-edit.snap-applied');
+  });
+
+  it('does not apply pixel-tolerance snapping without a pixel metric', () => {
+    const model = createSubjectShapeEditModel(triangle, {
+      handleKind: 'vertex',
+      index: 2,
+      point: point2D(1.04, 2.96),
+      dragPhase: 'end'
+    }, {
+      snapToGrid: { enabled: true, step: 0.5, tolerancePx: 6, phase: 'end' }
+    });
+
+    expect(model.after.kind).toBe('polygon');
+    if (model.after.kind !== 'polygon') throw new Error('expected polygon');
+    expect(model.after.vertices[2]).toEqual({ x: 1.04, y: 2.96 });
+    expect(model.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('subject-shape-edit.snap-applied');
+  });
+
   it('translates edited geometry back inside bounds when requested', () => {
     const model = createSubjectShapeEditModel(triangle, {
       handleKind: 'vertex',

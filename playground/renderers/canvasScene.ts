@@ -12,6 +12,8 @@ import {
 } from '@vuegraphx/math';
 import {
   CURRICULUM_PARITY_BACKENDS,
+  STANDARD_GEOMETRY_ANNOTATION_UI,
+  STANDARD_GEOMETRY_MARKER_UI,
   createStandardCoordinateSystemGeometry,
   createParitySnapshot,
   resolveGraphGridSnapOptions,
@@ -103,6 +105,30 @@ const CANVAS_RENDERABLE_TYPES = new Set([
   'parametric',
   'coordinate-system'
 ]);
+
+const POINT_RENDER_HINT_OPTION_KEYS = [
+  'pointShadowColor',
+  'pointShadowBlur',
+  'pointShadowOffsetX',
+  'pointShadowOffsetY'
+] as const;
+
+const TEXT_RENDER_HINT_OPTION_KEYS = [
+  'font',
+  'textBackgroundColor',
+  'textBorderColor',
+  'textBorderWidth',
+  'textBorderRadius',
+  'textPaddingX',
+  'textPaddingY',
+  'textOffsetX',
+  'textOffsetY',
+  'textShadowColor',
+  'textShadowBlur',
+  'textShadowOffsetX',
+  'textShadowOffsetY',
+  'textOpacity'
+] as const;
 
 export interface PlaygroundSceneBuildOptions {
   backendId?: PlaygroundSceneBackendId;
@@ -209,18 +235,40 @@ export const createPlaygroundParitySnapshot = (
   curriculumRowIds: rowIds
 });
 
-const withRenderHints = (node: GraphObjectNode, command: PlaygroundCanvasCommand): GraphObjectNode => ({
-  ...node,
-  renderHints: {
-    ...(node.renderHints ?? {}),
-    strokeColor: readString(command.options?.strokeColor, command.color),
-    fillColor: readString(command.options?.fillColor, `${command.color}26`),
-    fillOpacity: readNumber(command.options?.fillOpacity, readNumber(node.renderHints?.fillOpacity, 1)),
-    strokeWidth: readNumber(command.options?.strokeWidth, 2),
-    lineDash: readLineDashPattern(command.options?.lineDash) ?? readLineDashPattern(node.renderHints?.lineDash),
-    radius: readNumber(command.options?.size, 4)
+const withRenderHints = (node: GraphObjectNode, command: PlaygroundCanvasCommand): GraphObjectNode => {
+  const options = command.options ?? {};
+  const existingHints = node.renderHints ?? {};
+  const strokeColor = readString(options.strokeColor, command.color);
+  const hints: Record<string, unknown> = {
+    ...existingHints,
+    strokeColor,
+    fillColor: readString(options.fillColor, `${command.color}26`),
+    fillOpacity: readNumber(options.fillOpacity, readNumber(existingHints.fillOpacity, 1)),
+    strokeWidth: readNumber(options.strokeWidth, 2),
+    lineDash: readLineDashPattern(options.lineDash) ?? readLineDashPattern(existingHints.lineDash),
+    radius: readNumber(options.size, readNumber(options.radius, readNumber(existingHints.radius, STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx)))
+  };
+
+  if (node.type === 'point') {
+    hints.pointFillColor = readString(options.pointFillColor, readString(existingHints.pointFillColor, STANDARD_GEOMETRY_MARKER_UI.pointFillColor));
+    hints.pointStrokeColor = readString(options.pointStrokeColor, readString(existingHints.pointStrokeColor, STANDARD_GEOMETRY_MARKER_UI.pointStrokeColor));
+    hints.pointStrokeWidth = readNumber(options.pointStrokeWidth, readNumber(existingHints.pointStrokeWidth, STANDARD_GEOMETRY_MARKER_UI.pointStrokeWidthPx));
+    copyExplicitRenderHintOptions(hints, options, POINT_RENDER_HINT_OPTION_KEYS);
   }
-});
+
+  if (node.type === 'text' || node.type === 'measurement') {
+    hints.textColor = readString(options.textColor, readString(existingHints.textColor, STANDARD_GEOMETRY_ANNOTATION_UI.textColor));
+    hints.fontSize = readNumber(options.fontSize, readNumber(existingHints.fontSize, STANDARD_GEOMETRY_ANNOTATION_UI.textFontSizePx));
+    hints.fontFamily = readString(options.fontFamily, readString(existingHints.fontFamily, STANDARD_GEOMETRY_ANNOTATION_UI.textFontFamily));
+    hints.fontWeight = readStringOrNumber(options.fontWeight, readStringOrNumber(existingHints.fontWeight, STANDARD_GEOMETRY_ANNOTATION_UI.textFontWeight));
+    hints.lineHeight = readNumber(options.lineHeight, readNumber(existingHints.lineHeight, STANDARD_GEOMETRY_ANNOTATION_UI.textLineHeightPx));
+    hints.textOffsetX = readNumber(options.textOffsetX, readNumber(existingHints.textOffsetX, STANDARD_GEOMETRY_ANNOTATION_UI.textOffsetXPx));
+    hints.textOffsetY = readNumber(options.textOffsetY, readNumber(existingHints.textOffsetY, STANDARD_GEOMETRY_ANNOTATION_UI.textOffsetYPx));
+    copyExplicitRenderHintOptions(hints, options, TEXT_RENDER_HINT_OPTION_KEYS);
+  }
+
+  return { ...node, renderHints: hints };
+};
 
 const withStableRenderOrder = (nodes: readonly GraphObjectNode[]): GraphObjectNode[] => (
   nodes.map((node, index) => ({
@@ -1415,5 +1463,18 @@ const readPoint = (value: unknown): { x: number; y: number } | null => {
 const asRecord = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
 const readString = (value: unknown, fallback: string): string => typeof value === 'string' ? value : fallback;
 const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const readStringOrNumber = (value: unknown, fallback: string | number): string | number => (
+  typeof value === 'string' || typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
 const readPositiveNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
 const formatError = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+const copyExplicitRenderHintOptions = (
+  target: Record<string, unknown>,
+  options: Record<string, unknown>,
+  keys: readonly string[]
+): void => {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(options, key)) target[key] = options[key];
+  }
+};

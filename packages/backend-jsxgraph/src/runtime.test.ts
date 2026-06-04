@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { GraphObjectNode } from '@vuegraphx/core';
+import { STANDARD_GEOMETRY_MARKER_UI, type GraphObjectNode } from '@vuegraphx/core';
 import { createJsxGraphRuntime } from './runtime';
 
 const createPointNode = (): GraphObjectNode => ({
@@ -397,7 +397,58 @@ describe('JsxGraphRuntime', () => {
       strokeColor: '#0ea5e9',
       fillColor: '#0ea5e9',
       strokeWidth: 6,
-      size: 3
+      size: 0.5
+    }));
+  });
+
+  it('maps point-specific style hints to JSXGraph point attributes', () => {
+    const create = vi.fn((type: string) => ({ id: `${type}-1` }));
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      ...createPointNode(),
+      renderHints: {
+        strokeColor: '#0ea5e9',
+        pointFillColor: '#FFFFFF',
+        pointStrokeColor: '#333333',
+        pointStrokeWidth: 1.5,
+        radius: 4
+      }
+    }, {
+      id: 'jsxgraph:A',
+      objectId: 'A',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'A', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(create).toHaveBeenCalledWith('point', [-2, 0], expect.objectContaining({
+      strokeColor: '#333333',
+      fillColor: '#FFFFFF',
+      fillOpacity: 1,
+      highlightStrokeColor: '#333333',
+      highlightFillColor: '#FFFFFF',
+      highlightFillOpacity: 1,
+      strokeWidth: 1.5,
+      face: 'o',
+      sizeUnit: 'screen',
+      zoom: false,
+      size: STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx - 1 - STANDARD_GEOMETRY_MARKER_UI.pointStrokeWidthPx / 2,
+      label: expect.objectContaining({
+        strokeColor: 'rgba(0, 0, 0, 0.85)',
+        fontSize: 14,
+        fontUnit: 'px',
+        anchorX: 'left',
+        anchorY: 'top',
+        offset: [5, -10],
+        cssStyle: 'font-family:PingFang SC, Microsoft YaHei, Arial, sans-serif;font-weight:500;line-height:14px;'
+      })
     }));
   });
 
@@ -619,6 +670,70 @@ describe('JsxGraphRuntime', () => {
       parse: false,
       needsRegularUpdate: true
     }));
+  });
+
+  it('wraps JSXGraph text with annotation visual style hints', () => {
+    const create = vi.fn((type: string, _args?: unknown[], _attributes?: Record<string, unknown>) => ({ id: `${type}-${create.mock.calls.length}` }));
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientWidth', { value: 400 });
+    Object.defineProperty(container, 'clientHeight', { value: 400 });
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn(),
+        getBoundingBox: () => [-10, 10, 10, -10],
+        containerObj: container
+      }
+    });
+
+    runtime.createObject({
+      id: 'plain-style',
+      kind: 'overlay',
+      type: 'text',
+      payload: {
+        point: { x: 1, y: 2 },
+        text: 'P'
+      },
+      renderHints: {
+        textColor: '#FF3333',
+        fontSize: 14,
+        fontFamily: 'PingFang SC, Microsoft YaHei, Arial, sans-serif',
+        fontWeight: 500,
+        lineHeight: 14,
+        textBackgroundColor: '#FFFFFF',
+        textBorderColor: '#333333',
+        textBorderWidth: 1.5,
+        textBorderRadius: 3,
+        textPaddingX: 4,
+        textPaddingY: 2,
+        textOffsetX: 6,
+        textOffsetY: -6,
+        textShadowColor: 'rgba(0,0,0,0.2)',
+        textShadowBlur: 2
+      },
+      layerId: 'overlay'
+    }, {
+      id: 'jsxgraph:plain-style',
+      objectId: 'plain-style',
+      backendId: 'jsxgraph',
+      layerId: 'overlay',
+      target: { scope: 'object', objectId: 'plain-style', backendId: 'jsxgraph', layerId: 'overlay' }
+    });
+
+    const args = create.mock.calls[0]?.[1] as unknown[] | undefined;
+    const textArg = args?.[2] as (() => string) | undefined;
+    const rendered = textArg?.() ?? '';
+    expect(rendered).toContain('color:#FF3333');
+    expect(rendered).toContain('font-size:14px');
+    expect(rendered).toContain('line-height:14px');
+    expect(rendered).toContain('font-family:PingFang SC, Microsoft YaHei, Arial, sans-serif');
+    expect(rendered).toContain('background:#FFFFFF');
+    expect(rendered).toContain('border:1.5px solid #333333');
+    expect(rendered).toContain('border-radius:3px');
+    expect(rendered).toContain('padding:2px 4px');
+    expect(rendered).toContain('transform:translate(6px, -6px)');
+    expect(rendered).toContain('text-shadow:0px 0px 2px rgba(0,0,0,0.2)');
   });
 
   it('uses the initial board bounds as text scale baseline even if zoomed before first text render', () => {

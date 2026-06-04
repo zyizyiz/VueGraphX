@@ -91,6 +91,26 @@ export const STANDARD_COORDINATE_UI = {
   yAxisLabelTopPx: -7
 } as const;
 
+// Shared geometry marker and annotation visual constants used by demos and render adapters.
+export const STANDARD_GEOMETRY_MARKER_UI = {
+  pointRadiusPx: 4,
+  pointFillColor: '#FFFFFF',
+  pointStrokeColor: '#333333',
+  pointStrokeWidthPx: 1.5,
+  emphasisPointFillColor: '#FF3333',
+  emphasisPointStrokeColor: '#FF3333'
+} as const;
+
+export const STANDARD_GEOMETRY_ANNOTATION_UI = {
+  textColor: 'rgba(0, 0, 0, 0.85)',
+  textFontSizePx: 14,
+  textFontFamily: 'PingFang SC, Microsoft YaHei, Arial, sans-serif',
+  textFontWeight: 500,
+  textLineHeightPx: 14,
+  textOffsetXPx: 5,
+  textOffsetYPx: -10
+} as const;
+
 export const createStandardCoordinateTickModel = (
   lower: number,
   upper: number,

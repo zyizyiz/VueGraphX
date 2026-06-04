@@ -1,4 +1,6 @@
 import {
+  STANDARD_GEOMETRY_ANNOTATION_UI,
+  STANDARD_GEOMETRY_MARKER_UI,
   STANDARD_COORDINATE_UI,
   snapPointToGraphGrid,
   type StandardCoordinateAxisTickStrategy
@@ -18,6 +20,7 @@ import {
   createTangentSubjectFunction,
   point2D,
   type MathPoint2D,
+  type SubjectGeometryGridSnapOptions,
   type SubjectAuxiliaryLineConstructionContact,
   type SubjectAuxiliaryLineDescriptor,
   type SubjectGeometryTransformPreviewArc,
@@ -76,9 +79,12 @@ export interface OperationCommandWithOptions {
 
 export type OperationInteractiveToolKind = 'geometry-shape-edit';
 
-export interface OperationToolInteraction {
+export interface OperationGeometryShapeEditInteraction {
   kind: OperationInteractiveToolKind;
+  snapToGrid?: boolean | SubjectGeometryGridSnapOptions;
 }
+
+export type OperationToolInteraction = OperationGeometryShapeEditInteraction;
 
 export interface OperationTool {
   id: string;
@@ -99,6 +105,13 @@ export type OperationShapeEditPolygonTarget = Extract<SubjectShapeEditTarget, { 
 
 const OPERATION_COORDINATE_RANGE = { min: -6, max: 6 } as const;
 const OPERATION_COORDINATE_SNAP = { enabled: true, phase: 'end' } as const;
+export const OPERATION_SHAPE_EDIT_DEFAULT_SNAP = {
+  enabled: true,
+  step: 0.5,
+  origin: { x: 0, y: 0 },
+  phase: 'end',
+  tolerancePx: 12
+} satisfies SubjectGeometryGridSnapOptions;
 
 export const resolveOperationCommandOrigin = (
   point: { x: number; y: number } | null,
@@ -247,7 +260,7 @@ export const createOperationShapeEditCommands = (
   },
   ...target.vertices.map((point, index) => ({
     expr: createOperationShapeEditVertexCommand(prefix, index, point),
-    options: { strokeColor: '#0F766E' }
+    options: operationPointStyleOptions('#0F766E', { pointStrokeColor: '#0F766E' })
   })),
   {
     expr: `${prefix}_after = Polygon(${target.vertices.map((_, index) => `${prefix}_E${index + 1}`).join(', ')})`,
@@ -519,9 +532,9 @@ const operationParabolaOverlay = createSubjectOverlayModel({
 });
 
 const operationGeometryOverlayCommands: readonly OperationCommandSpec[] = [
-  { expr: 'Point(-3.5, -2)', options: { strokeColor: '#0F172A' } },
-  { expr: 'Point(2.5, -2)', options: { strokeColor: '#0F172A' } },
-  { expr: 'Point(-0.5, 3)', options: { strokeColor: '#0F172A' } },
+  { expr: 'Point(-3.5, -2)', options: operationPointStyleOptions('#0F172A') },
+  { expr: 'Point(2.5, -2)', options: operationPointStyleOptions('#0F172A') },
+  { expr: 'Point(-0.5, 3)', options: operationPointStyleOptions('#0F172A') },
   { expr: 'Polygon((-3.5, -2), (2.5, -2), (-0.5, 3))', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.18, strokeWidth: 2 } },
   ...operationOverlayLineCommands(operationGeometryOverlay, { kinds: ['altitude', 'median'], limit: 6 }),
   ...(operationFreeLine ? operationOverlayLineCommands([operationFreeLine]) : []),
@@ -561,7 +574,10 @@ const operationGeometryTransformCommands: readonly OperationCommandSpec[] = [
   { expr: 'baseTransform = Polygon(G1, G2, G3)', options: { strokeColor: '#94A3B8', fillColor: '#E2E8F0', fillOpacity: 0.2, lineDash: [4, 8] } },
   ...operationPointDefinitionCommands('R', operationGeometryTransformVertices),
   { expr: 'rotatedTransform = Polygon(R1, R2, R3)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.22, strokeWidth: 2 } },
-  ...(operationGeometryTransform.center ? [{ expr: `P = ${operationPointTuple(operationGeometryTransform.center)}`, options: { strokeColor: '#7C3AED' } }] : []),
+  ...(operationGeometryTransform.center ? [{
+    expr: `P = ${operationPointTuple(operationGeometryTransform.center)}`,
+    options: operationPointStyleOptions('#7C3AED', { pointStrokeColor: '#7C3AED' })
+  }] : []),
   ...operationOverlayLineCommands(operationGeometryTransform.previewLines, { visibleOnly: false, labels: false, limit: 6 }),
   ...operationTransformArcCommands(operationGeometryTransform.previewArcs, { limit: 4 }),
   { expr: 'Text(-4.8, 3.6, "几何变换预览: 旋转中心 / 吸附 / 边界")', options: { strokeColor: '#475569' } }
@@ -582,9 +598,9 @@ const operationShapeEditCommands: readonly OperationCommandSpec[] = [
 ];
 
 const operationAuxiliaryConstructionCommands: readonly OperationCommandSpec[] = [
-  { expr: 'A = (-3.5, -2)', options: { strokeColor: '#0F172A' } },
-  { expr: 'B = (2.5, -2)', options: { strokeColor: '#0F172A' } },
-  { expr: 'C = (-0.5, 3)', options: { strokeColor: '#0F172A' } },
+  { expr: 'A = (-3.5, -2)', options: operationPointStyleOptions('#0F172A') },
+  { expr: 'B = (2.5, -2)', options: operationPointStyleOptions('#0F172A') },
+  { expr: 'C = (-0.5, 3)', options: operationPointStyleOptions('#0F172A') },
   { expr: 'constructTri = Polygon(A, B, C)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.14, strokeWidth: 2 } },
   {
     expr: `draftLine = Segment(${operationPointTuple(operationAuxiliaryConstruction.draft.start)}, ${operationPointTuple(operationAuxiliaryConstruction.draft.end)})`,
@@ -721,11 +737,11 @@ function operationShapeEditHandleCommands(
   return handles.slice(0, options.limit ?? Infinity).flatMap((handle, index) => [
     {
       expr: `${options.prefix}_${index + 1} = Point(${operationPointText(handle.point)})`,
-      options: { strokeColor: options.color }
+      options: operationPointStyleOptions(options.color, { pointStrokeColor: options.color })
     },
     {
       expr: `Text(${operationPointText({ x: handle.point.x + 0.12, y: handle.point.y + 0.12 })}, "${escapeOperationText(handle.label)}")`,
-      options: { strokeColor: options.color }
+      options: { strokeColor: options.color, ...operationTextStyleOptions() }
     }
   ]);
 }
@@ -742,11 +758,11 @@ function operationConstructionContactCommands(
       return [
         {
           expr: `${options.prefix}_${index + 1} = Point(${operationPointText(point)})`,
-          options: { strokeColor: '#B45309' }
+          options: operationPointStyleOptions('#B45309', { pointStrokeColor: '#B45309' })
         },
         {
           expr: `Text(${operationPointText({ x: point.x + 0.12, y: point.y + 0.12 })}, "${escapeOperationText(contact.kind)}")`,
-          options: { strokeColor: '#B45309' }
+          options: { strokeColor: '#B45309', ...operationTextStyleOptions() }
         }
       ];
     });
@@ -801,7 +817,10 @@ function operationOverlayAnnotationCommands(
 }
 
 function operationPointDefinitionCommands(prefix: string, points: readonly MathPoint2D[]): OperationCommandSpec[] {
-  return points.map((point, index) => ({ expr: `${prefix}${index + 1} = ${operationPointTuple(point)}` }));
+  return points.map((point, index) => ({
+    expr: `${prefix}${index + 1} = ${operationPointTuple(point)}`,
+    options: operationPointStyleOptions()
+  }));
 }
 
 function operationTransformArcCommands(
@@ -839,8 +858,34 @@ function operationOverlayStyleOptions(style: SubjectOverlayStyle | undefined, fa
 
 function operationOverlayTextStyleOptions(style: SubjectOverlayStyle | undefined, fallbackColor: string): Record<string, unknown> {
   const options = operationOverlayStyleOptions(style, fallbackColor);
-  options.strokeColor = style?.textColor ?? style?.strokeColor ?? fallbackColor;
+  const textColor = style?.textColor ?? STANDARD_GEOMETRY_ANNOTATION_UI.textColor;
+  Object.assign(options, operationTextStyleOptions(textColor));
   return options;
+}
+
+function operationPointStyleOptions(
+  strokeColor: string = STANDARD_GEOMETRY_MARKER_UI.pointStrokeColor,
+  overrides: { pointFillColor?: string; pointStrokeColor?: string } = {}
+): Record<string, unknown> {
+  return {
+    strokeColor,
+    pointFillColor: overrides.pointFillColor ?? STANDARD_GEOMETRY_MARKER_UI.pointFillColor,
+    pointStrokeColor: overrides.pointStrokeColor ?? STANDARD_GEOMETRY_MARKER_UI.pointStrokeColor,
+    pointStrokeWidth: STANDARD_GEOMETRY_MARKER_UI.pointStrokeWidthPx,
+    size: STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx
+  };
+}
+
+function operationTextStyleOptions(color: string = STANDARD_GEOMETRY_ANNOTATION_UI.textColor): Record<string, unknown> {
+  return {
+    textColor: color,
+    fontSize: STANDARD_GEOMETRY_ANNOTATION_UI.textFontSizePx,
+    fontFamily: STANDARD_GEOMETRY_ANNOTATION_UI.textFontFamily,
+    fontWeight: STANDARD_GEOMETRY_ANNOTATION_UI.textFontWeight,
+    lineHeight: STANDARD_GEOMETRY_ANNOTATION_UI.textLineHeightPx,
+    textOffsetX: STANDARD_GEOMETRY_ANNOTATION_UI.textOffsetXPx,
+    textOffsetY: STANDARD_GEOMETRY_ANNOTATION_UI.textOffsetYPx
+  };
 }
 
 function operationPointTuple(point: MathPoint2D): string {

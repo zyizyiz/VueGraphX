@@ -84,6 +84,23 @@ export declare const STANDARD_COORDINATE_UI: {
     readonly yAxisLabelLeftOffsetPx: -10;
     readonly yAxisLabelTopPx: -7;
 };
+export declare const STANDARD_GEOMETRY_MARKER_UI: {
+    readonly pointRadiusPx: 4;
+    readonly pointFillColor: "#FFFFFF";
+    readonly pointStrokeColor: "#333333";
+    readonly pointStrokeWidthPx: 1.5;
+    readonly emphasisPointFillColor: "#FF3333";
+    readonly emphasisPointStrokeColor: "#FF3333";
+};
+export declare const STANDARD_GEOMETRY_ANNOTATION_UI: {
+    readonly textColor: "rgba(0, 0, 0, 0.85)";
+    readonly textFontSizePx: 14;
+    readonly textFontFamily: "PingFang SC, Microsoft YaHei, Arial, sans-serif";
+    readonly textFontWeight: 500;
+    readonly textLineHeightPx: 14;
+    readonly textOffsetXPx: 5;
+    readonly textOffsetYPx: -10;
+};
 export declare const createStandardCoordinateTickModel: (lower: number, upper: number, pixelSpan: number) => StandardCoordinateTickModel;
 export declare const formatStandardCoordinateLabel: (value: number) => string;
 export declare const isStandardZeroCoordinate: (value: number) => boolean;

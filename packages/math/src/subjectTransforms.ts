@@ -29,12 +29,36 @@ export type SubjectGeometryTransformTarget =
 
 export type SubjectGeometryTransformKind = 'translate' | 'rotate' | 'scale';
 export type SubjectGeometryBoundsMode = 'none' | 'translate-inside' | 'reject';
+export type SubjectGeometryDragPhase = 'move' | 'end';
 
 export interface SubjectGeometryGridSnapOptions {
   enabled?: boolean;
   step?: number;
   origin?: MathPoint2D;
   tolerance?: number;
+  tolerancePx?: number;
+  phase?: 'always' | 'end';
+}
+
+export interface SubjectGeometryGridSnapMetric {
+  pixelsPerUnit?: number | { x?: number; y?: number };
+}
+
+export interface ResolvedSubjectGeometryGridSnapOptions {
+  enabled: boolean;
+  step: number;
+  origin: MathPoint2D;
+  tolerance: number;
+  tolerancePx: number;
+  phase: 'always' | 'end';
+}
+
+export interface SubjectGeometryGridSnapDecision {
+  applied: boolean;
+  coordinateDistance: number;
+  pixelDistance?: number;
+  tolerance: number;
+  tolerancePx: number;
 }
 
 export interface SubjectGeometryTransformPreviewOptions {
@@ -52,6 +76,8 @@ export interface SubjectGeometryTransformOptions {
   bounds?: MathBounds2D;
   boundsMode?: SubjectGeometryBoundsMode;
   snapToGrid?: boolean | SubjectGeometryGridSnapOptions;
+  snapMetric?: SubjectGeometryGridSnapMetric;
+  dragPhase?: SubjectGeometryDragPhase;
   preview?: SubjectGeometryTransformPreviewOptions;
   meta?: Record<string, unknown>;
 }
@@ -133,7 +159,7 @@ export const createSubjectGeometryTransformModel = <Target extends SubjectGeomet
     : undefined;
   const normalized = normalizeTransformOptions(options, diagnostics, target.id);
   const transformed = applyRawGeometryTransform(target, normalized, center);
-  const snapped = applySnapIfNeeded(transformed, options.snapToGrid, diagnostics);
+  const snapped = applySnapIfNeeded(transformed, options.snapToGrid, options.snapMetric, options.dragPhase, diagnostics);
   const bounded = applyBoundsIfNeeded(snapped, options.bounds, options.boundsMode ?? 'none', diagnostics);
   const applied = diagnostics.every((diagnostic) => diagnostic.severity !== 'error');
   const after = applied ? bounded : before;
@@ -233,11 +259,14 @@ const transformPoint = (
 const applySnapIfNeeded = <Target extends SubjectGeometryTransformTarget>(
   target: Target,
   snapInput: boolean | SubjectGeometryGridSnapOptions | undefined,
+  snapMetric: SubjectGeometryGridSnapMetric | undefined,
+  dragPhase: SubjectGeometryDragPhase | undefined,
   diagnostics: SubjectGeometryTransformDiagnostic[]
 ): Target => {
-  const snap = resolveGridSnapOptions(snapInput);
+  const snap = resolveSubjectGeometryGridSnapOptions(snapInput);
   if (!snap.enabled) return target;
-  const snapDelta = findBestGridSnapDelta(getSnapPoints(target), snap);
+  if (snap.phase === 'end' && dragPhase === 'move') return target;
+  const snapDelta = findBestGridSnapDelta(getSnapPoints(target), snap, snapMetric);
   if (!snapDelta) return target;
   diagnostics.push({
     code: 'subject-transform.snap-applied',
@@ -408,33 +437,90 @@ const previewPoints = (target: SubjectGeometryTransformTarget): MathPoint2D[] =>
 
 const findBestGridSnapDelta = (
   points: readonly MathPoint2D[],
-  options: Required<SubjectGeometryGridSnapOptions>
+  options: ResolvedSubjectGeometryGridSnapOptions,
+  metric: SubjectGeometryGridSnapMetric | undefined
 ): MathVector2D | null => {
   let best: { delta: MathVector2D; distance: number } | null = null;
   for (const point of points) {
-    const snapped = {
-      x: options.origin.x + Math.round((point.x - options.origin.x) / options.step) * options.step,
-      y: options.origin.y + Math.round((point.y - options.origin.y) / options.step) * options.step
-    };
+    const snapped = snapSubjectGeometryPointToGrid(point, options);
+    const decision = shouldApplySubjectGeometryGridSnap(point, snapped, options, metric);
+    if (!decision.applied) continue;
     const delta = subtract2D(snapped, point);
-    const distance = Math.hypot(delta.x, delta.y);
-    if (distance <= options.tolerance && (!best || distance < best.distance)) best = { delta, distance };
+    const distance = decision.pixelDistance ?? decision.coordinateDistance;
+    if (!best || distance < best.distance) best = { delta, distance };
   }
   return best?.delta ?? null;
 };
 
-const resolveGridSnapOptions = (
-  input: boolean | SubjectGeometryGridSnapOptions | undefined
-): Required<SubjectGeometryGridSnapOptions> => {
-  if (!input) return { enabled: false, step: 1, origin: point2D(0, 0), tolerance: 0 };
-  if (input === true) return { enabled: true, step: 1, origin: point2D(0, 0), tolerance: 0.15 };
-  const step = typeof input.step === 'number' && Number.isFinite(input.step) && input.step > GRAPH_MATH_EPSILON ? input.step : 1;
+export const resolveSubjectGeometryGridSnapOptions = (
+  input: boolean | SubjectGeometryGridSnapOptions | undefined,
+  fallback: Partial<SubjectGeometryGridSnapOptions> = {}
+): ResolvedSubjectGeometryGridSnapOptions => {
+  const fallbackStep = readPositiveNumber(fallback.step, 1);
+  const fallbackOrigin = isFinitePoint(fallback.origin) ? clonePoint(fallback.origin) : point2D(0, 0);
+  const base: ResolvedSubjectGeometryGridSnapOptions = {
+    enabled: fallback.enabled ?? false,
+    step: fallbackStep,
+    origin: fallbackOrigin,
+    tolerance: readNonNegativeNumber(fallback.tolerance, fallbackStep * 0.15),
+    tolerancePx: readNonNegativeNumber(fallback.tolerancePx, Number.POSITIVE_INFINITY),
+    phase: fallback.phase === 'end' ? 'end' : 'always'
+  };
+  if (input === true) return { ...base, enabled: true };
+  if (!input) return { ...base, enabled: false };
+  const step = readPositiveNumber(input.step, base.step);
   return {
     enabled: input.enabled ?? true,
     step,
-    origin: isFinitePoint(input.origin) ? clonePoint(input.origin) : point2D(0, 0),
-    tolerance: typeof input.tolerance === 'number' && Number.isFinite(input.tolerance) && input.tolerance >= 0 ? input.tolerance : step * 0.15
+    origin: isFinitePoint(input.origin) ? clonePoint(input.origin) : base.origin,
+    tolerance: readNonNegativeNumber(input.tolerance, fallback.tolerance === undefined ? step * 0.15 : base.tolerance),
+    tolerancePx: readNonNegativeNumber(input.tolerancePx, base.tolerancePx),
+    phase: input.phase === 'end' || input.phase === 'always' ? input.phase : base.phase
   };
+};
+
+export const snapSubjectGeometryPointToGrid = (
+  point: MathPoint2D,
+  options: Pick<ResolvedSubjectGeometryGridSnapOptions, 'step' | 'origin'>
+): MathPoint2D => ({
+  x: normalizeGridValue(options.origin.x + Math.round((point.x - options.origin.x) / options.step) * options.step),
+  y: normalizeGridValue(options.origin.y + Math.round((point.y - options.origin.y) / options.step) * options.step)
+});
+
+export const shouldApplySubjectGeometryGridSnap = (
+  point: MathPoint2D,
+  snapped: MathPoint2D,
+  options: Pick<ResolvedSubjectGeometryGridSnapOptions, 'tolerance' | 'tolerancePx'>,
+  metric?: SubjectGeometryGridSnapMetric
+): SubjectGeometryGridSnapDecision => {
+  const coordinateDistance = distance2D(point, snapped);
+  const pixelDistance = measureSubjectGeometryGridSnapDistancePx(point, snapped, metric);
+  if (Number.isFinite(options.tolerancePx)) {
+    return {
+      applied: pixelDistance !== undefined && pixelDistance <= options.tolerancePx,
+      coordinateDistance,
+      ...(pixelDistance === undefined ? {} : { pixelDistance }),
+      tolerance: options.tolerance,
+      tolerancePx: options.tolerancePx
+    };
+  }
+  return {
+    applied: !Number.isFinite(options.tolerance) || coordinateDistance <= options.tolerance,
+    coordinateDistance,
+    ...(pixelDistance === undefined ? {} : { pixelDistance }),
+    tolerance: options.tolerance,
+    tolerancePx: options.tolerancePx
+  };
+};
+
+export const measureSubjectGeometryGridSnapDistancePx = (
+  from: MathPoint2D,
+  to: MathPoint2D,
+  metric?: SubjectGeometryGridSnapMetric
+): number | undefined => {
+  const scale = resolveSubjectGeometryPixelsPerUnit(metric);
+  if (!scale) return undefined;
+  return Math.hypot((to.x - from.x) * scale.x, (to.y - from.y) * scale.y);
 };
 
 const geometryTargetBounds = (target: SubjectGeometryTransformTarget): MathBounds2D | null => {
@@ -514,4 +600,30 @@ const transformPreviewStyle = (style: SubjectOverlayStyle | undefined): SubjectO
 
 const formatNumber = (value: number): string => (
   Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+);
+
+const readPositiveNumber = (value: unknown, fallback: number): number => (
+  typeof value === 'number' && Number.isFinite(value) && value > GRAPH_MATH_EPSILON ? value : fallback
+);
+
+const readNonNegativeNumber = (value: unknown, fallback: number): number => (
+  typeof value === 'number' && value >= 0 ? value : fallback
+);
+
+const resolveSubjectGeometryPixelsPerUnit = (
+  metric: SubjectGeometryGridSnapMetric | undefined
+): { x: number; y: number } | null => {
+  const value = metric?.pixelsPerUnit;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > GRAPH_MATH_EPSILON ? { x: value, y: value } : null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const x = typeof value.x === 'number' && Number.isFinite(value.x) && value.x > GRAPH_MATH_EPSILON ? value.x : null;
+  const y = typeof value.y === 'number' && Number.isFinite(value.y) && value.y > GRAPH_MATH_EPSILON ? value.y : null;
+  if (x === null && y === null) return null;
+  return { x: x ?? y!, y: y ?? x! };
+};
+
+const normalizeGridValue = (value: number): number => (
+  Math.abs(value) < GRAPH_MATH_EPSILON ? 0 : Number(value.toFixed(10))
 );
