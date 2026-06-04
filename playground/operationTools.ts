@@ -10,12 +10,15 @@ import {
   createParabolaEquationSubjectFunction,
   createQuadraticSubjectFunction,
   createSineSubjectFunction,
+  createSubjectAuxiliaryLineConstructionModel,
   createSubjectGeometryTransformModel,
   createSubjectAuxiliaryLineIntersectionAnnotations,
   createSubjectOverlayModel,
+  createSubjectShapeEditModel,
   createTangentSubjectFunction,
   point2D,
   type MathPoint2D,
+  type SubjectAuxiliaryLineConstructionContact,
   type SubjectAuxiliaryLineDescriptor,
   type SubjectGeometryTransformPreviewArc,
   type SubjectGeometryTransformTarget,
@@ -23,10 +26,13 @@ import {
   type SubjectOverlayConfig,
   type SubjectOverlayModel,
   type SubjectOverlayStyle,
-  type SubjectOverlayTarget
+  type SubjectOverlayTarget,
+  type SubjectShapeEditHandleDescriptor,
+  type SubjectShapeEditTarget
 } from '@vuegraphx/math';
 
 export const OPERATION_COMMANDS_MIME = 'application/x-vuegraphx-operation-commands';
+export const OPERATION_TOOL_MIME = 'application/x-vuegraphx-operation-tool';
 
 export interface OperationCommandSpec {
   expr: string;
@@ -68,6 +74,12 @@ export interface OperationCommandWithOptions {
   options?: unknown;
 }
 
+export type OperationInteractiveToolKind = 'geometry-shape-edit';
+
+export interface OperationToolInteraction {
+  kind: OperationInteractiveToolKind;
+}
+
 export interface OperationTool {
   id: string;
   label: string;
@@ -75,12 +87,15 @@ export interface OperationTool {
   icon: string;
   iconClass: string;
   commands: readonly OperationCommandSpec[];
+  interaction?: OperationToolInteraction;
 }
 
 export interface OperationToolGroup {
   title: string;
   tools: readonly OperationTool[];
 }
+
+export type OperationShapeEditPolygonTarget = Extract<SubjectShapeEditTarget, { kind: 'polygon' }>;
 
 const OPERATION_COORDINATE_RANGE = { min: -6, max: 6 } as const;
 const OPERATION_COORDINATE_SNAP = { enabled: true, phase: 'end' } as const;
@@ -211,6 +226,47 @@ export const updateOperationCoordinateSystemOrigin = <T extends OperationCommand
   return updatedCount;
 };
 
+export const createOperationShapeEditTarget = (
+  id = 'operation-shape-edit-triangle'
+): OperationShapeEditPolygonTarget => ({
+  id,
+  kind: 'polygon',
+  shapeKind: 'triangle',
+  vertices: [point2D(-3.5, -2), point2D(2, -2), point2D(-1.5, 2.5)],
+  strokeColor: '#0F766E'
+});
+
+export const createOperationShapeEditCommands = (
+  prefix: string,
+  target: OperationShapeEditPolygonTarget = createOperationShapeEditTarget(`${prefix}-target`)
+): OperationCommandSpec[] => [
+  ...operationPointDefinitionCommands(`${prefix}_S`, target.vertices),
+  {
+    expr: `${prefix}_before = Polygon(${target.vertices.map((_, index) => `${prefix}_S${index + 1}`).join(', ')})`,
+    options: { strokeColor: '#94A3B8', fillColor: '#E2E8F0', fillOpacity: 0.18, lineDash: [4, 8] }
+  },
+  ...target.vertices.map((point, index) => ({
+    expr: createOperationShapeEditVertexCommand(prefix, index, point),
+    options: { strokeColor: '#0F766E' }
+  })),
+  {
+    expr: `${prefix}_after = Polygon(${target.vertices.map((_, index) => `${prefix}_E${index + 1}`).join(', ')})`,
+    options: { strokeColor: '#0F766E', fillColor: '#CCFBF1', fillOpacity: 0.2, strokeWidth: 2 }
+  }
+];
+
+export const createOperationShapeEditVertexCommand = (
+  prefix: string,
+  index: number,
+  point: MathPoint2D
+): string => `${prefix}_E${index + 1} = ${formatOperationPointTuple(point)}`;
+
+export const formatOperationPointTuple = (point: MathPoint2D): string => operationPointTuple(point);
+
+export const findOperationToolById = (toolId: string): OperationTool | null => (
+  operationToolGroups.flatMap((group) => group.tools).find((tool) => tool.id === toolId) ?? null
+);
+
 const asMutableRecord = (value: unknown): Record<string, unknown> | null => (
   typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
 );
@@ -289,6 +345,23 @@ const operationGeometryTransformVertices = operationGeometryTransform.after.kind
   ? operationGeometryTransform.after.vertices
   : [];
 
+const operationShapeEditTarget = createOperationShapeEditTarget();
+const operationShapeEdit = createSubjectShapeEditModel(operationShapeEditTarget, {
+  handleKind: 'vertex',
+  index: 2,
+  point: point2D(-0.46, 3.04)
+}, {
+  bounds: { minX: -5, minY: -4, maxX: 5, maxY: 4 },
+  boundsMode: 'translate-inside',
+  snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 },
+  preview: {
+    style: { strokeColor: '#7C3AED', textColor: '#7C3AED' }
+  }
+});
+const operationShapeEditVertices = operationShapeEdit.after.kind === 'polygon'
+  ? operationShapeEdit.after.vertices
+  : [];
+
 const operationGeometryOverlayTarget: SubjectOverlayTarget = {
   id: 'operation-geometry-overlay-triangle',
   kind: 'polygon',
@@ -341,6 +414,15 @@ const operationFreeIntersections = createSubjectAuxiliaryLineIntersectionAnnotat
   operationGeometryOverlayTarget,
   operationFreeLine ? [operationFreeLine] : [],
   operationGeometryOverlayConfig
+);
+const operationAuxiliaryConstruction = createSubjectAuxiliaryLineConstructionModel(
+  operationGeometryOverlayTarget,
+  { start: point2D(-4.4, 0.75), end: point2D(3.2, 0.75) },
+  {
+    label: '构造候选线',
+    state: 'confirmed',
+    style: { strokeColor: '#7C3AED', lineDash: [4, 8], strokeWidth: 1 }
+  }
 );
 
 const operationQuadraticOverlay = createSubjectOverlayModel({
@@ -485,6 +567,37 @@ const operationGeometryTransformCommands: readonly OperationCommandSpec[] = [
   { expr: 'Text(-4.8, 3.6, "几何变换预览: 旋转中心 / 吸附 / 边界")', options: { strokeColor: '#475569' } }
 ];
 
+const operationShapeEditCommands: readonly OperationCommandSpec[] = [
+  ...operationPointDefinitionCommands('S', operationShapeEditTarget.vertices),
+  { expr: 'editBefore = Polygon(S1, S2, S3)', options: { strokeColor: '#94A3B8', fillColor: '#E2E8F0', fillOpacity: 0.18, lineDash: [4, 8] } },
+  ...operationPointDefinitionCommands('E', operationShapeEditVertices),
+  { expr: 'editAfter = Polygon(E1, E2, E3)', options: { strokeColor: '#0F766E', fillColor: '#CCFBF1', fillOpacity: 0.2, strokeWidth: 2 } },
+  ...operationShapeEditHandleCommands(operationShapeEdit.beforeHandles, { prefix: 'beforeHandle', color: '#64748B', limit: 3 }),
+  ...operationShapeEditHandleCommands(operationShapeEdit.afterHandles, { prefix: 'afterHandle', color: '#0F766E', limit: 3 }),
+  ...operationOverlayLineCommands(operationShapeEdit.previewLines, { visibleOnly: false, labels: false, limit: 2 }),
+  {
+    expr: `Text(-4.8, 3.6, "几何编辑内核: handle=${operationShapeEdit.activeHandle?.label ?? '-'} / diagnostics=${operationShapeEdit.diagnostics.length}")`,
+    options: { strokeColor: '#475569' }
+  }
+];
+
+const operationAuxiliaryConstructionCommands: readonly OperationCommandSpec[] = [
+  { expr: 'A = (-3.5, -2)', options: { strokeColor: '#0F172A' } },
+  { expr: 'B = (2.5, -2)', options: { strokeColor: '#0F172A' } },
+  { expr: 'C = (-0.5, 3)', options: { strokeColor: '#0F172A' } },
+  { expr: 'constructTri = Polygon(A, B, C)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.14, strokeWidth: 2 } },
+  {
+    expr: `draftLine = Segment(${operationPointTuple(operationAuxiliaryConstruction.draft.start)}, ${operationPointTuple(operationAuxiliaryConstruction.draft.end)})`,
+    options: { strokeColor: '#94A3B8', lineDash: [2, 6] }
+  },
+  ...(operationAuxiliaryConstruction.candidate ? operationOverlayLineCommands([operationAuxiliaryConstruction.candidate], { labels: false }) : []),
+  ...operationConstructionContactCommands(operationAuxiliaryConstruction.contacts, { prefix: 'constructContact', limit: 4 }),
+  {
+    expr: `Text(-4.8, 3.6, "自由辅助线构造: contacts=${operationAuxiliaryConstruction.contacts.length} / applied=${operationAuxiliaryConstruction.applied}")`,
+    options: { strokeColor: '#475569' }
+  }
+];
+
 export const operationToolGroups: readonly OperationToolGroup[] = [
   {
     title: '函数',
@@ -579,10 +692,65 @@ export const operationToolGroups: readonly OperationToolGroup[] = [
         icon: '↻',
         iconClass: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
         commands: operationGeometryTransformCommands
+      },
+      {
+        id: 'geometry-shape-edit-preview',
+        label: '几何拖拽编辑',
+        description: '点击或拖入后生成可拖拽顶点，并实时写回编辑结果',
+        icon: '▱',
+        iconClass: 'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
+        commands: operationShapeEditCommands,
+        interaction: { kind: 'geometry-shape-edit' }
+      },
+      {
+        id: 'auxiliary-construction-preview',
+        label: '自由辅助线构造',
+        description: '拖入后展示草稿线如何裁剪成辅助线候选，并标出接触点',
+        icon: '⌁',
+        iconClass: 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
+        commands: operationAuxiliaryConstructionCommands
       }
     ]
   }
 ];
+
+function operationShapeEditHandleCommands(
+  handles: readonly SubjectShapeEditHandleDescriptor[],
+  options: { prefix: string; color: string; limit?: number }
+): OperationCommandSpec[] {
+  return handles.slice(0, options.limit ?? Infinity).flatMap((handle, index) => [
+    {
+      expr: `${options.prefix}_${index + 1} = Point(${operationPointText(handle.point)})`,
+      options: { strokeColor: options.color }
+    },
+    {
+      expr: `Text(${operationPointText({ x: handle.point.x + 0.12, y: handle.point.y + 0.12 })}, "${escapeOperationText(handle.label)}")`,
+      options: { strokeColor: options.color }
+    }
+  ]);
+}
+
+function operationConstructionContactCommands(
+  contacts: readonly SubjectAuxiliaryLineConstructionContact[],
+  options: { prefix: string; limit?: number }
+): OperationCommandSpec[] {
+  return contacts
+    .filter((contact) => !!contact.point)
+    .slice(0, options.limit ?? Infinity)
+    .flatMap((contact, index) => {
+      const point = contact.point!;
+      return [
+        {
+          expr: `${options.prefix}_${index + 1} = Point(${operationPointText(point)})`,
+          options: { strokeColor: '#B45309' }
+        },
+        {
+          expr: `Text(${operationPointText({ x: point.x + 0.12, y: point.y + 0.12 })}, "${escapeOperationText(contact.kind)}")`,
+          options: { strokeColor: '#B45309' }
+        }
+      ];
+    });
+}
 
 function operationOverlayLineCommands(
   input: SubjectOverlayModel | readonly SubjectAuxiliaryLineDescriptor[],

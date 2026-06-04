@@ -22,9 +22,13 @@
               :key="tool.id"
               type="button"
               draggable="true"
-              class="group flex cursor-grab items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-50 active:cursor-grabbing active:translate-y-0"
-              @click="$emit('create-commands', tool.commands)"
-              @dragstart="startDrag(tool.commands, $event)"
+              class="group flex cursor-grab items-center gap-3 rounded-xl border px-3 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-50 active:cursor-grabbing active:translate-y-0"
+              :class="activeToolId === tool.id
+                ? 'border-teal-300 bg-teal-50 ring-2 ring-teal-100'
+                : 'border-slate-200 bg-white'"
+              :aria-pressed="activeToolId === tool.id"
+              @click="handleToolClick(tool)"
+              @dragstart="startDrag(tool, $event)"
             >
               <span
                 class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg"
@@ -49,13 +53,39 @@
 </template>
 
 <script setup lang="ts">
-import { OPERATION_COMMANDS_MIME, operationToolGroups, type OperationCommandSpec } from '../operationTools';
+import { OPERATION_COMMANDS_MIME, OPERATION_TOOL_MIME, operationToolGroups, type OperationCommandSpec, type OperationTool } from '../operationTools';
 
-defineEmits<{
-  'create-commands': [commands: readonly OperationCommandSpec[]];
+defineProps<{
+  activeToolId?: string;
 }>();
 
-const startDrag = (commands: readonly OperationCommandSpec[], event: DragEvent) => {
+const emit = defineEmits<{
+  'create-commands': [commands: readonly OperationCommandSpec[]];
+  'activate-tool': [tool: OperationTool];
+}>();
+
+const handleToolClick = (tool: OperationTool) => {
+  console.info('[VueGraphX operation tool]', tool.interaction ? 'activate' : 'create', {
+    toolId: tool.id,
+    interaction: tool.interaction ?? null
+  });
+  if (tool.interaction) {
+    emit('activate-tool', tool);
+    return;
+  }
+  emit('create-commands', tool.commands);
+};
+
+const startDrag = (tool: OperationTool, event: DragEvent) => {
+  console.info('[VueGraphX operation tool]', 'dragstart', {
+    toolId: tool.id,
+    interaction: tool.interaction ?? null
+  });
+  const commands = tool.commands;
+  event.dataTransfer?.setData(OPERATION_TOOL_MIME, JSON.stringify({
+    id: tool.id,
+    interaction: tool.interaction ?? null
+  }));
   event.dataTransfer?.setData(OPERATION_COMMANDS_MIME, JSON.stringify(commands));
   event.dataTransfer?.setData('text/plain', commands.map((command) => command.expr).join('\n'));
   if (event.dataTransfer) {

@@ -6,14 +6,17 @@ import {
   createLinearSubjectFunction,
   createPiecewiseSubjectFunction,
   createQuadraticSubjectFunction,
+  createSubjectAuxiliaryLineConstructionModel,
   createSubjectAuxiliaryLineIntersectionAnnotations,
   createSubjectDynamicPoint,
   createSubjectGeometryTransformModel,
   createSubjectOverlayModel,
+  createSubjectShapeEditModel,
   point2D,
   tickSubjectDynamicPoint,
   updateSubjectFunctionParameters,
   type MathPoint2D,
+  type SubjectAuxiliaryLineConstructionContact,
   type SubjectAuxiliaryLineDescriptor,
   type SubjectGeometryTransformPreviewArc,
   type SubjectGeometryTransformTarget,
@@ -21,7 +24,9 @@ import {
   type SubjectOverlayConfig,
   type SubjectOverlayModel,
   type SubjectOverlayStyle,
-  type SubjectOverlayTarget
+  type SubjectOverlayTarget,
+  type SubjectShapeEditHandleDescriptor,
+  type SubjectShapeEditTarget
 } from '@vuegraphx/math';
 import type { PlaygroundRenderBackend } from './parityStatus';
 
@@ -34,6 +39,8 @@ export type SubjectToolsDemoCategory =
   | 'annotation'
   | 'geometry-overlay'
   | 'geometry-transform'
+  | 'geometry-editing'
+  | 'geometry-construction'
   | 'dynamic-point'
   | 'backend-status';
 
@@ -161,6 +168,36 @@ const geometryTransform = createSubjectGeometryTransformModel(geometryTransformT
   }
 });
 const geometryTransformVertices = geometryTransform.after.kind === 'polygon' ? geometryTransform.after.vertices : [];
+const geometryEditTarget: SubjectShapeEditTarget = {
+  id: 'geometry-edit-triangle',
+  kind: 'polygon',
+  shapeKind: 'triangle',
+  vertices: [point2D(-3.5, -2), point2D(2, -2), point2D(-1.5, 2.5)],
+  strokeColor: '#0F766E',
+  meta: { subject: 'triangle-edit' }
+};
+const geometryEdit = createSubjectShapeEditModel(geometryEditTarget, {
+  handleKind: 'vertex',
+  index: 2,
+  point: point2D(-0.46, 3.04)
+}, {
+  bounds: { minX: -5, minY: -4, maxX: 5, maxY: 4 },
+  boundsMode: 'translate-inside',
+  snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 },
+  preview: {
+    style: { strokeColor: '#7C3AED', textColor: '#7C3AED' }
+  }
+});
+const geometryEditVertices = geometryEdit.after.kind === 'polygon' ? geometryEdit.after.vertices : [];
+const geometryConstruction = createSubjectAuxiliaryLineConstructionModel(
+  geometryOverlayTarget,
+  { start: point2D(-4.4, 0.75), end: point2D(3.2, 0.75) },
+  {
+    label: '构造候选线',
+    state: 'confirmed',
+    style: { strokeColor: '#7C3AED', lineDash: [4, 8], strokeWidth: 1 }
+  }
+);
 
 export const getSubjectToolsBackendStatusRows = () => createSubjectBackendSupportMatrix();
 
@@ -287,6 +324,43 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
     ]
   },
   {
+    category: 'geometry-editing',
+    emoji: '▱',
+    title: '几何编辑 · 顶点 handle 拖拽',
+    desc: '拖拽点、半径点、端点和方向点由 math 包给出；业务侧只把 handle 和编辑后的 geometry 写回状态。',
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
+    modelSummary: `applied=${geometryEdit.applied}；handles=${geometryEdit.afterHandles.length}；diagnostics=${geometryEdit.diagnostics.map((diagnostic) => diagnostic.code).join(' / ') || 'none'}`,
+    commands: [
+      ...pointDefinitionCommands('S', geometryEditTarget.vertices),
+      { expr: 'editBefore = Polygon(S1, S2, S3)', options: { strokeColor: '#94A3B8', fillColor: '#E2E8F0', fillOpacity: 0.18, lineDash: [4, 8] } },
+      ...pointDefinitionCommands('E', geometryEditVertices),
+      { expr: 'editAfter = Polygon(E1, E2, E3)', options: { strokeColor: '#0F766E', fillColor: '#CCFBF1', fillOpacity: 0.2, strokeWidth: 2 } },
+      ...shapeEditHandleCommands(geometryEdit.beforeHandles, { prefix: 'edit_before_handle', color: '#64748B', limit: 3 }),
+      ...shapeEditHandleCommands(geometryEdit.afterHandles, { prefix: 'edit_after_handle', color: '#0F766E', limit: 3 }),
+      ...overlayLineCommands(geometryEdit.previewLines, { prefix: 'edit_path', visibleOnly: false, labels: false, limit: 2 })
+    ]
+  },
+  {
+    category: 'geometry-construction',
+    emoji: '⌁',
+    title: '几何构造 · 自由辅助线候选',
+    desc: '自由画线的裁剪、单点接触、重合边和失败原因由 construction model 输出；业务侧决定预览、提交或失败动画。',
+    compatibleBackends: TWO_D_SUBJECT_BACKENDS,
+    modelSummary: `applied=${geometryConstruction.applied}；contacts=${geometryConstruction.contacts.length}；diagnostics=${geometryConstruction.diagnostics.map((diagnostic) => diagnostic.code).join(' / ') || 'none'}`,
+    commands: [
+      'A = (-4, -2)',
+      'B = (2, -2)',
+      'C = (-1, 3)',
+      { expr: 'constructTri = Polygon(A, B, C)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.14, strokeWidth: 2 } },
+      {
+        expr: `draft = Segment(${formatPointTuple(geometryConstruction.draft.start)}, ${formatPointTuple(geometryConstruction.draft.end)})`,
+        options: { strokeColor: '#94A3B8', lineDash: [2, 6] }
+      },
+      ...(geometryConstruction.candidate ? overlayLineCommands([geometryConstruction.candidate], { prefix: 'construct_candidate', labels: false }) : []),
+      ...constructionContactCommands(geometryConstruction.contacts, { prefix: 'construct_contact', limit: 4 })
+    ]
+  },
+  {
     category: 'dynamic-point',
     emoji: '▶️',
     title: '动点 P · 沿函数播放',
@@ -315,6 +389,44 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
 
 function pointDefinitionCommands(prefix: string, points: readonly MathPoint2D[]): string[] {
   return points.map((point, index) => `${prefix}${index + 1} = ${formatPointTuple(point)}`);
+}
+
+function shapeEditHandleCommands(
+  handles: readonly SubjectShapeEditHandleDescriptor[],
+  options: { prefix: string; color: string; limit?: number }
+): SubjectToolsDemoCommand[] {
+  return handles.slice(0, options.limit ?? Infinity).flatMap((handle, index) => [
+    {
+      expr: `${options.prefix}_${index + 1} = Point(${formatPoint(handle.point)})`,
+      options: { strokeColor: options.color }
+    },
+    {
+      expr: `${options.prefix}_${index + 1}_label = Text(${formatPoint({ x: handle.point.x + 0.12, y: handle.point.y + 0.12 })}, "${escapeCommandText(handle.label)}")`,
+      options: { strokeColor: options.color }
+    }
+  ]);
+}
+
+function constructionContactCommands(
+  contacts: readonly SubjectAuxiliaryLineConstructionContact[],
+  options: { prefix: string; limit?: number }
+): SubjectToolsDemoCommand[] {
+  return contacts
+    .filter((contact) => !!contact.point)
+    .slice(0, options.limit ?? Infinity)
+    .flatMap((contact, index) => {
+      const point = contact.point!;
+      return [
+        {
+          expr: `${options.prefix}_${index + 1} = Point(${formatPoint(point)})`,
+          options: { strokeColor: '#B45309' }
+        },
+        {
+          expr: `${options.prefix}_${index + 1}_label = Text(${formatPoint({ x: point.x + 0.12, y: point.y + 0.12 })}, "${escapeCommandText(contact.kind)}")`,
+          options: { strokeColor: '#B45309' }
+        }
+      ];
+    });
 }
 
 function overlayLineCommands(

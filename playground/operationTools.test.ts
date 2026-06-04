@@ -7,7 +7,12 @@ import {
 import {
   alignOperationCoordinateSystemOriginToGrid,
   clampOperationCoordinateSystemOrigin,
+  createOperationShapeEditCommands,
+  createOperationShapeEditTarget,
+  createOperationShapeEditVertexCommand,
   createOperationScopedCommands,
+  findOperationToolById,
+  formatOperationPointTuple,
   operationToolGroups,
   resolveOperationCommandOrigin,
   updateOperationCoordinateSystemOrigin
@@ -172,5 +177,52 @@ describe('updateOperationCoordinateSystemOrigin', () => {
 
     const commands = createOperationScopedCommands(tool!.commands, { x: 0, y: 0 }, 'coord_transform');
     expect(commands.every((command) => (command.options?.coordinateSystem as any)?.id === 'coord_transform')).toBe(true);
+  });
+
+  it('exposes geometry editing and auxiliary construction commands in the operation tools panel', () => {
+    const tools = operationToolGroups.flatMap((group) => group.tools);
+    const editTool = tools.find((entry) => entry.id === 'geometry-shape-edit-preview');
+    const constructionTool = tools.find((entry) => entry.id === 'auxiliary-construction-preview');
+
+    expect(editTool).toBeDefined();
+    expect(constructionTool).toBeDefined();
+    expect(editTool!.interaction).toEqual({ kind: 'geometry-shape-edit' });
+    expect(findOperationToolById('geometry-shape-edit-preview')).toBe(editTool);
+
+    const editExpressions = editTool!.commands.map((command) => command.expr);
+    expect(editExpressions.filter((expr) => expr.includes('Polygon('))).toHaveLength(2);
+    expect(editExpressions.filter((expr) => expr.includes('Point('))).toHaveLength(6);
+    expect(editExpressions.some((expr) => expr.includes('几何编辑内核'))).toBe(true);
+
+    const constructionExpressions = constructionTool!.commands.map((command) => command.expr);
+    expect(constructionExpressions.filter((expr) => expr.includes('Polygon('))).toHaveLength(1);
+    expect(constructionExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(2);
+    expect(constructionExpressions.some((expr) => expr.includes('自由辅助线构造'))).toBe(true);
+
+    const commands = createOperationScopedCommands(constructionTool!.commands, { x: 0, y: 0 }, 'coord_construct');
+    expect(commands.every((command) => (command.options?.coordinateSystem as any)?.id === 'coord_construct')).toBe(true);
+  });
+
+  it('creates prefixed commands for interactive geometry shape editing', () => {
+    const target = createOperationShapeEditTarget('interactive-edit');
+    const commands = createOperationShapeEditCommands('edit_1', target);
+
+    expect(target.vertices).toEqual([
+      { x: -3.5, y: -2 },
+      { x: 2, y: -2 },
+      { x: -1.5, y: 2.5 }
+    ]);
+    expect(commands.map((command) => command.expr)).toEqual([
+      'edit_1_S1 = (-3.5, -2)',
+      'edit_1_S2 = (2, -2)',
+      'edit_1_S3 = (-1.5, 2.5)',
+      'edit_1_before = Polygon(edit_1_S1, edit_1_S2, edit_1_S3)',
+      'edit_1_E1 = (-3.5, -2)',
+      'edit_1_E2 = (2, -2)',
+      'edit_1_E3 = (-1.5, 2.5)',
+      'edit_1_after = Polygon(edit_1_E1, edit_1_E2, edit_1_E3)'
+    ]);
+    expect(createOperationShapeEditVertexCommand('edit_1', 1, { x: 1.25, y: -0.5 })).toBe('edit_1_E2 = (1.25, -0.5)');
+    expect(formatOperationPointTuple({ x: 0.333333, y: -0 })).toBe('(0.333, 0)');
   });
 });

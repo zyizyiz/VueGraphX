@@ -29,6 +29,7 @@ import {
   type SubjectFunctionFamilyDescriptor,
   type SubjectFunctionProperty
 } from './subjectFunctions';
+import { createSubjectAuxiliaryLineConstructionModel } from './subjectGeometryConstruction';
 
 export type SubjectOverlayTargetKind =
   | 'polygon'
@@ -527,33 +528,27 @@ export const createFreeSubjectAuxiliaryLine = (
   };
   const configured = (line: SubjectAuxiliaryLineDescriptor): SubjectAuxiliaryLineDescriptor => applyLineConfig(line, context);
 
-  if (target.kind === 'polygon') {
-    const clipped = clipLineToPolygon(line, target.vertices, { includeSegmentEndpoints: [start, end] });
-    if (clipped) return configured({ ...base, start: clipped.start, end: clipped.end, meta: { ...base.meta, clipped: true } });
-    if (allowSingleIntersection && lineTouchesPolygon(line, target.vertices, options.snapDistance)) {
-      return configured({ ...base, start: clonePoint(start), end: clonePoint(end), meta: { ...base.meta, snapFallback: true } });
-    }
-    return null;
-  }
-
-  if (target.kind === 'circle') {
-    const intersections = intersectionPoints(intersectLineCircle2D(line, { kind: 'circle', center: target.center, radius: target.radius }));
-    if (intersections.length >= 2) {
-      const [first, second] = extremesAlongLine(intersections, line);
-      return configured({ ...base, start: first, end: second, meta: { ...base.meta, clipped: true } });
-    }
-    if (allowSingleIntersection && intersections.length === 1) {
-      return configured({ ...base, start: clonePoint(start), end: clonePoint(end), meta: { ...base.meta, tangentFallback: true } });
-    }
-    return null;
-  }
-
-  if (target.kind === 'segment') {
-    const intersection = intersectLines2D(line, lineFromPoints(target.start, target.end));
-    if (intersection.kind === 'coincident' || (intersection.kind === 'point' && pointOnSegment2D(intersection.point, segmentFromPoints(target.start, target.end)))) {
-      return configured({ ...base, start: clonePoint(start), end: clonePoint(end), meta: { ...base.meta, snapFallback: true } });
-    }
-    return null;
+  if (isAuxiliaryConstructionTarget(target)) {
+    const construction = createSubjectAuxiliaryLineConstructionModel(target, { start, end }, {
+      id: base.id,
+      label: base.label,
+      style: base.style,
+      state: base.state,
+      selectable: base.selectable,
+      allowSingleIntersection,
+      snapDistance: options.snapDistance,
+      meta: base.meta
+    });
+    if (!construction.candidate) return null;
+    return configured({
+      ...construction.candidate,
+      meta: {
+        ...construction.candidate.meta,
+        ...legacyFreeLineMeta(target, construction.candidate.meta),
+        contactCount: construction.contacts.length,
+        diagnostics: construction.diagnostics.map((diagnostic) => diagnostic.code)
+      }
+    });
   }
 
   return configured({ ...base, start: clonePoint(start), end: clonePoint(end), meta: { ...base.meta, unconstrained: true } });
@@ -601,6 +596,25 @@ export const createSubjectAuxiliaryLineIntersectionAnnotations = (
     state: 'confirmed',
     meta: { lineId: item.lineId }
   }, context));
+};
+
+const isAuxiliaryConstructionTarget = (
+  target: Exclude<SubjectOverlayTarget, SubjectFunctionOverlayTarget>
+): target is SubjectPolygonOverlayTarget | SubjectCircleOverlayTarget | SubjectSegmentOverlayTarget | SubjectLineOverlayTarget | SubjectRayOverlayTarget => (
+  target.kind === 'polygon'
+    || target.kind === 'circle'
+    || target.kind === 'segment'
+    || target.kind === 'line'
+    || target.kind === 'ray'
+);
+
+const legacyFreeLineMeta = (
+  target: Exclude<SubjectOverlayTarget, SubjectFunctionOverlayTarget>,
+  meta: Record<string, unknown> | undefined
+): Record<string, unknown> => {
+  if (meta?.singleContact && target.kind === 'circle') return { tangentFallback: true };
+  if (meta?.singleContact) return { snapFallback: true };
+  return {};
 };
 
 const createGeometryAnnotations = (context: SubjectOverlayComputationContext): SubjectOverlayAnnotation[] => {
@@ -1423,50 +1437,6 @@ const polygonEdges = (vertices: readonly MathPoint2D[]): Array<{ index: number; 
   }))
 );
 
-const clipLineToPolygon = (
-  line: MathLine2D,
-  vertices: readonly MathPoint2D[],
-  options: { includeSegmentEndpoints?: readonly MathPoint2D[] } = {}
-): { start: MathPoint2D; end: MathPoint2D } | null => {
-  const points: MathPoint2D[] = [];
-  for (const edge of polygonEdges(vertices)) {
-    const edgeLine = lineFromPoints(edge.start, edge.end);
-    const intersection = intersectLines2D(line, edgeLine);
-    if (intersection.kind === 'coincident') return null;
-    if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, edge)) points.push(intersection.point);
-  }
-  for (const endpoint of options.includeSegmentEndpoints ?? []) {
-    if (pointInPolygonInclusive(endpoint, vertices)) points.push(endpoint);
-  }
-  const unique = uniquePoints(points, (point) => point);
-  if (unique.length < 2) return null;
-  const [start, end] = extremesAlongLine(unique, line);
-  return { start, end };
-};
-
-const lineTouchesPolygon = (
-  line: MathLine2D,
-  vertices: readonly MathPoint2D[],
-  snapDistance = 0.12
-): boolean => polygonEdges(vertices).some((edge) => {
-  const intersection = intersectLines2D(line, lineFromPoints(edge.start, edge.end));
-  if (intersection.kind === 'coincident') return true;
-  if (intersection.kind !== 'point') return false;
-  return distancePointToSegment(intersection.point, edge) <= snapDistance;
-});
-
-const extremesAlongLine = (
-  points: readonly MathPoint2D[],
-  line: MathLine2D
-): [MathPoint2D, MathPoint2D] => {
-  const sorted = [...points].sort((left, right) => parameterOnLine(left, line) - parameterOnLine(right, line));
-  return [clonePoint(sorted[0]), clonePoint(sorted[sorted.length - 1])];
-};
-
-const parameterOnLine = (point: MathPoint2D, line: MathLine2D): number => (
-  dot2D(subtract2D(point, line.point), line.direction) / Math.max(GRAPH_MATH_EPSILON, dot2D(line.direction, line.direction))
-);
-
 const intersectionPoints = (intersection: MathIntersection2D): MathPoint2D[] => {
   if (intersection.kind === 'point') return [intersection.point];
   if (intersection.kind === 'points') return intersection.points;
@@ -1486,19 +1456,6 @@ const uniquePoints = <T>(
   return unique;
 };
 
-const pointInPolygonInclusive = (point: MathPoint2D, vertices: readonly MathPoint2D[]): boolean => {
-  if (polygonEdges(vertices).some((edge) => pointOnSegment2D(point, edge))) return true;
-  let inside = false;
-  for (let index = 0, previousIndex = vertices.length - 1; index < vertices.length; previousIndex = index, index += 1) {
-    const current = vertices[index];
-    const previous = vertices[previousIndex];
-    const intersects = ((current.y > point.y) !== (previous.y > point.y))
-      && point.x < ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) + current.x;
-    if (intersects) inside = !inside;
-  }
-  return inside;
-};
-
 const pointOnSegment2D = (
   point: MathPoint2D,
   segment: Pick<MathSegment2D, 'start' | 'end'>,
@@ -1509,22 +1466,6 @@ const pointOnSegment2D = (
   if (Math.abs(cross2D(segmentVector, pointVector)) > epsilon * Math.max(1, length2D(segmentVector))) return false;
   const projection = dot2D(pointVector, segmentVector);
   return projection >= -epsilon && projection <= dot2D(segmentVector, segmentVector) + epsilon;
-};
-
-const distancePointToSegment = (
-  point: MathPoint2D,
-  segment: Pick<MathSegment2D, 'start' | 'end'>
-): number => distance2D(point, closestPointOnSegment(point, segment));
-
-const closestPointOnSegment = (
-  point: MathPoint2D,
-  segment: Pick<MathSegment2D, 'start' | 'end'>
-): MathPoint2D => {
-  const vector = subtract2D(segment.end, segment.start);
-  const lengthSquared = dot2D(vector, vector);
-  if (lengthSquared <= GRAPH_MATH_EPSILON) return clonePoint(segment.start);
-  const t = Math.min(1, Math.max(0, dot2D(subtract2D(point, segment.start), vector) / lengthSquared));
-  return add2D(segment.start, scale2D(vector, t));
 };
 
 const projectPointToLine = (point: MathPoint2D, line: MathLine2D): MathPoint2D => {

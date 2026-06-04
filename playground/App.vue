@@ -62,6 +62,8 @@
         <OperationPanel
           v-if="store.activeMode === 'operation'"
           class="flex-1"
+          :active-tool-id="activeOperationToolId"
+          @activate-tool="handleActivateOperationTool"
           @create-commands="handleCreateOperationCommands"
         />
 
@@ -336,6 +338,29 @@
             @pointerup.capture="handleCoreRendererPointerUp"
             @pointercancel.capture="handleCoreRendererPointerUp"
           ></div>
+          <div
+            v-if="operationShapeEditHandleProjections.length > 0"
+            class="pointer-events-none absolute inset-0 z-[11]"
+          >
+            <button
+              v-for="handle in operationShapeEditHandleProjections"
+              v-show="handle.visible"
+              :key="handle.id"
+              type="button"
+              class="operation-shape-edit-handle pointer-events-auto"
+              :class="{ 'operation-shape-edit-handle-active': activeOperationShapeEditDragHandleId === handle.id }"
+              :style="{ left: `${handle.x}px`, top: `${handle.y}px` }"
+              :aria-label="`拖拽 ${handle.label}`"
+              :title="handle.label"
+              data-operation-shape-edit-handle
+              @pointerdown="startOperationShapeEditHandleDrag($event, handle.id)"
+              @pointermove="handleOperationShapeEditHandleMove"
+              @pointerup="handleOperationShapeEditHandleUp"
+              @pointercancel="handleOperationShapeEditHandleUp"
+            >
+              <span>{{ handle.label }}</span>
+            </button>
+          </div>
           <div class="pointer-events-none absolute inset-0 z-[12]">
             <div
               v-if="businessOverlayPosition"
@@ -400,6 +425,12 @@ import {
   type GraphPickResult,
   type GraphRuntimeSelectionChangeEvent
 } from '@vuegraphx/core';
+import {
+  createSubjectShapeEditHandles,
+  createSubjectShapeEditModel,
+  type MathPoint2D,
+  type SubjectShapeEditHandleDescriptor
+} from '@vuegraphx/math';
 import { createCanvas2DGraphBackend, type Canvas2DGraphBackend, type CanvasWorldBounds } from '@vuegraphx/backend-canvas2d';
 import {
   createBabylonGraphBackend,
@@ -424,23 +455,54 @@ import OperationPanel from './components/OperationPanel.vue';
 import RelationPanel from './components/RelationPanel.vue';
 import {
   OPERATION_COMMANDS_MIME,
+  OPERATION_TOOL_MIME,
   alignOperationCoordinateSystemOriginToGrid,
   clampOperationCoordinateSystemOrigin,
+  createOperationShapeEditCommands,
+  createOperationShapeEditTarget,
+  createOperationShapeEditVertexCommand,
   createOperationScopedCommands,
+  findOperationToolById,
   resolveOperationCommandOrigin,
   updateOperationCoordinateSystemOrigin,
-  type OperationCoordinateSystemRuntimeOptions
+  type OperationCoordinateSystemRuntimeOptions,
+  type OperationShapeEditPolygonTarget,
+  type OperationTool
 } from './operationTools';
 import { registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 import {
   classifyCoreRendererWheelGesture,
+  fitBoundsToViewportAspect,
   panFittedBoundsByPointerDelta,
   panFittedBoundsByWheelDelta,
   zoomFittedBoundsAroundClientPoint
 } from './viewportBounds';
 
 let nextOperationCoordinateSystemSequence = 1;
+let nextOperationShapeEditSequence = 1;
+
+const OPERATION_SHAPE_EDIT_LOG_PREFIX = '[VueGraphX operation shape edit]';
+
+const debugOperationShapeEdit = (message: string, data?: Record<string, unknown>) => {
+  console.info(OPERATION_SHAPE_EDIT_LOG_PREFIX, message, data ?? {});
+};
+
+const readOperationToolFromDrop = (event: DragEvent): OperationTool | null => {
+  const raw = event.dataTransfer?.getData(OPERATION_TOOL_MIME);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const toolId = (parsed as { id?: unknown }).id;
+    return typeof toolId === 'string' ? findOperationToolById(toolId) : null;
+  } catch (error) {
+    debugOperationShapeEdit('drop tool payload parse failed', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return null;
+  }
+};
 
 const readOperationCommandsFromDrop = (event: DragEvent): CommandInput[] | null => {
   const raw = event.dataTransfer?.getData(OPERATION_COMMANDS_MIME);
@@ -465,6 +527,11 @@ const readOperationCommandsFromDrop = (event: DragEvent): CommandInput[] | null 
 
 const onDrop = (e: DragEvent) => {
   e.preventDefault();
+  const operationTool = readOperationToolFromDrop(e);
+  if (operationTool?.interaction) {
+    handleActivateOperationTool(operationTool, getCoreLocalPoint(e));
+    return;
+  }
   const operationCommands = readOperationCommandsFromDrop(e);
   if (operationCommands) {
     handleCreateOperationCommands(operationCommands, getCoreLocalPoint(e));
@@ -510,6 +577,9 @@ const isSidebarBottomResizing = ref(false);
 const coreViewportBounds = ref<CanvasWorldBounds>({ ...PLAYGROUND_CANVAS_WORLD_BOUNDS });
 const coreInteractionDiagnostics = ref<string[]>([]);
 const businessOverlayRefreshKey = ref(0);
+const operationShapeEditSession = ref<OperationShapeEditSession | null>(null);
+const activeOperationShapeEditDragHandleId = ref('');
+const operationShapeEditProjectionRevision = ref(0);
 
 interface CoreRuntimeSelectionProjection {
   primaryObjectId: string;
@@ -559,9 +629,31 @@ interface CoordinateSystemDragSession {
   lastWorldPoint: { dimension: '2d'; x: number; y: number };
 }
 
+interface OperationShapeEditSession {
+  toolId: string;
+  coordinateSystemId: string;
+  commandPrefix: string;
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions;
+  target: OperationShapeEditPolygonTarget;
+  commandIdsByVertex: readonly string[];
+}
+
+interface OperationShapeEditHandleProjection extends SubjectShapeEditHandleDescriptor {
+  x: number;
+  y: number;
+  visible: boolean;
+}
+
+interface OperationShapeEditDragSession {
+  pointerId: number;
+  handleId: string;
+  element: HTMLElement;
+}
+
 let corePanSession: CorePanSession | null = null;
 let corePinchSession: CorePinchSession | null = null;
 let coordinateSystemDragSession: CoordinateSystemDragSession | null = null;
+let operationShapeEditDragSession: OperationShapeEditDragSession | null = null;
 const corePointers = new Map<number, GraphClientPoint>();
 let disposeViewportChangeSubscription: (() => void) | null = null;
 let disposeCoreRuntimeSelectionSubscription: (() => void) | null = null;
@@ -577,6 +669,35 @@ const supportsBabylonRenderer = computed(() => isBackendSelectableForMode(store.
 const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'canvas2d' && supportsCanvasRenderer.value);
 const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
 const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
+const activeOperationToolId = computed(() => operationShapeEditSession.value?.toolId ?? '');
+const operationShapeEditHandleProjections = computed<OperationShapeEditHandleProjection[]>(() => {
+  operationShapeEditProjectionRevision.value;
+  void coreViewportBounds.value;
+  void businessOverlayRefreshKey.value;
+  const session = operationShapeEditSession.value;
+  if (!session || store.activeMode !== 'operation') return [];
+
+  const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
+  const viewport = getGraphViewportSize();
+  const bounds = getOperationVisiblePlacementBounds();
+  const width = Math.max(1, viewport.width);
+  const height = Math.max(1, viewport.height);
+  const spanX = bounds.right - bounds.left;
+  const spanY = bounds.top - bounds.bottom;
+  if (!Number.isFinite(spanX) || !Number.isFinite(spanY) || Math.abs(spanX) < 1e-9 || Math.abs(spanY) < 1e-9) return [];
+
+  return createSubjectShapeEditHandles(session.target).map((handle) => {
+    const world = operationLocalPointToWorld(handle.point, coordinateSystem);
+    const x = ((world.x - bounds.left) / spanX) * width;
+    const y = ((bounds.top - world.y) / spanY) * height;
+    return {
+      ...handle,
+      x,
+      y,
+      visible: Number.isFinite(x) && Number.isFinite(y) && x >= -24 && x <= width + 24 && y >= -24 && y <= height + 24
+    };
+  });
+});
 const businessOverlayPosition = computed(() => {
   businessOverlayRefreshKey.value;
   if (store.activeMode === '3d') return null;
@@ -697,6 +818,7 @@ const waitForUiPaint = async () => {
 
 const refreshBusinessOverlayPosition = () => {
   businessOverlayRefreshKey.value += 1;
+  refreshOperationShapeEditProjection();
 };
 
 const getBoardOptionsForCurrentMode = (mode: PlaygroundMode) => getBoardOptionsForPlaygroundMode(mode, getGraphViewportSize());
@@ -768,7 +890,7 @@ const getCoreLocalPoint = (event: Pick<PointerEvent | WheelEvent | DragEvent, 'c
 };
 
 const getWorldPointForOperationDrop = (point: GraphClientPoint | null): { x: number; y: number } => {
-  const bounds = getOperationPlacementBounds();
+  const bounds = getOperationVisiblePlacementBounds();
   return resolveOperationCommandOrigin(point, getGraphViewportSize(), bounds);
 };
 
@@ -779,9 +901,308 @@ const getOperationPlacementBounds = (): CanvasWorldBounds => {
     : coreViewportBounds.value;
 };
 
+const getOperationVisiblePlacementBounds = (): CanvasWorldBounds => {
+  const bounds = getOperationPlacementBounds();
+  return isCoreRendererActive.value ? fitBoundsToViewportAspect(bounds, getGraphViewportSize()) : bounds;
+};
+
 const getWorldPointForCanvasPoint = (point: GraphClientPoint): { dimension: '2d'; x: number; y: number } => {
   const world = getWorldPointForOperationDrop(point);
   return { dimension: '2d', ...world };
+};
+
+const operationLocalPointToWorld = (
+  point: MathPoint2D,
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): { x: number; y: number } => ({
+  x: coordinateSystem.origin.x + point.x * coordinateSystem.unitScale,
+  y: coordinateSystem.origin.y + point.y * coordinateSystem.unitScale
+});
+
+const operationWorldPointToLocal = (
+  point: { x: number; y: number },
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): MathPoint2D => ({
+  x: (point.x - coordinateSystem.origin.x) / coordinateSystem.unitScale,
+  y: (point.y - coordinateSystem.origin.y) / coordinateSystem.unitScale
+});
+
+const clampOperationShapeEditPoint = (
+  point: MathPoint2D,
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): MathPoint2D => ({
+  x: clampNumber(point.x, coordinateSystem.xRange.min, coordinateSystem.xRange.max),
+  y: clampNumber(point.y, coordinateSystem.yRange.min, coordinateSystem.yRange.max)
+});
+
+const clampNumber = (value: number, min: number, max: number) => {
+  if (!Number.isFinite(value)) return Number.isFinite(min) ? min : 0;
+  return Math.max(min, Math.min(max, value));
+};
+
+const handleActivateOperationTool = (tool: OperationTool, dropPoint: GraphClientPoint | null = null) => {
+  debugOperationShapeEdit('activate tool', {
+    toolId: tool.id,
+    interaction: tool.interaction ?? null,
+    dropPoint
+  });
+  if (tool.interaction?.kind === 'geometry-shape-edit') {
+    createOperationShapeEditSession(tool.id, dropPoint);
+    return;
+  }
+  handleCreateOperationCommands(tool.commands, dropPoint);
+};
+
+const createOperationShapeEditSession = (toolId: string, dropPoint: GraphClientPoint | null = null) => {
+  if (store.activeMode !== 'operation') return;
+  clearOperationShapeEditSession();
+  activeDemo.value = -1;
+
+  const coordinateSystemId = `coord_${nextOperationCoordinateSystemSequence++}`;
+  const commandPrefix = `edit_${nextOperationShapeEditSequence++}`;
+  const target = createOperationShapeEditTarget(`${commandPrefix}_target`);
+  const bounds = getOperationVisiblePlacementBounds();
+  const origin = getWorldPointForOperationDrop(dropPoint);
+  const scopedCommands = createOperationScopedCommands(
+    createOperationShapeEditCommands(commandPrefix, target),
+    origin,
+    coordinateSystemId,
+    bounds
+  );
+  const coordinateSystem = (scopedCommands[0]?.options as { coordinateSystem?: OperationCoordinateSystemRuntimeOptions } | undefined)?.coordinateSystem;
+  if (!coordinateSystem) {
+    pushCoreInteractionDiagnostic('shape edit failed: coordinate system was not created');
+    return;
+  }
+
+  const previousCommandCount = store.commands.length;
+  store.appendCommands(scopedCommands);
+  const insertedCommands = store.commands.slice(previousCommandCount, previousCommandCount + scopedCommands.length);
+  const commandIdsByVertex = target.vertices.map((_, index) => (
+    insertedCommands.find((command) => command.expression.startsWith(`${commandPrefix}_E${index + 1} =`))?.id ?? ''
+  ));
+
+  if (commandIdsByVertex.some((id) => !id)) {
+    pushCoreInteractionDiagnostic('shape edit failed: editable vertex commands were not found');
+    return;
+  }
+
+  operationShapeEditSession.value = {
+    toolId,
+    coordinateSystemId,
+    commandPrefix,
+    coordinateSystem,
+    target,
+    commandIdsByVertex
+  };
+  debugOperationShapeEdit('session created', {
+    toolId,
+    coordinateSystemId,
+    commandPrefix,
+    origin,
+    coordinateSystem,
+    commandIdsByVertex,
+    vertices: target.vertices
+  });
+  refreshOperationShapeEditProjection();
+  nextTick(() => {
+    syncAllToEngine({ keepSelection: coordinateSystemId });
+    refreshOperationShapeEditProjection();
+  });
+};
+
+const startOperationShapeEditHandleDrag = (event: PointerEvent, handleId: string) => {
+  const session = operationShapeEditSession.value;
+  if (!session) {
+    debugOperationShapeEdit('pointerdown ignored: no active session', { handleId });
+    return;
+  }
+  const element = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  if (!element) {
+    debugOperationShapeEdit('pointerdown ignored: missing currentTarget element', { handleId });
+    return;
+  }
+
+  operationShapeEditDragSession = { pointerId: event.pointerId, handleId, element };
+  activeOperationShapeEditDragHandleId.value = handleId;
+  corePanSession = null;
+  corePinchSession = null;
+  coordinateSystemDragSession = null;
+  element.setPointerCapture?.(event.pointerId);
+  window.addEventListener('pointermove', handleOperationShapeEditHandleMove);
+  window.addEventListener('pointerup', handleOperationShapeEditHandleUp);
+  window.addEventListener('pointercancel', handleOperationShapeEditHandleUp);
+  document.body.classList.add('operation-shape-edit-drag-active');
+  debugOperationShapeEdit('pointerdown', {
+    pointerId: event.pointerId,
+    handleId,
+    client: { x: event.clientX, y: event.clientY },
+    elementClass: element.className,
+    elementFromPoint: describeElementAtPoint(event.clientX, event.clientY)
+  });
+  applyOperationShapeEditDrag(event);
+  suppressOperationShapeEditEvent(event);
+};
+
+const handleOperationShapeEditHandleMove = (event: PointerEvent) => {
+  if (operationShapeEditDragSession?.pointerId !== event.pointerId) return;
+  debugOperationShapeEdit('pointermove', {
+    pointerId: event.pointerId,
+    handleId: operationShapeEditDragSession.handleId,
+    client: { x: event.clientX, y: event.clientY }
+  });
+  applyOperationShapeEditDrag(event);
+  suppressOperationShapeEditEvent(event);
+};
+
+const handleOperationShapeEditHandleUp = (event: PointerEvent) => {
+  if (operationShapeEditDragSession?.pointerId !== event.pointerId) return;
+  debugOperationShapeEdit(event.type, {
+    pointerId: event.pointerId,
+    handleId: operationShapeEditDragSession.handleId,
+    client: { x: event.clientX, y: event.clientY }
+  });
+  applyOperationShapeEditDrag(event);
+  clearOperationShapeEditDragSession();
+  suppressOperationShapeEditEvent(event);
+};
+
+const applyOperationShapeEditDrag = (event: PointerEvent) => {
+  const dragSession = operationShapeEditDragSession;
+  const session = operationShapeEditSession.value;
+  if (!dragSession || !session) return;
+
+  const point = getOperationShapeEditLocalPoint(event, session);
+  if (!point) {
+    debugOperationShapeEdit('drag ignored: local point unavailable', {
+      pointerId: event.pointerId,
+      handleId: dragSession.handleId,
+      client: { x: event.clientX, y: event.clientY }
+    });
+    return;
+  }
+  const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
+  const model = createSubjectShapeEditModel(session.target, {
+    handleId: dragSession.handleId,
+    point
+  }, {
+    bounds: {
+      minX: coordinateSystem.xRange.min,
+      minY: coordinateSystem.yRange.min,
+      maxX: coordinateSystem.xRange.max,
+      maxY: coordinateSystem.yRange.max
+    },
+    boundsMode: 'reject',
+    snapToGrid: { enabled: true, step: 0.5, tolerance: 0.25 },
+    minPolygonArea: 0.05
+  });
+  if (!model.applied || model.after.kind !== 'polygon') {
+    const error = model.diagnostics.find((diagnostic) => diagnostic.severity === 'error');
+    if (error) pushCoreInteractionDiagnostic(error.message);
+    debugOperationShapeEdit('drag rejected', {
+      pointerId: event.pointerId,
+      handleId: dragSession.handleId,
+      localPoint: point,
+      diagnostics: model.diagnostics
+    });
+    return;
+  }
+
+  const nextSession: OperationShapeEditSession = {
+    ...session,
+    coordinateSystem,
+    target: model.after
+  };
+  operationShapeEditSession.value = nextSession;
+  updateOperationShapeEditCommands(nextSession);
+  refreshOperationShapeEditProjection();
+  syncAllToEngine({ keepSelection: session.coordinateSystemId });
+  debugOperationShapeEdit('drag applied', {
+    pointerId: event.pointerId,
+    handleId: dragSession.handleId,
+    localPoint: point,
+    vertices: nextSession.target.vertices,
+    diagnostics: model.diagnostics,
+    updatedCommands: nextSession.commandIdsByVertex.map((commandId, index) => ({
+      commandId,
+      expression: createOperationShapeEditVertexCommand(nextSession.commandPrefix, index, nextSession.target.vertices[index])
+    }))
+  });
+};
+
+const getOperationShapeEditLocalPoint = (
+  event: PointerEvent,
+  session: OperationShapeEditSession
+): MathPoint2D | null => {
+  const localPoint = getCoreLocalPoint(event);
+  if (!localPoint) return null;
+  const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
+  const worldPoint = getWorldPointForCanvasPoint(localPoint);
+  return clampOperationShapeEditPoint(operationWorldPointToLocal(worldPoint, coordinateSystem), coordinateSystem);
+};
+
+const updateOperationShapeEditCommands = (session: OperationShapeEditSession) => {
+  session.target.vertices.forEach((vertex, index) => {
+    const commandId = session.commandIdsByVertex[index];
+    if (commandId) store.updateCommand(commandId, createOperationShapeEditVertexCommand(session.commandPrefix, index, vertex));
+  });
+};
+
+const refreshOperationShapeEditProjection = () => {
+  operationShapeEditProjectionRevision.value += 1;
+};
+
+const clearOperationShapeEditSession = () => {
+  clearOperationShapeEditDragSession();
+  if (operationShapeEditSession.value) {
+    debugOperationShapeEdit('session cleared', {
+      coordinateSystemId: operationShapeEditSession.value.coordinateSystemId,
+      commandPrefix: operationShapeEditSession.value.commandPrefix
+    });
+  }
+  operationShapeEditSession.value = null;
+  refreshOperationShapeEditProjection();
+};
+
+const clearOperationShapeEditDragSession = () => {
+  if (operationShapeEditDragSession) {
+    try {
+      operationShapeEditDragSession.element.releasePointerCapture?.(operationShapeEditDragSession.pointerId);
+    } catch {
+      // Pointer capture can already be released by the browser when the drag ends.
+    }
+  }
+  operationShapeEditDragSession = null;
+  activeOperationShapeEditDragHandleId.value = '';
+  window.removeEventListener('pointermove', handleOperationShapeEditHandleMove);
+  window.removeEventListener('pointerup', handleOperationShapeEditHandleUp);
+  window.removeEventListener('pointercancel', handleOperationShapeEditHandleUp);
+  document.body.classList.remove('operation-shape-edit-drag-active');
+};
+
+const describeElementAtPoint = (clientX: number, clientY: number): Record<string, unknown> | null => {
+  const element = document.elementFromPoint(clientX, clientY);
+  if (!(element instanceof HTMLElement)) return null;
+  return {
+    tagName: element.tagName,
+    id: element.id,
+    className: element.className,
+    dataset: { ...element.dataset }
+  };
+};
+
+const shouldClearOperationShapeEditSessionForCommand = (commandId: string): boolean => {
+  const session = operationShapeEditSession.value;
+  if (!session) return false;
+  return session.commandIdsByVertex.includes(commandId)
+    || store.commands.find((command) => command.id === commandId)?.expression.startsWith(`${session.coordinateSystemId} =`) === true
+    || store.commands.find((command) => command.id === commandId)?.expression.startsWith(`${session.commandPrefix}_`) === true;
+};
+
+const suppressOperationShapeEditEvent = (event: PointerEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
 };
 
 const isCoordinateSystemDraggableNode = (node: { type?: string; meta?: Record<string, unknown>; renderHints?: Record<string, unknown> } | null | undefined): boolean => (
@@ -961,7 +1382,7 @@ const applyOperationCoordinateSystemDragDelta = (
     y: coordinateSystem.origin.y + delta.dy
   };
   nextOrigin = applyOperationCoordinateSystemSnap(nextOrigin, coordinateSystem, dragPhase);
-  const bounds = getOperationPlacementBounds();
+  const bounds = getOperationVisiblePlacementBounds();
   const originOptions = {
     unitScale: coordinateSystem.unitScale,
     xRange: coordinateSystem.xRange,
@@ -1045,7 +1466,7 @@ const clampCoordinateSystemDragDelta = (
   const nextOrigin = clampOperationCoordinateSystemOrigin({
     x: origin.x + delta.dx,
     y: origin.y + delta.dy
-  }, getOperationPlacementBounds(), {
+  }, getOperationVisiblePlacementBounds(), {
     unitScale,
     xRange: { min: xRange.min, max: xRange.max },
     yRange: { min: yRange.min, max: yRange.max }
@@ -1399,6 +1820,7 @@ const destroyPrimaryRenderer = () => {
   corePanSession = null;
   corePinchSession = null;
   coordinateSystemDragSession = null;
+  clearOperationShapeEditDragSession();
   corePointers.clear();
   stopViewportChangeSubscription();
   stopCoreRuntimeSelectionSubscription();
@@ -1616,6 +2038,7 @@ onUnmounted(() => {
 
 const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolean } = {}) => {
   if (store.activeMode === mode) return;
+  clearOperationShapeEditSession();
   store.activeMode = mode;
   activeDemo.value = -1;
   if (!isRendererBackendSupported(activeRendererBackend.value)) {
@@ -1655,8 +2078,9 @@ const handleRendererBackendChange = (event: Event) => {
 
 const handleCreateOperationCommands = (commands: readonly CommandInput[], dropPoint: GraphClientPoint | null = null) => {
   if (commands.length === 0) return;
+  clearOperationShapeEditSession();
   activeDemo.value = -1;
-  const bounds = getOperationPlacementBounds();
+  const bounds = getOperationVisiblePlacementBounds();
   const origin = getWorldPointForOperationDrop(dropPoint);
   const nextCommands = store.activeMode === 'operation'
     ? createOperationScopedCommands(
@@ -1699,6 +2123,9 @@ const executeSingle = (id: string) => {
 };
 
 const removeLine = (id: string) => {
+  if (shouldClearOperationShapeEditSessionForCommand(id)) {
+    clearOperationShapeEditSession();
+  }
   store.removeCommand(id);
   if (isCoreRendererActive.value) {
     syncAllToEngine();
@@ -1708,6 +2135,7 @@ const removeLine = (id: string) => {
 };
 
 const clearAll = () => {
+  clearOperationShapeEditSession();
   store.clearCommands();
   activeDemo.value = -1;
   resetCoreRuntimeSelection();
@@ -1779,6 +2207,7 @@ const applyCoreRuntimeSelection = (
 const loadSelectedDemo = (idx: number) => {
   const demo = currentDemos.value[idx];
   if (!demo) return;
+  clearOperationShapeEditSession();
   activeDemo.value = idx;
   store.injectDemo(store.activeMode, demo.commands);
   // 使用 resetBoard 完全重置 JSXGraph 内部状态，避免 clearBoard/removeObject 的副作用
@@ -1815,6 +2244,7 @@ const handleExportScene = () => {
 
 const handleImportScene = async () => {
   showScenePanel.value = true;
+  clearOperationShapeEditSession();
   activeDemo.value = -1;
   const result = await importSceneDocument();
   if (result?.scene && engineRef.value) {
@@ -1895,6 +2325,47 @@ body.sidebar-resize-active {
 }
 
 #vuegraphx-mount.core-interaction-surface:active {
+  cursor: grabbing;
+}
+
+.operation-shape-edit-handle {
+  position: absolute;
+  width: 1.45rem;
+  height: 1.45rem;
+  transform: translate(-50%, -50%);
+  border: 2px solid #0f766e;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f766e;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
+  cursor: grab;
+  touch-action: none;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.operation-shape-edit-handle span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.operation-shape-edit-handle:hover,
+.operation-shape-edit-handle:focus-visible,
+.operation-shape-edit-handle-active {
+  border-color: #0d9488;
+  background: #ccfbf1;
+  box-shadow: 0 10px 26px rgba(13, 148, 136, 0.3);
+  outline: none;
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.operation-shape-edit-handle-active,
+body.operation-shape-edit-drag-active {
   cursor: grabbing;
 }
 
