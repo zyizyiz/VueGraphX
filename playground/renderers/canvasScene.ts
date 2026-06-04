@@ -18,7 +18,8 @@ import {
   snapPointToGraphGrid,
   type CurriculumBackendId,
   type GraphObjectNode,
-  type NormalizedParitySnapshot
+  type NormalizedParitySnapshot,
+  type StandardCoordinateAxisTickStrategy
 } from '@vuegraphx/core';
 import { compileGraphCommand, normalizeLegacyGraphExpression, type GraphCommandSymbolTable } from '@vuegraphx/commands';
 
@@ -54,6 +55,10 @@ interface OperationCoordinateSystemRuntimeOptions {
   xRange: { min: number; max: number };
   yRange: { min: number; max: number };
   snapToGrid?: unknown;
+  tickPolicy?: {
+    x?: StandardCoordinateAxisTickStrategy;
+    y?: StandardCoordinateAxisTickStrategy;
+  };
 }
 
 export const PLAYGROUND_CANVAS_WORLD_BOUNDS = {
@@ -452,7 +457,9 @@ const createOperationCoordinateSystemGeometry = (coordinateSystem: OperationCoor
     showTicks: true,
     showLabels: true,
     includeGrid: false,
-    includeBorder: false
+    includeBorder: false,
+    xTickStrategy: coordinateSystem.tickPolicy?.x,
+    yTickStrategy: coordinateSystem.tickPolicy?.y
   })
 );
 
@@ -474,15 +481,64 @@ const readOperationCoordinateSystemOptions = (
   if (!id || originX === null || originY === null || unitScale === null || unitScale <= 0) return null;
   if (xMin === null || xMax === null || yMin === null || yMax === null || xMax <= xMin || yMax <= yMin) return null;
   const resolvedOrigin = readOperationCoordinateSystemOrigin({ x: originX, y: originY }, value?.snapToGrid);
+  const tickPolicy = readOperationCoordinateTickPolicy(value?.tickPolicy);
   return {
     id,
     origin: resolvedOrigin,
     unitScale,
     xRange: { min: xMin, max: xMax },
     yRange: { min: yMin, max: yMax },
-    snapToGrid: value?.snapToGrid
+    snapToGrid: value?.snapToGrid,
+    ...(tickPolicy ? { tickPolicy } : {})
   };
 };
+
+const readOperationCoordinateTickPolicy = (
+  value: unknown
+): OperationCoordinateSystemRuntimeOptions['tickPolicy'] | null => {
+  const record = asRecord(value);
+  if (!record) return null;
+  const x = readOperationCoordinateTickStrategy(record.x);
+  const y = readOperationCoordinateTickStrategy(record.y);
+  if (!x && !y) return null;
+  return {
+    ...(x ? { x } : {}),
+    ...(y ? { y } : {})
+  };
+};
+
+const readOperationCoordinateTickStrategy = (
+  value: unknown
+): StandardCoordinateAxisTickStrategy | null => {
+  const record = asRecord(value);
+  if (!record) return null;
+  const kind = record?.kind;
+  if (kind !== 'integer' && kind !== 'step' && kind !== 'pi' && kind !== 'custom') return null;
+  const step = readFiniteNumber(record.step);
+  const origin = readFiniteNumber(record.origin);
+  const piMultiple = readFiniteNumber(record.piMultiple);
+  return {
+    kind,
+    ...(step !== null ? { step } : {}),
+    ...(origin !== null ? { origin } : {}),
+    ...(piMultiple !== null ? { piMultiple } : {}),
+    ...(Array.isArray(record.labels) ? { labels: readOperationCoordinateCustomTicks(record.labels) } : {})
+  };
+};
+
+const readOperationCoordinateCustomTicks = (
+  values: readonly unknown[]
+): StandardCoordinateAxisTickStrategy['labels'] => values
+  .map((entry) => {
+    const record = asRecord(entry);
+    const value = readFiniteNumber(record?.value);
+    if (value === null) return null;
+    return {
+      value,
+      ...(typeof record?.label === 'string' ? { label: record.label } : {})
+    };
+  })
+  .filter((entry): entry is { value: number; label?: string } => entry !== null);
 
 const readOperationCoordinateSystemOrigin = (
   origin: { x: number; y: number },

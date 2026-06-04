@@ -1,6 +1,6 @@
 # VueGraphX renderer-agnostic runtime architecture
 
-Date reviewed: 2026-05-25.
+Date reviewed: 2026-06-04.
 
 VueGraphX is split by authority, not by renderer preference:
 
@@ -45,6 +45,14 @@ The backend may hold JSXGraph elements, Babylon meshes, Pixi containers, Fabric 
 JSXGraph is no longer treated as the math authority. It can still render analytic objects in the JSXGraph adapter, but point/vector/line/circle/polygon relations, intersections, transforms, command dependency resolution, and capability availability are owned by VueGraphX math/core.
 
 Canvas2D is the baseline proof: because it has no retained math object model, it forces VueGraphX to provide its own math and hit testing. Babylon is the 3D proof: picking and render-loop ownership are injected through a runtime port so Babylon mesh/camera/material types do not leak into core.
+
+## Subject tool primitives
+
+Subject-tool behavior is represented as renderer-free primitives, not as packaged UI components. Applications own menus, panels, tabs, icons, and theme chrome; VueGraphX exposes serializable policies and math descriptors that those UIs can drive.
+
+- `@vuegraphx/core` owns subject canvas state, coordinate-system policy, tick strategies, color allocation, object drag policy, and scene payload serialization. Coordinate-system defaults remain package defaults unless callers pass options.
+- `@vuegraphx/math` owns subject function/equation descriptors, sampling, dynamic points, computed properties, annotations, and auxiliary-line candidates for common function and conic families.
+- Backends consume the resulting scene payloads and overlay descriptors. Canvas2D remains the active 2D subject backend; Babylon remains scoped to native 3D solid rendering and picking.
 
 ## Existing JSXGraph mainline integration
 

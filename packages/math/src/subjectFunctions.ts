@@ -10,11 +10,25 @@ import {
 export type SubjectFunctionFamilyKind =
   | 'linear'
   | 'quadratic'
+  | 'inverse'
+  | 'power'
+  | 'exponential'
+  | 'logarithmic'
+  | 'normal-density'
+  | 'sine'
+  | 'cosine'
+  | 'tangent'
   | 'piecewise'
   | 'composite'
   | 'line-equation'
   | 'circle-equation'
+  | 'ellipse-equation'
+  | 'hyperbola-equation'
+  | 'parabola-equation'
   | 'custom';
+
+export type SubjectConicAxis = 'x' | 'y';
+export type SubjectParabolaDirection = 'right' | 'left' | 'up' | 'down';
 
 export type SubjectDomainEndpoint = number | null;
 export type SubjectFunctionAnnotationKind =
@@ -24,6 +38,9 @@ export type SubjectFunctionAnnotationKind =
   | 'axis'
   | 'vertex'
   | 'center'
+  | 'focus'
+  | 'asymptote'
+  | 'directrix'
   | 'radius'
   | 'dynamic-point';
 
@@ -232,6 +249,135 @@ export const createQuadraticSubjectFunction = (
   });
 };
 
+export const createInverseSubjectFunction = (
+  options: CreateSubjectFunctionDescriptorOptions & { scale?: number; horizontalShift?: number; verticalShift?: number } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const a = finiteNumber(options.scale, options.parameters?.a ?? 1);
+  const h = finiteNumber(options.horizontalShift, options.parameters?.h ?? 0);
+  const k = finiteNumber(options.verticalShift, options.parameters?.k ?? 0);
+  const variable = options.variable ?? 'x';
+  return createDescriptor({
+    id: options.id ?? 'inverse',
+    kind: 'inverse',
+    variable,
+    expression: `${a} / (${variable} - ${h}) + ${k}`,
+    parameters: { a, h, k, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ a, h, k }),
+    domain: normalizeSubjectDomain(options.domain ?? createPuncturedDomain(h)),
+    meta: options.meta
+  });
+};
+
+export const createPowerSubjectFunction = (
+  options: CreateSubjectFunctionDescriptorOptions & { coefficient?: number; exponent?: number; verticalShift?: number } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const a = finiteNumber(options.coefficient, options.parameters?.a ?? 1);
+  const n = finiteNumber(options.exponent, options.parameters?.n ?? 3);
+  const k = finiteNumber(options.verticalShift, options.parameters?.k ?? 0);
+  const variable = options.variable ?? 'x';
+  return createDescriptor({
+    id: options.id ?? 'power',
+    kind: 'power',
+    variable,
+    expression: `${a} * ${variable}^${n} + ${k}`,
+    parameters: { a, n, k, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ a, n, k }),
+    domain: normalizeSubjectDomain(options.domain),
+    meta: options.meta
+  });
+};
+
+export const createExponentialSubjectFunction = (
+  options: CreateSubjectFunctionDescriptorOptions & { coefficient?: number; base?: number; verticalShift?: number } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const a = finiteNumber(options.coefficient, options.parameters?.a ?? 1);
+  const base = finiteLogBase(options.base, options.parameters?.base ?? 2);
+  const k = finiteNumber(options.verticalShift, options.parameters?.k ?? 0);
+  const variable = options.variable ?? 'x';
+  return createDescriptor({
+    id: options.id ?? 'exponential',
+    kind: 'exponential',
+    variable,
+    expression: `${a} * ${base}^${variable} + ${k}`,
+    parameters: { a, base, k, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ a, base, k }),
+    domain: normalizeSubjectDomain(options.domain),
+    meta: options.meta
+  });
+};
+
+export const createLogarithmicSubjectFunction = (
+  options: CreateSubjectFunctionDescriptorOptions & { coefficient?: number; base?: number; horizontalShift?: number; verticalShift?: number } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const a = finiteNumber(options.coefficient, options.parameters?.a ?? 1);
+  const base = finiteLogBase(options.base, options.parameters?.base ?? 2);
+  const h = finiteNumber(options.horizontalShift, options.parameters?.h ?? 0);
+  const k = finiteNumber(options.verticalShift, options.parameters?.k ?? 0);
+  const variable = options.variable ?? 'x';
+  return createDescriptor({
+    id: options.id ?? 'logarithmic',
+    kind: 'logarithmic',
+    variable,
+    expression: `${a} * log(${variable} - ${h}) / log(${base}) + ${k}`,
+    parameters: { a, base, h, k, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ a, base, h, k }),
+    domain: normalizeSubjectDomain(options.domain ?? createSubjectDomain([createSubjectDomainInterval(h, null, { minClosed: false })])),
+    meta: options.meta
+  });
+};
+
+export const createNormalDensitySubjectFunction = (
+  options: CreateSubjectFunctionDescriptorOptions & { mean?: number; standardDeviation?: number } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const mu = finiteNumber(options.mean, options.parameters?.mu ?? 0);
+  const sigma = Math.max(1e-9, finiteNumber(options.standardDeviation, options.parameters?.sigma ?? 1));
+  const variable = options.variable ?? 'x';
+  return createDescriptor({
+    id: options.id ?? 'normal-density',
+    kind: 'normal-density',
+    variable,
+    expression: `1 / (${sigma} * sqrt(2 * pi)) * exp(-1 * (${variable} - ${mu})^2 / (2 * ${sigma}^2))`,
+    parameters: { mu, sigma, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ mu, sigma }),
+    domain: normalizeSubjectDomain(options.domain),
+    meta: options.meta
+  });
+};
+
+export const createTrigonometricSubjectFunction = (
+  kind: Extract<SubjectFunctionFamilyKind, 'sine' | 'cosine' | 'tangent'>,
+  options: CreateSubjectFunctionDescriptorOptions & { amplitude?: number; frequency?: number; phase?: number; verticalShift?: number } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const a = finiteNumber(options.amplitude, options.parameters?.a ?? 1);
+  const b = finiteNumber(options.frequency, options.parameters?.b ?? 1);
+  const c = finiteNumber(options.phase, options.parameters?.c ?? 0);
+  const d = finiteNumber(options.verticalShift, options.parameters?.d ?? 0);
+  const variable = options.variable ?? 'x';
+  const fn = kind === 'sine' ? 'sin' : kind === 'cosine' ? 'cos' : 'tan';
+  return createDescriptor({
+    id: options.id ?? kind,
+    kind,
+    variable,
+    expression: `${a} * ${fn}(${b} * ${variable} + ${c}) + ${d}`,
+    parameters: { a, b, c, d, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ a, b, c, d }),
+    domain: normalizeSubjectDomain(options.domain),
+    meta: options.meta
+  });
+};
+
+export const createSineSubjectFunction = (
+  options: Parameters<typeof createTrigonometricSubjectFunction>[1] = {}
+): SubjectFunctionFamilyDescriptor => createTrigonometricSubjectFunction('sine', options);
+
+export const createCosineSubjectFunction = (
+  options: Parameters<typeof createTrigonometricSubjectFunction>[1] = {}
+): SubjectFunctionFamilyDescriptor => createTrigonometricSubjectFunction('cosine', options);
+
+export const createTangentSubjectFunction = (
+  options: Parameters<typeof createTrigonometricSubjectFunction>[1] = {}
+): SubjectFunctionFamilyDescriptor => createTrigonometricSubjectFunction('tangent', options);
+
 export const createCustomSubjectFunction = (
   expression: string,
   options: CreateSubjectFunctionDescriptorOptions & { kind?: SubjectFunctionFamilyKind } = {}
@@ -322,14 +468,75 @@ export const createCircleEquationSubjectFunction = (
   });
 };
 
+export const createEllipseEquationSubjectFunction = (
+  options: CreateSubjectFunctionDescriptorOptions & { centerX?: number; centerY?: number; semiMajor?: number; semiMinor?: number; axis?: SubjectConicAxis } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const h = finiteNumber(options.centerX, options.parameters?.h ?? 0);
+  const k = finiteNumber(options.centerY, options.parameters?.k ?? 0);
+  const a = Math.max(1e-9, finiteNumber(options.semiMajor, options.parameters?.a ?? 3));
+  const b = Math.max(1e-9, Math.min(a, finiteNumber(options.semiMinor, options.parameters?.b ?? 2)));
+  const axis = normalizeConicAxis(options.axis ?? options.meta?.axis);
+  return createDescriptor({
+    id: options.id ?? 'ellipse-equation',
+    kind: 'ellipse-equation',
+    variable: options.variable ?? 'theta',
+    expression: ellipseExpression(h, k, a, b, axis),
+    parameters: { h, k, a, b, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ h, k, a, b }),
+    domain: normalizeSubjectDomain(options.domain ?? [0, Math.PI * 2]),
+    meta: { ...(options.meta ?? {}), axis }
+  });
+};
+
+export const createHyperbolaEquationSubjectFunction = (
+  options: CreateSubjectFunctionDescriptorOptions & { centerX?: number; centerY?: number; transverseSemiAxis?: number; conjugateSemiAxis?: number; axis?: SubjectConicAxis } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const h = finiteNumber(options.centerX, options.parameters?.h ?? 0);
+  const k = finiteNumber(options.centerY, options.parameters?.k ?? 0);
+  const a = Math.max(1e-9, finiteNumber(options.transverseSemiAxis, options.parameters?.a ?? 2));
+  const b = Math.max(1e-9, finiteNumber(options.conjugateSemiAxis, options.parameters?.b ?? 1));
+  const axis = normalizeConicAxis(options.axis ?? options.meta?.axis);
+  return createDescriptor({
+    id: options.id ?? 'hyperbola-equation',
+    kind: 'hyperbola-equation',
+    variable: options.variable ?? 't',
+    expression: hyperbolaExpression(h, k, a, b, axis),
+    parameters: { h, k, a, b, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ h, k, a, b }),
+    domain: normalizeSubjectDomain(options.domain ?? [-2, 2]),
+    meta: { ...(options.meta ?? {}), axis }
+  });
+};
+
+export const createParabolaEquationSubjectFunction = (
+  options: CreateSubjectFunctionDescriptorOptions & { vertexX?: number; vertexY?: number; focalParameter?: number; direction?: SubjectParabolaDirection } = {}
+): SubjectFunctionFamilyDescriptor => {
+  const h = finiteNumber(options.vertexX, options.parameters?.h ?? 0);
+  const k = finiteNumber(options.vertexY, options.parameters?.k ?? 0);
+  const p = Math.max(1e-9, Math.abs(finiteNumber(options.focalParameter, options.parameters?.p ?? 1)));
+  const direction = normalizeParabolaDirection(options.direction ?? options.meta?.direction);
+  return createDescriptor({
+    id: options.id ?? 'parabola-equation',
+    kind: 'parabola-equation',
+    variable: options.variable ?? 't',
+    expression: parabolaExpression(h, k, p, direction),
+    parameters: { h, k, p, ...(options.parameters ?? {}) },
+    parameterControls: options.parameterControls ?? defaultParameterControls({ h, k, p }),
+    domain: normalizeSubjectDomain(options.domain ?? [-10, 10]),
+    meta: { ...(options.meta ?? {}), direction }
+  });
+};
+
 export const updateSubjectFunctionParameters = (
   descriptor: SubjectFunctionFamilyDescriptor,
   parameters: Record<string, number>
 ): SubjectFunctionFamilyDescriptor => {
-  const nextParameters = { ...descriptor.parameters, ...filterFiniteNumberRecord(parameters) };
+  const mergedParameters = { ...descriptor.parameters, ...filterFiniteNumberRecord(parameters) };
+  const nextParameters = normalizeUpdatedSubjectFunctionParameters(descriptor, mergedParameters);
   const nextDescriptor: SubjectFunctionFamilyDescriptor = {
     ...cloneDescriptor(descriptor),
     parameters: nextParameters,
+    domain: refreshUpdatedSubjectFunctionDomain(descriptor, nextParameters),
     parameterControls: descriptor.parameterControls.map((control) => ({
       ...control,
       value: finiteNumber(nextParameters[control.id], control.value)
@@ -378,6 +585,12 @@ export const evaluateSubjectFunctionDescriptor = (
     const dySquared = r ** 2 - dx ** 2;
     return dySquared >= 0 ? k + Math.sqrt(Math.max(0, dySquared)) : NaN;
   }
+  if (descriptor.kind === 'ellipse-equation') {
+    return evaluateEllipseUpperBranch(descriptor, value);
+  }
+  if (descriptor.kind === 'parabola-equation') {
+    return evaluateParabolaBranch(descriptor, value);
+  }
   const expression = descriptor.kind === 'line-equation'
     ? `${descriptor.parameters.m ?? 1} * ${descriptor.variable} + ${descriptor.parameters.b ?? 0}`
     : descriptor.expression;
@@ -395,6 +608,9 @@ export const sampleSubjectFunctionDescriptor = (
       sampleParametricClosedCurve((theta) => ({ x: h + r * Math.cos(theta), y: k + r * Math.sin(theta) }))
     ], bounds);
   }
+  if (descriptor.kind === 'ellipse-equation') return sampleEllipseEquation(descriptor, bounds);
+  if (descriptor.kind === 'hyperbola-equation') return sampleHyperbolaEquation(descriptor, bounds);
+  if (descriptor.kind === 'parabola-equation') return sampleParabolaEquation(descriptor, bounds);
 
   const min = options.min ?? DEFAULT_SAMPLE_WINDOW.min;
   const max = options.max ?? DEFAULT_SAMPLE_WINDOW.max;
@@ -421,7 +637,14 @@ export const sampleSubjectEquationDescriptor = (
   descriptor: SubjectFunctionFamilyDescriptor,
   options: SubjectFunctionSampleOptions = {}
 ): SceneSamplePoint2D[][] => {
-  if (descriptor.kind === 'circle-equation') return sampleSubjectFunctionDescriptor(descriptor, options);
+  if (
+    descriptor.kind === 'circle-equation'
+    || descriptor.kind === 'ellipse-equation'
+    || descriptor.kind === 'hyperbola-equation'
+    || descriptor.kind === 'parabola-equation'
+  ) {
+    return sampleSubjectFunctionDescriptor(descriptor, options);
+  }
   return sampleImplicitEquationSegments(descriptor.expression, {
     bounds: subjectSampleBounds(options)
   });
@@ -438,8 +661,15 @@ export const computeSubjectFunctionProperties = (
   descriptor: SubjectFunctionFamilyDescriptor
 ): SubjectFunctionProperty[] => {
   if (descriptor.kind === 'quadratic') return quadraticProperties(descriptor);
+  if (descriptor.kind === 'inverse') return inverseProperties(descriptor);
+  if (descriptor.kind === 'exponential' || descriptor.kind === 'logarithmic' || descriptor.kind === 'power') return commonParameterProperties(descriptor);
+  if (descriptor.kind === 'normal-density') return normalDensityProperties(descriptor);
+  if (descriptor.kind === 'sine' || descriptor.kind === 'cosine' || descriptor.kind === 'tangent') return trigonometricProperties(descriptor);
   if (descriptor.kind === 'linear' || descriptor.kind === 'line-equation') return lineProperties(descriptor);
   if (descriptor.kind === 'circle-equation') return circleProperties(descriptor);
+  if (descriptor.kind === 'ellipse-equation') return ellipseProperties(descriptor);
+  if (descriptor.kind === 'hyperbola-equation') return hyperbolaProperties(descriptor);
+  if (descriptor.kind === 'parabola-equation') return parabolaProperties(descriptor);
   if (descriptor.kind === 'piecewise') {
     return [{ id: 'pieces', label: '分段数量', value: descriptor.pieces?.length ?? 0, kind: 'property' }];
   }
@@ -540,6 +770,44 @@ const refreshSubjectFunctionExpression = (descriptor: SubjectFunctionFamilyDescr
     const c = finiteNumber(descriptor.parameters.c, 0);
     return `${a} * ${variable}^2 + ${b} * ${variable} + ${c}`;
   }
+  if (descriptor.kind === 'inverse') {
+    const a = finiteNumber(descriptor.parameters.a, 1);
+    const h = finiteNumber(descriptor.parameters.h, 0);
+    const k = finiteNumber(descriptor.parameters.k, 0);
+    return `${a} / (${variable} - ${h}) + ${k}`;
+  }
+  if (descriptor.kind === 'power') {
+    const a = finiteNumber(descriptor.parameters.a, 1);
+    const n = finiteNumber(descriptor.parameters.n, 3);
+    const k = finiteNumber(descriptor.parameters.k, 0);
+    return `${a} * ${variable}^${n} + ${k}`;
+  }
+  if (descriptor.kind === 'exponential') {
+    const a = finiteNumber(descriptor.parameters.a, 1);
+    const base = finiteLogBase(descriptor.parameters.base, 2);
+    const k = finiteNumber(descriptor.parameters.k, 0);
+    return `${a} * ${base}^${variable} + ${k}`;
+  }
+  if (descriptor.kind === 'logarithmic') {
+    const a = finiteNumber(descriptor.parameters.a, 1);
+    const base = finiteLogBase(descriptor.parameters.base, 2);
+    const h = finiteNumber(descriptor.parameters.h, 0);
+    const k = finiteNumber(descriptor.parameters.k, 0);
+    return `${a} * log(${variable} - ${h}) / log(${base}) + ${k}`;
+  }
+  if (descriptor.kind === 'normal-density') {
+    const mu = finiteNumber(descriptor.parameters.mu, 0);
+    const sigma = Math.max(1e-9, finiteNumber(descriptor.parameters.sigma, 1));
+    return `1 / (${sigma} * sqrt(2 * pi)) * exp(-1 * (${variable} - ${mu})^2 / (2 * ${sigma}^2))`;
+  }
+  if (descriptor.kind === 'sine' || descriptor.kind === 'cosine' || descriptor.kind === 'tangent') {
+    const a = finiteNumber(descriptor.parameters.a, 1);
+    const b = finiteNumber(descriptor.parameters.b, 1);
+    const c = finiteNumber(descriptor.parameters.c, 0);
+    const d = finiteNumber(descriptor.parameters.d, 0);
+    const fn = descriptor.kind === 'sine' ? 'sin' : descriptor.kind === 'cosine' ? 'cos' : 'tan';
+    return `${a} * ${fn}(${b} * ${variable} + ${c}) + ${d}`;
+  }
   if (descriptor.kind === 'line-equation') {
     const slope = finiteNumber(descriptor.parameters.m, 1);
     const intercept = finiteNumber(descriptor.parameters.b, 0);
@@ -548,6 +816,18 @@ const refreshSubjectFunctionExpression = (descriptor: SubjectFunctionFamilyDescr
   if (descriptor.kind === 'circle-equation') {
     const { h, k, r } = circleParameters(descriptor);
     return `${formatSquaredOffset('x', h)} + ${formatSquaredOffset('y', k)} = ${formatNumber(r ** 2)}`;
+  }
+  if (descriptor.kind === 'ellipse-equation') {
+    const { h, k, a, b, axis } = ellipseParameters(descriptor);
+    return ellipseExpression(h, k, a, b, axis);
+  }
+  if (descriptor.kind === 'hyperbola-equation') {
+    const { h, k, a, b, axis } = hyperbolaParameters(descriptor);
+    return hyperbolaExpression(h, k, a, b, axis);
+  }
+  if (descriptor.kind === 'parabola-equation') {
+    const { h, k, p, direction } = parabolaParameters(descriptor);
+    return parabolaExpression(h, k, p, direction);
   }
   return descriptor.expression;
 };
@@ -568,7 +848,9 @@ const cloneDescriptor = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFu
 
 const normalizeSubjectDomainIntervals = (intervals: readonly SubjectDomainInterval[]): SubjectDomainInterval[] => {
   const normalized = intervals.map(normalizeInterval).filter((interval) => compareEndpoint(interval.min, interval.max) <= 0);
-  return normalized.sort((left, right) => compareEndpoint(left.min, right.min));
+  return normalized.sort((left, right) => (
+    compareIntervalStartEndpoint(left.min, right.min) || compareIntervalEndEndpoint(left.max, right.max)
+  ));
 };
 
 const normalizeInterval = (interval: SubjectDomainInterval): SubjectDomainInterval => {
@@ -605,6 +887,18 @@ const compareEndpoint = (left: SubjectDomainEndpoint, right: SubjectDomainEndpoi
   return leftValue === rightValue ? 0 : leftValue < rightValue ? -1 : 1;
 };
 
+const compareIntervalStartEndpoint = (left: SubjectDomainEndpoint, right: SubjectDomainEndpoint): number => {
+  const leftValue = left === null ? -Infinity : left;
+  const rightValue = right === null ? -Infinity : right;
+  return leftValue === rightValue ? 0 : leftValue < rightValue ? -1 : 1;
+};
+
+const compareIntervalEndEndpoint = (left: SubjectDomainEndpoint, right: SubjectDomainEndpoint): number => {
+  const leftValue = left === null ? Infinity : left;
+  const rightValue = right === null ? Infinity : right;
+  return leftValue === rightValue ? 0 : leftValue < rightValue ? -1 : 1;
+};
+
 const valueInInterval = (interval: SubjectDomainInterval, value: number): boolean => {
   const aboveMin = interval.min === null || (interval.minClosed ? value >= interval.min : value > interval.min);
   const belowMax = interval.max === null || (interval.maxClosed ? value <= interval.max : value < interval.max);
@@ -619,6 +913,78 @@ const defaultParameterControls = (parameters: Record<string, number>): SubjectFu
 
 const filterFiniteNumberRecord = (record: Record<string, number>): Record<string, number> => (
   Object.fromEntries(Object.entries(record).filter((entry): entry is [string, number] => Number.isFinite(entry[1])))
+);
+
+const normalizeUpdatedSubjectFunctionParameters = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  parameters: Record<string, number>
+): Record<string, number> => {
+  if (descriptor.kind === 'circle-equation') {
+    return { ...parameters, r: Math.max(1e-9, finiteNumber(parameters.r, 1)) };
+  }
+  if (descriptor.kind === 'ellipse-equation') {
+    const a = Math.max(1e-9, finiteNumber(parameters.a, 3));
+    return { ...parameters, a, b: Math.max(1e-9, Math.min(a, finiteNumber(parameters.b, 2))) };
+  }
+  if (descriptor.kind === 'hyperbola-equation') {
+    return {
+      ...parameters,
+      a: Math.max(1e-9, finiteNumber(parameters.a, 2)),
+      b: Math.max(1e-9, finiteNumber(parameters.b, 1))
+    };
+  }
+  if (descriptor.kind === 'parabola-equation') {
+    return { ...parameters, p: Math.max(1e-9, Math.abs(finiteNumber(parameters.p, 1))) };
+  }
+  if (descriptor.kind === 'exponential' || descriptor.kind === 'logarithmic') {
+    return { ...parameters, base: finiteLogBase(parameters.base, finiteLogBase(descriptor.parameters.base, 2)) };
+  }
+  if (descriptor.kind === 'normal-density') {
+    return { ...parameters, sigma: Math.max(1e-9, finiteNumber(parameters.sigma, 1)) };
+  }
+  return parameters;
+};
+
+const refreshUpdatedSubjectFunctionDomain = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  nextParameters: Record<string, number>
+): SubjectDomain => {
+  if (descriptor.kind === 'inverse') {
+    const currentH = finiteNumber(descriptor.parameters.h, 0);
+    const nextH = finiteNumber(nextParameters.h, currentH);
+    return sameDomain(descriptor.domain, createPuncturedDomain(currentH)) ? createPuncturedDomain(nextH) : cloneDomain(descriptor.domain);
+  }
+  if (descriptor.kind === 'logarithmic') {
+    const currentH = finiteNumber(descriptor.parameters.h, 0);
+    const nextH = finiteNumber(nextParameters.h, currentH);
+    const currentAutoDomain = createSubjectDomain([createSubjectDomainInterval(currentH, null, { minClosed: false })]);
+    return sameDomain(descriptor.domain, currentAutoDomain)
+      ? createSubjectDomain([createSubjectDomainInterval(nextH, null, { minClosed: false })])
+      : cloneDomain(descriptor.domain);
+  }
+  return cloneDomain(descriptor.domain);
+};
+
+const sameDomain = (left: SubjectDomain, right: SubjectDomain): boolean => {
+  if (left.intervals.length !== right.intervals.length) return false;
+  const unmatched = [...right.intervals];
+  return left.intervals.every((interval) => {
+    const matchIndex = unmatched.findIndex((candidate) => sameInterval(interval, candidate));
+    if (matchIndex < 0) return false;
+    unmatched.splice(matchIndex, 1);
+    return true;
+  });
+};
+
+const sameInterval = (left: SubjectDomainInterval, right: SubjectDomainInterval): boolean => (
+  sameEndpoint(left.min, right.min)
+    && sameEndpoint(left.max, right.max)
+    && left.minClosed === right.minClosed
+    && left.maxClosed === right.maxClosed
+);
+
+const sameEndpoint = (left: SubjectDomainEndpoint, right: SubjectDomainEndpoint): boolean => (
+  left === null || right === null ? left === right : Math.abs(left - right) < 1e-9
 );
 
 const finiteNumber = (value: unknown, fallback: number): number => (
@@ -669,6 +1035,45 @@ const lineProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFun
   ];
 };
 
+const inverseProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionProperty[] => {
+  const h = finiteNumber(descriptor.parameters.h, 0);
+  const k = finiteNumber(descriptor.parameters.k, 0);
+  return [
+    { id: 'vertical-asymptote', label: '竖直渐近线', value: `${descriptor.variable} = ${formatNumber(h)}`, kind: 'asymptote' },
+    { id: 'horizontal-asymptote', label: '水平渐近线', value: `y = ${formatNumber(k)}`, kind: 'asymptote' }
+  ];
+};
+
+const commonParameterProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionProperty[] => (
+  Object.entries(descriptor.parameters).map(([id, value]) => ({ id, label: id, value, kind: 'property' }))
+);
+
+const normalDensityProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionProperty[] => {
+  const mu = finiteNumber(descriptor.parameters.mu, 0);
+  const sigma = Math.max(1e-9, finiteNumber(descriptor.parameters.sigma, 1));
+  return [
+    { id: 'mean', label: '均值', value: mu, kind: 'property' },
+    { id: 'standard-deviation', label: '标准差', value: sigma, kind: 'property' },
+    { id: 'peak', label: '峰值', value: { x: mu, y: evaluateSubjectFunctionDescriptor(descriptor, mu) }, kind: 'vertex' }
+  ];
+};
+
+const trigonometricProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionProperty[] => {
+  const properties = commonParameterProperties(descriptor);
+  if (descriptor.kind !== 'tangent') return properties;
+  const b = finiteNumber(descriptor.parameters.b, 1);
+  const c = finiteNumber(descriptor.parameters.c, 0);
+  return [
+    ...properties,
+    {
+      id: 'asymptotes',
+      label: '渐近线',
+      value: `${descriptor.variable} = (π/2 - ${formatNumber(c)} + kπ) / ${formatNumber(b)}`,
+      kind: 'asymptote'
+    }
+  ];
+};
+
 const circleProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionProperty[] => {
   const { h, k, r } = circleParameters(descriptor);
   return [
@@ -676,6 +1081,64 @@ const circleProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectF
     { id: 'radius', label: '半径', value: r, kind: 'radius' },
     { id: 'x-intercepts', label: 'x 轴交点', value: circleAxisIntersections(h, k, r, 'x'), kind: 'intercept' },
     { id: 'y-intercepts', label: 'y 轴交点', value: circleAxisIntersections(h, k, r, 'y'), kind: 'intercept' }
+  ];
+};
+
+const ellipseProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionProperty[] => {
+  const { h, k, a, b, axis } = ellipseParameters(descriptor);
+  const c = Math.sqrt(Math.max(0, a ** 2 - b ** 2));
+  const vertices = axis === 'x'
+    ? [{ x: h - a, y: k }, { x: h + a, y: k }]
+    : [{ x: h, y: k - a }, { x: h, y: k + a }];
+  const foci = axis === 'x'
+    ? [{ x: h - c, y: k }, { x: h + c, y: k }]
+    : [{ x: h, y: k - c }, { x: h, y: k + c }];
+  return [
+    { id: 'center', label: '中心', value: { x: h, y: k }, kind: 'center' },
+    { id: 'vertices', label: '长轴顶点', value: vertices, kind: 'vertex' },
+    { id: 'foci', label: '焦点', value: foci, kind: 'focus' },
+    { id: 'semi-major-axis', label: '长半轴', value: a, kind: 'property' },
+    { id: 'semi-minor-axis', label: '短半轴', value: b, kind: 'property' }
+  ];
+};
+
+const hyperbolaProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionProperty[] => {
+  const { h, k, a, b, axis } = hyperbolaParameters(descriptor);
+  const c = Math.sqrt(a ** 2 + b ** 2);
+  const vertices = axis === 'x'
+    ? [{ x: h - a, y: k }, { x: h + a, y: k }]
+    : [{ x: h, y: k - a }, { x: h, y: k + a }];
+  const foci = axis === 'x'
+    ? [{ x: h - c, y: k }, { x: h + c, y: k }]
+    : [{ x: h, y: k - c }, { x: h, y: k + c }];
+  return [
+    { id: 'center', label: '中心', value: { x: h, y: k }, kind: 'center' },
+    { id: 'vertices', label: '实轴顶点', value: vertices, kind: 'vertex' },
+    { id: 'foci', label: '焦点', value: foci, kind: 'focus' },
+    { id: 'asymptotes', label: '渐近线', value: hyperbolaAsymptoteExpression(h, k, a, b, axis), kind: 'asymptote' }
+  ];
+};
+
+const parabolaProperties = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionProperty[] => {
+  const { h, k, p, direction } = parabolaParameters(descriptor);
+  const focus = direction === 'right'
+    ? { x: h + p, y: k }
+    : direction === 'left'
+      ? { x: h - p, y: k }
+      : direction === 'up'
+        ? { x: h, y: k + p }
+        : { x: h, y: k - p };
+  const directrix = direction === 'right'
+    ? `x = ${formatNumber(h - p)}`
+    : direction === 'left'
+      ? `x = ${formatNumber(h + p)}`
+      : direction === 'up'
+        ? `y = ${formatNumber(k - p)}`
+        : `y = ${formatNumber(k + p)}`;
+  return [
+    { id: 'vertex', label: '顶点', value: { x: h, y: k }, kind: 'vertex' },
+    { id: 'focus', label: '焦点', value: focus, kind: 'focus' },
+    { id: 'directrix', label: '准线', value: directrix, kind: 'directrix' }
   ];
 };
 
@@ -695,8 +1158,86 @@ const circleParameters = (descriptor: SubjectFunctionFamilyDescriptor): { h: num
   r: Math.max(1e-9, finiteNumber(descriptor.parameters.r, 1))
 });
 
+const ellipseParameters = (
+  descriptor: SubjectFunctionFamilyDescriptor
+): { h: number; k: number; a: number; b: number; axis: SubjectConicAxis } => ({
+  h: finiteNumber(descriptor.parameters.h, 0),
+  k: finiteNumber(descriptor.parameters.k, 0),
+  a: Math.max(1e-9, finiteNumber(descriptor.parameters.a, 3)),
+  b: Math.max(1e-9, finiteNumber(descriptor.parameters.b, 2)),
+  axis: normalizeConicAxis(descriptor.meta?.axis)
+});
+
+const hyperbolaParameters = (
+  descriptor: SubjectFunctionFamilyDescriptor
+): { h: number; k: number; a: number; b: number; axis: SubjectConicAxis } => ({
+  h: finiteNumber(descriptor.parameters.h, 0),
+  k: finiteNumber(descriptor.parameters.k, 0),
+  a: Math.max(1e-9, finiteNumber(descriptor.parameters.a, 2)),
+  b: Math.max(1e-9, finiteNumber(descriptor.parameters.b, 1)),
+  axis: normalizeConicAxis(descriptor.meta?.axis)
+});
+
+const parabolaParameters = (
+  descriptor: SubjectFunctionFamilyDescriptor
+): { h: number; k: number; p: number; direction: SubjectParabolaDirection } => ({
+  h: finiteNumber(descriptor.parameters.h, 0),
+  k: finiteNumber(descriptor.parameters.k, 0),
+  p: Math.max(1e-9, Math.abs(finiteNumber(descriptor.parameters.p, 1))),
+  direction: normalizeParabolaDirection(descriptor.meta?.direction)
+});
+
+const sampleEllipseEquation = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  bounds: { left: number; right: number; top: number; bottom: number }
+): SceneSamplePoint2D[][] => {
+  const { h, k, a, b, axis } = ellipseParameters(descriptor);
+  return clipSegmentsToBounds2D([
+    sampleParametricClosedCurve((theta) => axis === 'x'
+      ? { x: h + a * Math.cos(theta), y: k + b * Math.sin(theta) }
+      : { x: h + b * Math.cos(theta), y: k + a * Math.sin(theta) })
+  ], bounds);
+};
+
+const sampleHyperbolaEquation = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  bounds: { left: number; right: number; top: number; bottom: number }
+): SceneSamplePoint2D[][] => {
+  const { h, k, a, b, axis } = hyperbolaParameters(descriptor);
+  const domain = finiteDynamicRange(descriptor);
+  const branches = [-1, 1].map((sign) => {
+    const points: SceneSamplePoint2D[] = [];
+    const steps = 120;
+    for (let index = 0; index < steps; index += 1) {
+      const t = domain[0] + ((domain[1] - domain[0]) * index) / (steps - 1);
+      if (axis === 'x') points.push({ x: h + sign * a * Math.cosh(t), y: k + b * Math.sinh(t) });
+      else points.push({ x: h + b * Math.sinh(t), y: k + sign * a * Math.cosh(t) });
+    }
+    return points;
+  });
+  return clipSegmentsToBounds2D(branches, bounds);
+};
+
+const sampleParabolaEquation = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  bounds: { left: number; right: number; top: number; bottom: number }
+): SceneSamplePoint2D[][] => {
+  const { h, k, p, direction } = parabolaParameters(descriptor);
+  const domain = finiteDynamicRange(descriptor);
+  const points: SceneSamplePoint2D[] = [];
+  const steps = 160;
+  for (let index = 0; index < steps; index += 1) {
+    const t = domain[0] + ((domain[1] - domain[0]) * index) / (steps - 1);
+    if (direction === 'right') points.push({ x: h + (t ** 2) / (4 * p), y: k + t });
+    else if (direction === 'left') points.push({ x: h - (t ** 2) / (4 * p), y: k + t });
+    else if (direction === 'up') points.push({ x: h + t, y: k + (t ** 2) / (4 * p) });
+    else points.push({ x: h + t, y: k - (t ** 2) / (4 * p) });
+  }
+  return clipSegmentsToBounds2D([points], bounds);
+};
+
 const finiteDynamicRange = (descriptor: SubjectFunctionFamilyDescriptor): readonly [number, number] => {
-  if (descriptor.kind === 'circle-equation') return [0, Math.PI * 2];
+  if (descriptor.kind === 'circle-equation' || descriptor.kind === 'ellipse-equation') return [0, Math.PI * 2];
   const interval = descriptor.domain.intervals.find((candidate) => candidate.min !== null && candidate.max !== null);
   if (interval && interval.min !== null && interval.max !== null) return [interval.min, interval.max];
   return [DEFAULT_SAMPLE_WINDOW.min, DEFAULT_SAMPLE_WINDOW.max];
@@ -709,6 +1250,25 @@ const dynamicPointForParameter = (
   if (descriptor.kind === 'circle-equation') {
     const { h, k, r } = circleParameters(descriptor);
     return { x: h + r * Math.cos(parameter), y: k + r * Math.sin(parameter) };
+  }
+  if (descriptor.kind === 'ellipse-equation') {
+    const { h, k, a, b, axis } = ellipseParameters(descriptor);
+    return axis === 'x'
+      ? { x: h + a * Math.cos(parameter), y: k + b * Math.sin(parameter) }
+      : { x: h + b * Math.cos(parameter), y: k + a * Math.sin(parameter) };
+  }
+  if (descriptor.kind === 'hyperbola-equation') {
+    const { h, k, a, b, axis } = hyperbolaParameters(descriptor);
+    return axis === 'x'
+      ? { x: h + a * Math.cosh(parameter), y: k + b * Math.sinh(parameter) }
+      : { x: h + b * Math.sinh(parameter), y: k + a * Math.cosh(parameter) };
+  }
+  if (descriptor.kind === 'parabola-equation') {
+    const { h, k, p, direction } = parabolaParameters(descriptor);
+    if (direction === 'right') return { x: h + (parameter ** 2) / (4 * p), y: k + parameter };
+    if (direction === 'left') return { x: h - (parameter ** 2) / (4 * p), y: k + parameter };
+    if (direction === 'up') return { x: h + parameter, y: k + (parameter ** 2) / (4 * p) };
+    return { x: h + parameter, y: k - (parameter ** 2) / (4 * p) };
   }
   const y = evaluateSubjectFunctionDescriptor(descriptor, parameter);
   return Number.isFinite(y) ? { x: parameter, y } : null;
@@ -735,11 +1295,76 @@ const formatPropertyValue = (value: SubjectFunctionProperty['value']): string =>
 };
 
 const formatPoint = (point: SceneSamplePoint2D): string => `(${formatNumber(point.x)}, ${formatNumber(point.y)})`;
+
+const createPuncturedDomain = (center: number): SubjectDomain => createSubjectDomain([
+  createSubjectDomainInterval(null, center, { maxClosed: false }),
+  createSubjectDomainInterval(center, null, { minClosed: false })
+]);
+
+const finiteLogBase = (value: unknown, fallback: number): number => {
+  const base = finiteNumber(value, fallback);
+  return base > 0 && Math.abs(base - 1) > 1e-9 ? base : fallback;
+};
+
+const normalizeConicAxis = (value: unknown): SubjectConicAxis => value === 'y' ? 'y' : 'x';
+
+const normalizeParabolaDirection = (value: unknown): SubjectParabolaDirection => (
+  value === 'left' || value === 'up' || value === 'down' ? value : 'right'
+);
+
+const ellipseExpression = (h: number, k: number, a: number, b: number, axis: SubjectConicAxis): string => {
+  const xDenominator = axis === 'x' ? a ** 2 : b ** 2;
+  const yDenominator = axis === 'x' ? b ** 2 : a ** 2;
+  return `${formatSquaredOffset('x', h)} / ${formatNumber(xDenominator)} + ${formatSquaredOffset('y', k)} / ${formatNumber(yDenominator)} = 1`;
+};
+
+const hyperbolaExpression = (h: number, k: number, a: number, b: number, axis: SubjectConicAxis): string => (
+  axis === 'x'
+    ? `${formatSquaredOffset('x', h)} / ${formatNumber(a ** 2)} - ${formatSquaredOffset('y', k)} / ${formatNumber(b ** 2)} = 1`
+    : `${formatSquaredOffset('y', k)} / ${formatNumber(a ** 2)} - ${formatSquaredOffset('x', h)} / ${formatNumber(b ** 2)} = 1`
+);
+
+const parabolaExpression = (h: number, k: number, p: number, direction: SubjectParabolaDirection): string => {
+  const coefficient = formatNumber(4 * p);
+  if (direction === 'right') return `${formatSquaredOffset('y', k)} = ${coefficient} * (${formatOffset('x', h)})`;
+  if (direction === 'left') return `${formatSquaredOffset('y', k)} = -${coefficient} * (${formatOffset('x', h)})`;
+  if (direction === 'up') return `${formatSquaredOffset('x', h)} = ${coefficient} * (${formatOffset('y', k)})`;
+  return `${formatSquaredOffset('x', h)} = -${coefficient} * (${formatOffset('y', k)})`;
+};
+
+const hyperbolaAsymptoteExpression = (h: number, k: number, a: number, b: number, axis: SubjectConicAxis): string => {
+  const slope = axis === 'x' ? b / a : a / b;
+  return `y - ${formatNumber(k)} = ±${formatNumber(slope)} * (x - ${formatNumber(h)})`;
+};
+
+const evaluateEllipseUpperBranch = (descriptor: SubjectFunctionFamilyDescriptor, x: number): number => {
+  const { h, k, a, b, axis } = ellipseParameters(descriptor);
+  const horizontalRadius = axis === 'x' ? a : b;
+  const verticalRadius = axis === 'x' ? b : a;
+  const dx = x - h;
+  const remaining = 1 - (dx ** 2) / (horizontalRadius ** 2);
+  return remaining >= 0 ? k + verticalRadius * Math.sqrt(Math.max(0, remaining)) : NaN;
+};
+
+const evaluateParabolaBranch = (descriptor: SubjectFunctionFamilyDescriptor, x: number): number => {
+  const { h, k, p, direction } = parabolaParameters(descriptor);
+  if (direction === 'up') return k + ((x - h) ** 2) / (4 * p);
+  if (direction === 'down') return k - ((x - h) ** 2) / (4 * p);
+  const signed = direction === 'right' ? x - h : h - x;
+  return signed >= 0 ? k + Math.sqrt(4 * p * signed) : NaN;
+};
+
 const formatSquaredOffset = (variable: string, center: number): string => {
   if (center === 0) return `${variable}^2`;
   return center < 0
     ? `(${variable} + ${formatNumber(Math.abs(center))})^2`
     : `(${variable} - ${formatNumber(center)})^2`;
+};
+const formatOffset = (variable: string, center: number): string => {
+  if (center === 0) return variable;
+  return center < 0
+    ? `${variable} + ${formatNumber(Math.abs(center))}`
+    : `${variable} - ${formatNumber(center)}`;
 };
 const formatNumber = (value: number): string => Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
 const clampNumber = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);

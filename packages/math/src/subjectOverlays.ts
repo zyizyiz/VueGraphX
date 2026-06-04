@@ -996,6 +996,91 @@ const createFunctionAuxiliaryLines = (context: SubjectOverlayComputationContext)
     }
   }
 
+  if (target.descriptor.kind === 'tangent' && context.auxiliaryLineEnabled('asymptote')) {
+    const b = target.descriptor.parameters.b ?? 1;
+    const c = target.descriptor.parameters.c ?? 0;
+    if (Math.abs(b) > GRAPH_MATH_EPSILON) {
+      const step = Math.PI / Math.abs(b);
+      const first = (Math.PI / 2 - c) / b;
+      let x = first + Math.ceil((window.minX - first) / step) * step;
+      let index = 0;
+      while (x <= window.maxX + GRAPH_MATH_EPSILON && index < 64) {
+        if (x >= window.minX - GRAPH_MATH_EPSILON) {
+          lines.push({
+            id: `${target.id}:tangent-asymptote:${index}`,
+            kind: 'asymptote',
+            label: readLineLabel('asymptote', context),
+            start: point2D(x, window.minY),
+            end: point2D(x, window.maxY),
+            targetId: target.id,
+            visible: context.auxiliaryLineVisible('asymptote'),
+            state: context.auxiliaryLineState('asymptote'),
+            selectable: true,
+            style: dashedStyle(target.strokeColor, 'asymptote'),
+            meta: { expression: `${target.descriptor.variable} = ${context.formatNumber(x)}` }
+          });
+        }
+        x += step;
+        index += 1;
+      }
+    }
+  }
+
+  if (target.descriptor.kind === 'hyperbola-equation' && context.auxiliaryLineEnabled('asymptote')) {
+    const h = target.descriptor.parameters.h ?? 0;
+    const k = target.descriptor.parameters.k ?? 0;
+    const a = Math.max(GRAPH_MATH_EPSILON, target.descriptor.parameters.a ?? 2);
+    const b = Math.max(GRAPH_MATH_EPSILON, target.descriptor.parameters.b ?? 1);
+    const axis = target.descriptor.meta?.axis === 'y' ? 'y' : 'x';
+    const slope = axis === 'x' ? b / a : a / b;
+    for (const sign of [-1, 1] as const) {
+      lines.push({
+        id: `${target.id}:hyperbola-asymptote:${sign}`,
+        kind: 'asymptote',
+        label: readLineLabel('asymptote', context),
+        start: point2D(window.minX, k + sign * slope * (window.minX - h)),
+        end: point2D(window.maxX, k + sign * slope * (window.maxX - h)),
+        targetId: target.id,
+        visible: context.auxiliaryLineVisible('asymptote'),
+        state: context.auxiliaryLineState('asymptote'),
+        selectable: true,
+        style: dashedStyle(target.strokeColor, 'asymptote'),
+        meta: { expression: `y - ${context.formatNumber(k)} = ${sign === 1 ? '' : '-'}${context.formatNumber(slope)} * (x - ${context.formatNumber(h)})` }
+      });
+    }
+  }
+
+  if (target.descriptor.kind === 'parabola-equation' && context.auxiliaryLineEnabled('directrix')) {
+    const h = target.descriptor.parameters.h ?? 0;
+    const k = target.descriptor.parameters.k ?? 0;
+    const p = Math.max(GRAPH_MATH_EPSILON, Math.abs(target.descriptor.parameters.p ?? 1));
+    const rawDirection = target.descriptor.meta?.direction;
+    const direction = rawDirection === 'left' || rawDirection === 'up' || rawDirection === 'down'
+      ? rawDirection
+      : 'right';
+    const vertical = direction === 'left' || direction === 'right';
+    const value = direction === 'left'
+      ? h + p
+      : direction === 'up'
+        ? k - p
+        : direction === 'down'
+          ? k + p
+          : h - p;
+    lines.push({
+      id: `${target.id}:parabola-directrix`,
+      kind: 'directrix',
+      label: readLineLabel('directrix', context),
+      start: vertical ? point2D(value, window.minY) : point2D(window.minX, value),
+      end: vertical ? point2D(value, window.maxY) : point2D(window.maxX, value),
+      targetId: target.id,
+      visible: context.auxiliaryLineVisible('directrix'),
+      state: context.auxiliaryLineState('directrix'),
+      selectable: true,
+      style: dashedStyle(target.strokeColor, 'directrix'),
+      meta: { expression: `${vertical ? 'x' : 'y'} = ${context.formatNumber(value)}` }
+    });
+  }
+
   return lines;
 };
 

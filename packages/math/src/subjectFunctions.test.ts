@@ -5,15 +5,28 @@ import {
   containsSubjectDomainValue,
   createCircleEquationSubjectFunction,
   createCompositeSubjectFunction,
+  createCosineSubjectFunction,
+  createEllipseEquationSubjectFunction,
+  createExponentialSubjectFunction,
+  createHyperbolaEquationSubjectFunction,
+  createInverseSubjectFunction,
   createLineEquationSubjectFunction,
   createLinearSubjectFunction,
+  createLogarithmicSubjectFunction,
+  createNormalDensitySubjectFunction,
+  createParabolaEquationSubjectFunction,
   createPiecewiseSubjectFunction,
+  createPowerSubjectFunction,
   createQuadraticSubjectFunction,
+  createSineSubjectFunction,
   createSubjectDomain,
   createSubjectDomainInterval,
   createSubjectDynamicPoint,
   createSubjectFunctionAnnotations,
+  createSubjectOverlayModel,
+  createTangentSubjectFunction,
   evaluateSubjectFunctionDescriptor,
+  formatSubjectDomain,
   formatSubjectFunctionExpression,
   resetSubjectDynamicPoint,
   reverseSubjectDynamicPoint,
@@ -38,6 +51,12 @@ describe('subject function families and domains', () => {
       { min: -2, max: 0, minClosed: true, maxClosed: false, label: undefined },
       { min: 1, max: 2, minClosed: true, maxClosed: true, label: undefined }
     ]);
+
+    const punctured = createSubjectDomain([
+      createSubjectDomainInterval(null, 0, { maxClosed: false }),
+      createSubjectDomainInterval(0, null, { minClosed: false })
+    ]);
+    expect(formatSubjectDomain(punctured)).toBe('(-∞, 0) ∪ (0, +∞)');
   });
 
   it('creates linear and quadratic descriptors with computed properties', () => {
@@ -91,6 +110,71 @@ describe('subject function families and domains', () => {
     expect(sampleSubjectEquationDescriptor(circle)[0]).toHaveLength(145);
   });
 
+  it('models common renderer-free function presets beyond linear and quadratic', () => {
+    const inverse = createInverseSubjectFunction({ id: 'inverse-demo' });
+    expect(evaluateSubjectFunctionDescriptor(inverse, 2)).toBeCloseTo(0.5);
+    expect(evaluateSubjectFunctionDescriptor(inverse, 0)).toBeNaN();
+    expect(computeSubjectFunctionProperties(inverse)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'vertical-asymptote', kind: 'asymptote' }),
+      expect.objectContaining({ id: 'horizontal-asymptote', kind: 'asymptote' })
+    ]));
+
+    expect(evaluateSubjectFunctionDescriptor(createPowerSubjectFunction({ exponent: 3 }), 2)).toBe(8);
+    expect(evaluateSubjectFunctionDescriptor(createExponentialSubjectFunction({ base: 2 }), 3)).toBe(8);
+    expect(evaluateSubjectFunctionDescriptor(createLogarithmicSubjectFunction({ base: 2 }), 8)).toBeCloseTo(3);
+    expect(evaluateSubjectFunctionDescriptor(createNormalDensitySubjectFunction(), 0)).toBeCloseTo(0.3989, 4);
+    expect(evaluateSubjectFunctionDescriptor(createSineSubjectFunction(), Math.PI / 2)).toBeCloseTo(1);
+    expect(evaluateSubjectFunctionDescriptor(createCosineSubjectFunction(), 0)).toBeCloseTo(1);
+
+    const tangent = createTangentSubjectFunction({ id: 'tan-demo', domain: [-Math.PI, Math.PI] });
+    expect(computeSubjectFunctionProperties(tangent)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'asymptotes', kind: 'asymptote' })
+    ]));
+    expect(sampleSubjectFunctionDescriptor(tangent, { min: -Math.PI, max: Math.PI, yMin: -5, yMax: 5 })).toHaveLength(3);
+  });
+
+  it('models conic equation presets with properties, samples, overlays, and dynamic points', () => {
+    const ellipse = createEllipseEquationSubjectFunction({ id: 'ellipse-demo', semiMajor: 3, semiMinor: 2, axis: 'x' });
+    expect(ellipse.expression).toBe('x^2 / 9 + y^2 / 4 = 1');
+    expect(computeSubjectFunctionProperties(ellipse)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'foci', kind: 'focus' }),
+      expect.objectContaining({ id: 'vertices', kind: 'vertex' })
+    ]));
+    expect(sampleSubjectEquationDescriptor(ellipse)[0].length).toBeGreaterThan(20);
+    expect(createSubjectDynamicPoint(ellipse, { parameter: 0 }).point).toEqual({ x: 3, y: 0 });
+
+    const hyperbola = createHyperbolaEquationSubjectFunction({ id: 'hyperbola-demo', axis: 'x', transverseSemiAxis: 2, conjugateSemiAxis: 1 });
+    expect(hyperbola.expression).toBe('x^2 / 4 - y^2 / 1 = 1');
+    expect(sampleSubjectEquationDescriptor(hyperbola)).toHaveLength(2);
+    const hyperbolaOverlay = createSubjectOverlayModel({
+      id: 'hyperbola-target',
+      kind: 'equation',
+      descriptor: hyperbola,
+      strokeColor: '#4DA6FF',
+      sampleWindow: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
+    }, {
+      auxiliaryLines: { includeKinds: ['asymptote'] }
+    });
+    expect(hyperbolaOverlay.auxiliaryLines.map((line) => line.kind)).toEqual(['asymptote', 'asymptote']);
+
+    const parabola = createParabolaEquationSubjectFunction({ id: 'parabola-demo', direction: 'right', focalParameter: 1 });
+    expect(parabola.expression).toBe('y^2 = 4 * (x)');
+    expect(computeSubjectFunctionProperties(parabola)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'focus', value: { x: 1, y: 0 } }),
+      expect.objectContaining({ id: 'directrix', value: 'x = -1' })
+    ]));
+    const parabolaOverlay = createSubjectOverlayModel({
+      id: 'parabola-target',
+      kind: 'equation',
+      descriptor: parabola,
+      strokeColor: '#4DA6FF',
+      sampleWindow: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
+    }, {
+      auxiliaryLines: { includeKinds: ['directrix'] }
+    });
+    expect(parabolaOverlay.auxiliaryLines[0]).toMatchObject({ kind: 'directrix', meta: { expression: 'x = -1' } });
+  });
+
   it('creates stable annotation descriptors and updates parameters', () => {
     const quadratic = createQuadraticSubjectFunction({ id: 'quad', a: 1, b: 0, c: 0 });
     const updated = updateSubjectFunctionParameters(quadratic, { a: 2, c: 1 });
@@ -121,6 +205,24 @@ describe('subject function families and domains', () => {
     });
     expect(circle.expression).toBe('(x + 2)^2 + (y - 1)^2 = 4');
     expect(sampleSubjectEquationDescriptor(circle)[0][0]).toEqual({ x: 0, y: 1 });
+
+    const inverse = updateSubjectFunctionParameters(createInverseSubjectFunction(), { h: 2 });
+    expect(formatSubjectDomain(inverse.domain)).toBe('(-∞, 2) ∪ (2, +∞)');
+    expect(evaluateSubjectFunctionDescriptor(inverse, 0)).toBeCloseTo(-0.5);
+    expect(evaluateSubjectFunctionDescriptor(inverse, 2)).toBeNaN();
+
+    const customDomainInverse = updateSubjectFunctionParameters(createInverseSubjectFunction({ domain: [-10, 10] }), { h: 2 });
+    expect(formatSubjectDomain(customDomainInverse.domain)).toBe('[-10, 10]');
+
+    const logarithmic = updateSubjectFunctionParameters(createLogarithmicSubjectFunction({ base: 2 }), { h: 2 });
+    expect(formatSubjectDomain(logarithmic.domain)).toBe('(2, +∞)');
+    expect(evaluateSubjectFunctionDescriptor(logarithmic, 3)).toBeCloseTo(0);
+    expect(evaluateSubjectFunctionDescriptor(logarithmic, 1)).toBeNaN();
+
+    const ellipse = updateSubjectFunctionParameters(createEllipseEquationSubjectFunction({ semiMajor: 3, semiMinor: 2 }), { b: 5 });
+    expect(ellipse.parameters).toMatchObject({ a: 3, b: 3 });
+    expect(ellipse.parameterControls.find((control) => control.id === 'b')?.value).toBe(3);
+    expect(ellipse.expression).toBe('x^2 / 9 + y^2 / 9 = 1');
   });
 
   it('evaluates, ticks, resets, and reverses dynamic point P', () => {

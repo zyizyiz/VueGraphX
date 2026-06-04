@@ -1,9 +1,18 @@
-import { STANDARD_COORDINATE_UI, snapPointToGraphGrid } from '@vuegraphx/core';
 import {
+  STANDARD_COORDINATE_UI,
+  snapPointToGraphGrid,
+  type StandardCoordinateAxisTickStrategy
+} from '@vuegraphx/core';
+import {
+  createCosineSubjectFunction,
   createFreeSubjectAuxiliaryLine,
+  createHyperbolaEquationSubjectFunction,
+  createParabolaEquationSubjectFunction,
   createQuadraticSubjectFunction,
+  createSineSubjectFunction,
   createSubjectAuxiliaryLineIntersectionAnnotations,
   createSubjectOverlayModel,
+  createTangentSubjectFunction,
   point2D,
   type MathPoint2D,
   type SubjectAuxiliaryLineDescriptor,
@@ -19,6 +28,15 @@ export const OPERATION_COMMANDS_MIME = 'application/x-vuegraphx-operation-comman
 export interface OperationCommandSpec {
   expr: string;
   options?: Record<string, unknown>;
+}
+
+export interface OperationCoordinateTickPolicy {
+  x?: StandardCoordinateAxisTickStrategy;
+  y?: StandardCoordinateAxisTickStrategy;
+}
+
+export interface OperationCoordinateSystemRuntimeConfig {
+  tickPolicy?: OperationCoordinateTickPolicy;
 }
 
 export interface OperationViewportSize {
@@ -40,6 +58,7 @@ export interface OperationCoordinateSystemRuntimeOptions {
   xRange: { min: number; max: number };
   yRange: { min: number; max: number };
   snapToGrid?: unknown;
+  tickPolicy?: OperationCoordinateTickPolicy;
 }
 
 export interface OperationCommandWithOptions {
@@ -85,13 +104,15 @@ export const createOperationScopedCommands = (
 ): OperationCommandSpec[] => {
   const xRange = { ...OPERATION_COORDINATE_RANGE };
   const yRange = { ...OPERATION_COORDINATE_RANGE };
+  const runtimeConfig = readOperationCoordinateSystemRuntimeConfig(commands);
   const coordinateSystem: OperationCoordinateSystemRuntimeOptions = {
     id: coordinateSystemId,
     origin: alignOperationCoordinateSystemOriginToGrid(origin, bounds, { unitScale: 1, xRange, yRange }),
     unitScale: 1,
     xRange,
     yRange,
-    snapToGrid: OPERATION_COORDINATE_SNAP
+    snapToGrid: OPERATION_COORDINATE_SNAP,
+    ...(runtimeConfig.tickPolicy ? { tickPolicy: cloneOperationCoordinateTickPolicy(runtimeConfig.tickPolicy) } : {})
   };
 
   return [
@@ -106,7 +127,7 @@ export const createOperationScopedCommands = (
     ...commands.map((command) => ({
       ...command,
       options: {
-        ...(command.options ?? {}),
+        ...omitOperationCoordinateSystemRuntimeConfig(command.options),
         coordinateSystem
       }
     }))
@@ -190,6 +211,31 @@ export const updateOperationCoordinateSystemOrigin = <T extends OperationCommand
 const asMutableRecord = (value: unknown): Record<string, unknown> | null => (
   typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
 );
+
+const readOperationCoordinateSystemRuntimeConfig = (
+  commands: readonly OperationCommandSpec[]
+): OperationCoordinateSystemRuntimeConfig => {
+  for (const command of commands) {
+    const config = asMutableRecord(command.options)?.operationCoordinateSystem;
+    if (typeof config === 'object' && config !== null) return config as OperationCoordinateSystemRuntimeConfig;
+  }
+  return {};
+};
+
+const omitOperationCoordinateSystemRuntimeConfig = (
+  options: Record<string, unknown> | undefined
+): Record<string, unknown> => {
+  if (!options) return {};
+  const { operationCoordinateSystem: _operationCoordinateSystem, ...rest } = options;
+  return rest;
+};
+
+const cloneOperationCoordinateTickPolicy = (
+  policy: OperationCoordinateTickPolicy
+): OperationCoordinateTickPolicy => ({
+  ...(policy.x ? { x: { ...policy.x, ...(policy.x.labels ? { labels: policy.x.labels.map((tick) => ({ ...tick })) } : {}) } } : {}),
+  ...(policy.y ? { y: { ...policy.y, ...(policy.y.labels ? { labels: policy.y.labels.map((tick) => ({ ...tick })) } : {}) } } : {})
+});
 
 const clampToFitRange = (value: number, min: number, max: number): number => {
   if (!Number.isFinite(value)) return Number.isFinite(min) ? min : 0;
@@ -285,6 +331,83 @@ const operationQuadraticOverlay = createSubjectOverlayModel({
   }
 });
 
+const operationPiTickPolicy: OperationCoordinateTickPolicy = {
+  x: { kind: 'pi', piMultiple: 0.5 },
+  y: { kind: 'integer' }
+};
+const operationTrigonometryCoordinateSystem: OperationCoordinateSystemRuntimeConfig = {
+  tickPolicy: operationPiTickPolicy
+};
+const operationSineFunction = createSineSubjectFunction({ id: 'operation-sine', domain: [-6, 6] });
+const operationCosineFunction = createCosineSubjectFunction({ id: 'operation-cosine', domain: [-6, 6] });
+const operationTangentFunction = createTangentSubjectFunction({ id: 'operation-tangent', domain: [-6, 6] });
+const operationTangentOverlay = createSubjectOverlayModel({
+  id: 'operation-function-overlay-tangent',
+  kind: 'function',
+  descriptor: operationTangentFunction,
+  sampleWindow: { minX: -6, maxX: 6, minY: -5, maxY: 5 },
+  strokeColor: '#EA580C'
+}, {
+  auxiliaryLines: {
+    includeKinds: ['asymptote'],
+    defaultVisibleKinds: ['asymptote'],
+    maxCandidates: 6,
+    labels: { asymptote: '渐近线' },
+    styles: { asymptote: { strokeColor: '#EA580C' } }
+  },
+  annotations: {
+    includeKinds: ['asymptote']
+  }
+});
+
+const operationHyperbolaEquation = createHyperbolaEquationSubjectFunction({
+  id: 'operation-hyperbola',
+  centerX: -1.2,
+  centerY: 0,
+  transverseSemiAxis: 2,
+  conjugateSemiAxis: 1,
+  axis: 'x'
+});
+const operationParabolaEquation = createParabolaEquationSubjectFunction({
+  id: 'operation-parabola',
+  vertexX: 1.2,
+  vertexY: -1,
+  focalParameter: 0.7,
+  direction: 'right'
+});
+const operationHyperbolaOverlay = createSubjectOverlayModel({
+  id: 'operation-equation-overlay-hyperbola',
+  kind: 'equation',
+  descriptor: operationHyperbolaEquation,
+  sampleWindow: { minX: -6, maxX: 6, minY: -6, maxY: 6 },
+  strokeColor: '#2563EB'
+}, {
+  auxiliaryLines: {
+    includeKinds: ['asymptote'],
+    defaultVisibleKinds: ['asymptote'],
+    labels: { asymptote: '渐近线' }
+  },
+  annotations: {
+    includeKinds: ['center', 'vertex', 'focus', 'asymptote']
+  }
+});
+const operationParabolaOverlay = createSubjectOverlayModel({
+  id: 'operation-equation-overlay-parabola',
+  kind: 'equation',
+  descriptor: operationParabolaEquation,
+  sampleWindow: { minX: -6, maxX: 6, minY: -6, maxY: 6 },
+  strokeColor: '#F97316'
+}, {
+  auxiliaryLines: {
+    includeKinds: ['directrix'],
+    defaultVisibleKinds: ['directrix'],
+    labels: { directrix: '准线' }
+  },
+  annotations: {
+    includeKinds: ['vertex', 'focus', 'directrix']
+  }
+});
+
 const operationGeometryOverlayCommands: readonly OperationCommandSpec[] = [
   { expr: 'Point(-3.5, -2)', options: { strokeColor: '#0F172A' } },
   { expr: 'Point(2.5, -2)', options: { strokeColor: '#0F172A' } },
@@ -304,6 +427,25 @@ const operationFunctionOverlayCommands: readonly OperationCommandSpec[] = [
   ...operationOverlayAnnotationCommands(operationQuadraticOverlay, { kinds: ['vertex', 'intercept'], limit: 4 })
 ];
 
+const operationTrigonometryCommands: readonly OperationCommandSpec[] = [
+  {
+    expr: `Function("${escapeOperationText(operationSineFunction.expression)}", -6, 6)`,
+    options: { strokeColor: '#2563EB', operationCoordinateSystem: operationTrigonometryCoordinateSystem }
+  },
+  { expr: `Function("${escapeOperationText(operationCosineFunction.expression)}", -6, 6)`, options: { strokeColor: '#16A34A' } },
+  { expr: `Function("${escapeOperationText(operationTangentFunction.expression)}", -6, 6)`, options: { strokeColor: '#EA580C' } },
+  ...operationOverlayLineCommands(operationTangentOverlay, { kinds: ['asymptote'], limit: 4 })
+];
+
+const operationConicOverlayCommands: readonly OperationCommandSpec[] = [
+  { expr: `Equation("${escapeOperationText(operationHyperbolaEquation.expression)}")`, options: { strokeColor: '#2563EB' } },
+  ...operationOverlayLineCommands(operationHyperbolaOverlay, { kinds: ['asymptote'], limit: 2 }),
+  ...operationOverlayAnnotationCommands(operationHyperbolaOverlay, { kinds: ['center', 'vertex', 'focus'], limit: 5 }),
+  { expr: `Equation("${escapeOperationText(operationParabolaEquation.expression)}")`, options: { strokeColor: '#F97316' } },
+  ...operationOverlayLineCommands(operationParabolaOverlay, { kinds: ['directrix'], limit: 1 }),
+  ...operationOverlayAnnotationCommands(operationParabolaOverlay, { kinds: ['vertex', 'focus', 'directrix'], limit: 3 })
+];
+
 export const operationToolGroups: readonly OperationToolGroup[] = [
   {
     title: '函数',
@@ -317,6 +459,14 @@ export const operationToolGroups: readonly OperationToolGroup[] = [
         commands: [
           { expr: 'Function("0.5*x^2 - 2", -5, 5)', options: { strokeColor: '#4DA6FF' } }
         ]
+      },
+      {
+        id: 'trigonometry-pi-ticks',
+        label: '三角函数 π 刻度',
+        description: '拖入后用 π/2 刻度展示 sin、cos、tan 和切线渐近线',
+        icon: 'π',
+        iconClass: 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200',
+        commands: operationTrigonometryCommands
       }
     ]
   },
@@ -353,6 +503,14 @@ export const operationToolGroups: readonly OperationToolGroup[] = [
           { expr: 'Function("-x - 1", -5, 0)', options: { strokeColor: '#4DA6FF' } },
           { expr: 'Function("0.5*x^2 - 1", 0, 5)', options: { strokeColor: '#FF8D1A' } }
         ]
+      },
+      {
+        id: 'conic-overlay-tools',
+        label: '圆锥曲线辅助线',
+        description: '拖入后生成双曲线渐近线、抛物线准线和关键点标注',
+        icon: '⌒',
+        iconClass: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+        commands: operationConicOverlayCommands
       }
     ]
   },

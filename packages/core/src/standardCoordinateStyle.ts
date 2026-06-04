@@ -3,6 +3,25 @@ export interface StandardCoordinateTickModel {
   positions: number[];
 }
 
+export type StandardCoordinateAxisTickStrategyKind = 'integer' | 'step' | 'pi' | 'custom';
+
+export interface StandardCoordinateCustomTick {
+  value: number;
+  label?: string;
+}
+
+export interface StandardCoordinateAxisTickStrategy {
+  kind: StandardCoordinateAxisTickStrategyKind;
+  step?: number;
+  origin?: number;
+  /**
+   * Multiplier used by the `pi` strategy. The default is `0.5`, producing
+   * pi/2 tick spacing. Values are stored in world units.
+   */
+  piMultiple?: number;
+  labels?: readonly StandardCoordinateCustomTick[];
+}
+
 export interface StandardCoordinatePoint {
   x: number;
   y: number;
@@ -29,6 +48,8 @@ export interface StandardCoordinateGeometryInput {
   showLabels?: boolean;
   includeGrid?: boolean;
   includeBorder?: boolean;
+  xTickStrategy?: StandardCoordinateAxisTickStrategy;
+  yTickStrategy?: StandardCoordinateAxisTickStrategy;
 }
 
 export interface StandardCoordinateSystemGeometry extends Record<string, unknown> {
@@ -128,16 +149,16 @@ export const createStandardCoordinateSystemGeometry = (
     x: input.origin.x + x * unitPx,
     y: input.origin.y + y * unitPx
   });
-  const left = Math.ceil(xRange.min);
-  const right = Math.floor(xRange.max);
-  const bottom = Math.ceil(yRange.min);
-  const top = Math.floor(yRange.max);
+  const xTickValues = createInteriorTicksFromStrategy(xRange.min, xRange.max, input.xTickStrategy);
+  const yTickValues = createInteriorTicksFromStrategy(yRange.min, yRange.max, input.yTickStrategy);
+  const xGridValues = createGridTicksFromStrategy(xRange.min, xRange.max, input.xTickStrategy);
+  const yGridValues = createGridTicksFromStrategy(yRange.min, yRange.max, input.yTickStrategy);
   const gridSegments: Array<readonly [StandardCoordinatePoint, StandardCoordinatePoint]> = [];
   if (includeGrid) {
-    for (let x = left; x <= right; x += 1) {
+    for (const x of xGridValues) {
       gridSegments.push([world(x, yRange.min), world(x, yRange.max)]);
     }
-    for (let y = bottom; y <= top; y += 1) {
+    for (const y of yGridValues) {
       gridSegments.push([world(xRange.min, y), world(xRange.max, y)]);
     }
   }
@@ -154,8 +175,6 @@ export const createStandardCoordinateSystemGeometry = (
     ...createStandardAxisArrowSegments(xAxis, unitPx),
     ...createStandardAxisArrowSegments(yAxis, unitPx)
   ];
-  const xTickValues = createInteriorIntegerTicks(left, right, xRange.min, xRange.max);
-  const yTickValues = createInteriorIntegerTicks(bottom, top, yRange.min, yRange.max);
   const xTickPoints = xTickValues.map((x) => world(x, 0));
   const yTickPoints = yTickValues.map((y) => world(0, y));
   const labels: StandardCoordinateLabelModel[] = [];
@@ -163,11 +182,11 @@ export const createStandardCoordinateSystemGeometry = (
   if (showLabels) {
     for (const x of xTickValues) {
       if (isStandardZeroCoordinate(x)) continue;
-      labels.push({ text: formatStandardCoordinateLabel(x), axis: 'x', role: 'x-tick', point: world(x, 0), value: x });
+      labels.push({ text: formatStandardCoordinateTickLabel(x, input.xTickStrategy), axis: 'x', role: 'x-tick', point: world(x, 0), value: x });
     }
     for (const y of yTickValues) {
       if (isStandardZeroCoordinate(y)) continue;
-      labels.push({ text: formatStandardCoordinateLabel(y), axis: 'y', role: 'y-tick', point: world(0, y), value: y });
+      labels.push({ text: formatStandardCoordinateTickLabel(y, input.yTickStrategy), axis: 'y', role: 'y-tick', point: world(0, y), value: y });
     }
     labels.push(
       { text: 'O', axis: 'plain', role: 'origin', point: world(0, 0), value: 0 },
@@ -229,18 +248,82 @@ const normalizeStandardCoordinateRange = (
   return min < max ? { min, max } : { min: fallbackMin, max: fallbackMax };
 };
 
-const createInteriorIntegerTicks = (
-  first: number,
-  last: number,
+const createInteriorTicksFromStrategy = (
   min: number,
-  max: number
+  max: number,
+  strategy: StandardCoordinateAxisTickStrategy | undefined
+): number[] => createTicksFromStrategy(min, max, strategy, false);
+
+const createGridTicksFromStrategy = (
+  min: number,
+  max: number,
+  strategy: StandardCoordinateAxisTickStrategy | undefined
+): number[] => createTicksFromStrategy(min, max, strategy, true);
+
+const createTicksFromStrategy = (
+  min: number,
+  max: number,
+  strategy: StandardCoordinateAxisTickStrategy | undefined,
+  includeBoundary: boolean
 ): number[] => {
+  if (strategy?.kind === 'custom') {
+    const lower = includeBoundary ? min - 1e-9 : min + 1e-9;
+    const upper = includeBoundary ? max + 1e-9 : max - 1e-9;
+    return [...(strategy.labels ?? [])]
+      .map((tick) => tick.value)
+      .filter((value) => Number.isFinite(value) && value >= lower && value <= upper)
+      .map((value) => isStandardZeroCoordinate(value) ? 0 : Number(value.toFixed(10)))
+      .sort((left, right) => left - right);
+  }
+
+  const step = resolveTickStep(strategy);
+  const origin = Number.isFinite(strategy?.origin) ? strategy!.origin! : 0;
+  if (!Number.isFinite(step) || step <= 0) return [];
+
   const values: number[] = [];
-  for (let value = first; value <= last; value += 1) {
-    if (value <= min + 1e-9 || value >= max - 1e-9) continue;
-    values.push(isStandardZeroCoordinate(value) ? 0 : value);
+  const epsilon = step * 1e-6;
+  const lower = includeBoundary ? min - epsilon : min + epsilon;
+  const upper = includeBoundary ? max + epsilon : max - epsilon;
+  let value = origin + Math.ceil((lower - origin) / step) * step;
+  let guard = 0;
+  while (value <= upper && guard < 4096) {
+    if (value >= lower) values.push(isStandardZeroCoordinate(value) ? 0 : Number(value.toFixed(10)));
+    value += step;
+    guard += 1;
   }
   return values;
+};
+
+const resolveTickStep = (strategy: StandardCoordinateAxisTickStrategy | undefined): number => {
+  if (!strategy || strategy.kind === 'integer') return 1;
+  if (strategy.kind === 'pi') {
+    const multiple = Number.isFinite(strategy.piMultiple) && strategy.piMultiple! > 0 ? strategy.piMultiple! : 0.5;
+    return Math.PI * multiple;
+  }
+  return Number.isFinite(strategy.step) && strategy.step! > 0 ? strategy.step! : 1;
+};
+
+const formatStandardCoordinateTickLabel = (
+  value: number,
+  strategy: StandardCoordinateAxisTickStrategy | undefined
+): string => {
+  const custom = strategy?.labels?.find((tick) => Math.abs(tick.value - value) < 1e-9);
+  if (custom?.label) return custom.label;
+  if (strategy?.kind === 'pi') return formatPiTickLabel(value);
+  return formatStandardCoordinateLabel(value);
+};
+
+const formatPiTickLabel = (value: number): string => {
+  const multiple = Number(value / Math.PI);
+  const roundedHalfUnits = Math.round(multiple * 2);
+  if (Math.abs(multiple * 2 - roundedHalfUnits) > 1e-6) return `${formatStandardCoordinateLabel(multiple)}π`;
+  if (roundedHalfUnits === 0) return '0';
+  const sign = roundedHalfUnits < 0 ? '-' : '';
+  const absolute = Math.abs(roundedHalfUnits);
+  if (absolute === 1) return `${sign}π/2`;
+  if (absolute === 2) return `${sign}π`;
+  if (absolute % 2 === 0) return `${sign}${absolute / 2}π`;
+  return `${sign}${absolute}π/2`;
 };
 
 const createStandardAxisArrowSegments = (

@@ -15,6 +15,7 @@ import { createGraphCapabilitiesForProfile } from './capabilityModel';
 import {
   createStandardCoordinateSystemGeometry,
   STANDARD_COORDINATE_UI,
+  type StandardCoordinateAxisTickStrategy,
   type StandardCoordinateLabelModel
 } from './standardCoordinateStyle';
 
@@ -66,6 +67,15 @@ export interface SubjectAxisRange {
   min: number;
   max: number;
 }
+
+export type SubjectAxisTickStrategy = StandardCoordinateAxisTickStrategy;
+
+export interface SubjectCoordinateTickPolicy {
+  x?: SubjectAxisTickStrategy;
+  y?: SubjectAxisTickStrategy;
+}
+
+export type SubjectObjectDragPolicy = 'definition' | 'constrained' | 'free' | 'locked';
 
 export interface SubjectViewportState {
   scale: number;
@@ -120,6 +130,8 @@ export interface SubjectCoordinateSystemState {
   showLabels: boolean;
   clipContent: boolean;
   snap: boolean;
+  tickPolicy: SubjectCoordinateTickPolicy;
+  objectDragPolicy: SubjectObjectDragPolicy;
   colorSequence: readonly string[];
   nextColorIndex: number;
   nextCreatedIndex: number;
@@ -162,6 +174,8 @@ export interface AddSubjectCoordinateSystemInput {
   showLabels?: boolean;
   clipContent?: boolean;
   snap?: boolean;
+  tickPolicy?: SubjectCoordinateTickPolicy;
+  objectDragPolicy?: SubjectObjectDragPolicy;
   colorSequence?: readonly string[];
   meta?: Record<string, unknown>;
 }
@@ -219,6 +233,8 @@ export interface SubjectCoordinateSystemScenePayload {
   showLabels: boolean;
   clipContent: boolean;
   snap: boolean;
+  tickPolicy: SubjectCoordinateTickPolicy;
+  objectDragPolicy: SubjectObjectDragPolicy;
   colorSequence: readonly string[];
   geometry: SubjectCoordinateSystemGeometry;
   label?: string;
@@ -278,6 +294,8 @@ export const addSubjectCoordinateSystem = (
     showLabels: input.showLabels ?? true,
     clipContent: input.clipContent ?? true,
     snap: input.snap ?? true,
+    tickPolicy: cloneSubjectCoordinateTickPolicy(input.tickPolicy),
+    objectDragPolicy: input.objectDragPolicy ?? 'definition',
     colorSequence: [...(input.colorSequence?.length ? input.colorSequence : SUBJECT_CANVAS_COLOR_SEQUENCE)],
     nextColorIndex: 0,
     nextCreatedIndex: 0,
@@ -367,6 +385,7 @@ export const addManagedSubjectObject = (
     next.nextCreatedIndex += 1;
     const orderIndex = next.objects.length;
     const baseLayer = (orderIndex + 1) * SUBJECT_CANVAS_LAYER_POLICY.objectStep;
+    const dragMeta = managedObjectDragMeta(next.objectDragPolicy, input.coordinateSystemId);
     created = {
       id: input.id ?? `${input.kind}-${createdIndex + 1}`,
       kind: input.kind,
@@ -384,9 +403,7 @@ export const addManagedSubjectObject = (
       meta: {
         ...(input.meta ?? {}),
         coordinateSystemId: input.coordinateSystemId,
-        draggable: false,
-        dragDisabled: true,
-        dragDisabledReason: SUBJECT_CANVAS_DRAG_DISABLED_REASON
+        ...dragMeta
       }
     };
     next.objects = [...next.objects, created];
@@ -453,7 +470,7 @@ export const getSubjectObjectEffectiveLayer = (
 };
 
 export const createSubjectCoordinateSystemGeometry = (
-  system: Pick<SubjectCoordinateSystemState, 'origin' | 'unitPx' | 'xRange' | 'yRange' | 'showTicks'>
+  system: Pick<SubjectCoordinateSystemState, 'origin' | 'unitPx' | 'xRange' | 'yRange' | 'showTicks' | 'tickPolicy'>
 ): SubjectCoordinateSystemGeometry => {
   const geometry = createStandardCoordinateSystemGeometry({
     origin: system.origin,
@@ -463,7 +480,9 @@ export const createSubjectCoordinateSystemGeometry = (
     showTicks: system.showTicks,
     showLabels: true,
     includeGrid: true,
-    includeBorder: true
+    includeBorder: true,
+    xTickStrategy: system.tickPolicy.x,
+    yTickStrategy: system.tickPolicy.y
   });
   return {
     ...geometry,
@@ -494,6 +513,8 @@ export const createSubjectCoordinateSystemScenePayload = (
   showLabels: system.showLabels,
   clipContent: system.clipContent,
   snap: system.snap,
+  tickPolicy: cloneSubjectCoordinateTickPolicy(system.tickPolicy),
+  objectDragPolicy: system.objectDragPolicy,
   colorSequence: [...system.colorSequence],
   geometry: createSubjectCoordinateSystemGeometry(system),
   label: options.label,
@@ -687,6 +708,8 @@ const cloneCoordinateSystem = (system: SubjectCoordinateSystemState): SubjectCoo
   showLabels: system.showLabels,
   clipContent: system.clipContent,
   snap: system.snap,
+  tickPolicy: cloneSubjectCoordinateTickPolicy(system.tickPolicy),
+  objectDragPolicy: system.objectDragPolicy,
   colorSequence: [...system.colorSequence],
   nextColorIndex: system.nextColorIndex,
   nextCreatedIndex: system.nextCreatedIndex,
@@ -701,6 +724,38 @@ const cloneManagedObject = (object: SubjectManagedObject): SubjectManagedObject 
 });
 
 const clonePoint = (point: SubjectCanvasPoint): SubjectCanvasPoint => ({ x: point.x, y: point.y });
+
+const cloneSubjectCoordinateTickPolicy = (policy: SubjectCoordinateTickPolicy | undefined): SubjectCoordinateTickPolicy => ({
+  ...(policy?.x ? { x: cloneSubjectAxisTickStrategy(policy.x) } : {}),
+  ...(policy?.y ? { y: cloneSubjectAxisTickStrategy(policy.y) } : {})
+});
+
+const cloneSubjectAxisTickStrategy = (strategy: SubjectAxisTickStrategy): SubjectAxisTickStrategy => ({
+  ...strategy,
+  labels: strategy.labels?.map((label) => ({ ...label }))
+});
+
+const managedObjectDragMeta = (
+  policy: SubjectObjectDragPolicy,
+  coordinateSystemId: string
+): Record<string, unknown> => {
+  if (policy === 'free') return { draggable: true };
+  if (policy === 'constrained') {
+    return {
+      draggable: true,
+      snapToGrid: true,
+      dragBoundsMode: 'coordinate-system',
+      dragBoundsCoordinateSystemId: coordinateSystemId
+    };
+  }
+  return {
+    draggable: false,
+    dragDisabled: true,
+    dragDisabledReason: policy === 'locked'
+      ? `对象属于坐标系 ${coordinateSystemId}，当前策略锁定拖拽。`
+      : SUBJECT_CANVAS_DRAG_DISABLED_REASON
+  };
+};
 
 const snapPointToUnit = (
   point: SubjectCanvasPoint,

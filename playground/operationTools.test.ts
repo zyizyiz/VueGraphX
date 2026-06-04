@@ -117,4 +117,41 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     expect(vertex?.options?.strokeColor).toBe(SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.vertex);
     expect(intercept?.options?.strokeColor).toBe(SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.intercept);
   });
+
+  it('exposes a trigonometry operation tool with pi tick policy scoped to the generated coordinate system', () => {
+    const tool = operationToolGroups
+      .flatMap((group) => group.tools)
+      .find((entry) => entry.id === 'trigonometry-pi-ticks');
+    expect(tool).toBeDefined();
+    expect(tool!.commands.map((command) => command.expr)).toEqual(expect.arrayContaining([
+      expect.stringContaining('sin'),
+      expect.stringContaining('cos'),
+      expect.stringContaining('tan')
+    ]));
+
+    const commands = createOperationScopedCommands(tool!.commands, { x: 0, y: 0 }, 'coord_trig');
+    const tickPolicy = (commands[0].options?.coordinateSystem as any)?.tickPolicy;
+
+    expect(tickPolicy).toEqual({
+      x: { kind: 'pi', piMultiple: 0.5 },
+      y: { kind: 'integer' }
+    });
+    expect(commands.every((command) => (command.options?.coordinateSystem as any)?.tickPolicy === tickPolicy)).toBe(true);
+    expect(commands.some((command) => 'operationCoordinateSystem' in (command.options ?? {}))).toBe(false);
+  });
+
+  it('exposes conic overlay operation commands for asymptote and directrix helpers', () => {
+    const tool = operationToolGroups
+      .flatMap((group) => group.tools)
+      .find((entry) => entry.id === 'conic-overlay-tools');
+    expect(tool).toBeDefined();
+
+    const expressions = tool!.commands.map((command) => command.expr);
+    expect(expressions.filter((expr) => expr.startsWith('Equation('))).toHaveLength(2);
+    expect(expressions.filter((expr) => expr.startsWith('Segment('))).toHaveLength(3);
+    expect(expressions).toEqual(expect.arrayContaining([
+      expect.stringContaining('渐近线'),
+      expect.stringContaining('准线')
+    ]));
+  });
 });

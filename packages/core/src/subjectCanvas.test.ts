@@ -7,6 +7,8 @@ import {
   changeManagedSubjectObjectType,
   createGraphSceneObjectIrNode,
   createSubjectCanvasState,
+  createStandardCoordinateSystemGeometry,
+  createSubjectCoordinateSystemGeometry,
   createSubjectCoordinateSystemSceneNode,
   deleteManagedSubjectObject,
   getSubjectObjectEffectiveLayer,
@@ -41,7 +43,9 @@ describe('subject canvas model', () => {
       showTicks: true,
       showLabels: true,
       clipContent: true,
-      snap: true
+      snap: true,
+      tickPolicy: {},
+      objectDragPolicy: 'definition'
     });
     expect(state.activeCoordinateSystemId).toBe('coord-A');
 
@@ -62,6 +66,57 @@ describe('subject canvas model', () => {
       throw new Error('expected coordinate-system payload');
     }
     expect(((node.payload.geometry?.segments ?? []) as unknown[]).length).toBeGreaterThan(2);
+  });
+
+  it('serializes configurable coordinate tick and drag policies without changing defaults', () => {
+    const { state, coordinateSystem } = addSubjectCoordinateSystem(createSubjectCanvasState(), {
+      id: 'coord-pi',
+      tickPolicy: { x: { kind: 'pi', piMultiple: 0.5 }, y: { kind: 'integer' } },
+      objectDragPolicy: 'constrained'
+    });
+
+    const geometry = createSubjectCoordinateSystemGeometry(coordinateSystem);
+    expect(geometry.labels.map((label) => label.text)).toEqual(expect.arrayContaining(['-π', '-π/2', 'π/2', 'π']));
+
+    const node = createSubjectCoordinateSystemSceneNode(coordinateSystem);
+    expect(node.payload).toMatchObject({
+      tickPolicy: { x: { kind: 'pi', piMultiple: 0.5 }, y: { kind: 'integer' } },
+      objectDragPolicy: 'constrained'
+    });
+
+    const managed = addManagedSubjectObject(state, { id: 'triangle', coordinateSystemId: 'coord-pi', kind: 'geometry' });
+    expect(managed.object.meta).toMatchObject({
+      draggable: true,
+      snapToGrid: true,
+      dragBoundsMode: 'coordinate-system',
+      dragBoundsCoordinateSystemId: 'coord-pi'
+    });
+  });
+
+  it('keeps boundary grid lines separate from visible tick marks', () => {
+    const geometry = createStandardCoordinateSystemGeometry({
+      origin: { x: 0, y: 0 },
+      unitPx: 30,
+      xRange: { min: -6, max: 6 },
+      yRange: { min: -6, max: 6 },
+      includeGrid: true,
+      includeBorder: false
+    });
+
+    const verticalGridXs = geometry.gridSegments
+      .filter(([start, end]) => start.x === end.x)
+      .map(([start]) => start.x);
+    const horizontalGridYs = geometry.gridSegments
+      .filter(([start, end]) => start.y === end.y)
+      .map(([start]) => start.y);
+
+    expect(verticalGridXs).toEqual(expect.arrayContaining([-180, 180]));
+    expect(horizontalGridYs).toEqual(expect.arrayContaining([-180, 180]));
+    expect(geometry.tickPoints.map((point) => point.x)).not.toContain(-180);
+    expect(geometry.tickPoints.map((point) => point.x)).not.toContain(180);
+    expect(geometry.tickPoints.map((point) => point.y)).not.toContain(-180);
+    expect(geometry.tickPoints.map((point) => point.y)).not.toContain(180);
+    expect(geometry.segments).not.toContain(geometry.border);
   });
 
   it('validates coordinate-system scene IR shape', () => {

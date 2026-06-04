@@ -1,6 +1,6 @@
 import { type GraphSceneObjectIrNode } from './sceneObjectIr';
 import type { GraphBackendInteractionStatus, GraphBackendKind, GraphObjectKind, GraphWorldPoint2D, GraphOperationDiagnostic, GraphRuntimeCapabilityDescriptor } from './contracts';
-import { type StandardCoordinateLabelModel } from './standardCoordinateStyle';
+import { type StandardCoordinateAxisTickStrategy, type StandardCoordinateLabelModel } from './standardCoordinateStyle';
 export declare const SUBJECT_CANVAS_COLOR_SEQUENCE: readonly ["#4DA6FF", "#FF8D1A", "#16D957", "#FF4D4D", "#BB32FF"];
 export declare const SUBJECT_CANVAS_LAYER_POLICY: {
     readonly coordinateBackground: 0;
@@ -29,6 +29,12 @@ export interface SubjectAxisRange {
     min: number;
     max: number;
 }
+export type SubjectAxisTickStrategy = StandardCoordinateAxisTickStrategy;
+export interface SubjectCoordinateTickPolicy {
+    x?: SubjectAxisTickStrategy;
+    y?: SubjectAxisTickStrategy;
+}
+export type SubjectObjectDragPolicy = 'definition' | 'constrained' | 'free' | 'locked';
 export interface SubjectViewportState {
     scale: number;
     translate: SubjectCanvasPoint;
@@ -78,6 +84,8 @@ export interface SubjectCoordinateSystemState {
     showLabels: boolean;
     clipContent: boolean;
     snap: boolean;
+    tickPolicy: SubjectCoordinateTickPolicy;
+    objectDragPolicy: SubjectObjectDragPolicy;
     colorSequence: readonly string[];
     nextColorIndex: number;
     nextCreatedIndex: number;
@@ -117,6 +125,8 @@ export interface AddSubjectCoordinateSystemInput {
     showLabels?: boolean;
     clipContent?: boolean;
     snap?: boolean;
+    tickPolicy?: SubjectCoordinateTickPolicy;
+    objectDragPolicy?: SubjectObjectDragPolicy;
     colorSequence?: readonly string[];
     meta?: Record<string, unknown>;
 }
@@ -169,6 +179,8 @@ export interface SubjectCoordinateSystemScenePayload {
     showLabels: boolean;
     clipContent: boolean;
     snap: boolean;
+    tickPolicy: SubjectCoordinateTickPolicy;
+    objectDragPolicy: SubjectObjectDragPolicy;
     colorSequence: readonly string[];
     geometry: SubjectCoordinateSystemGeometry;
     label?: string;
@@ -199,7 +211,7 @@ export declare const reorderManagedSubjectObjects: (state: SubjectCanvasState, c
 export declare const changeManagedSubjectObjectType: (state: SubjectCanvasState, coordinateSystemId: string, objectId: string, nextKind: SubjectCanvasObjectKind, nextFamily?: string) => SubjectCanvasState;
 export declare const selectSubjectObject: (state: SubjectCanvasState, coordinateSystemId: string, objectId?: string) => SubjectCanvasState;
 export declare const getSubjectObjectEffectiveLayer: (coordinateSystem: SubjectCoordinateSystemState, objectId: string) => number | null;
-export declare const createSubjectCoordinateSystemGeometry: (system: Pick<SubjectCoordinateSystemState, "origin" | "unitPx" | "xRange" | "yRange" | "showTicks">) => SubjectCoordinateSystemGeometry;
+export declare const createSubjectCoordinateSystemGeometry: (system: Pick<SubjectCoordinateSystemState, "origin" | "unitPx" | "xRange" | "yRange" | "showTicks" | "tickPolicy">) => SubjectCoordinateSystemGeometry;
 export declare const createSubjectCoordinateSystemScenePayload: (system: SubjectCoordinateSystemState, options?: {
     dimension?: "plane" | "space";
     label?: string;

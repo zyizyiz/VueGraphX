@@ -2,6 +2,22 @@ export interface StandardCoordinateTickModel {
     unitDistance: number;
     positions: number[];
 }
+export type StandardCoordinateAxisTickStrategyKind = 'integer' | 'step' | 'pi' | 'custom';
+export interface StandardCoordinateCustomTick {
+    value: number;
+    label?: string;
+}
+export interface StandardCoordinateAxisTickStrategy {
+    kind: StandardCoordinateAxisTickStrategyKind;
+    step?: number;
+    origin?: number;
+    /**
+     * Multiplier used by the `pi` strategy. The default is `0.5`, producing
+     * pi/2 tick spacing. Values are stored in world units.
+     */
+    piMultiple?: number;
+    labels?: readonly StandardCoordinateCustomTick[];
+}
 export interface StandardCoordinatePoint {
     x: number;
     y: number;
@@ -30,6 +46,8 @@ export interface StandardCoordinateGeometryInput {
     showLabels?: boolean;
     includeGrid?: boolean;
     includeBorder?: boolean;
+    xTickStrategy?: StandardCoordinateAxisTickStrategy;
+    yTickStrategy?: StandardCoordinateAxisTickStrategy;
 }
 export interface StandardCoordinateSystemGeometry extends Record<string, unknown> {
     kind: 'coordinate-system';
