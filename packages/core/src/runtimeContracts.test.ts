@@ -11,6 +11,7 @@ import {
   GRAPH_MATH_INTERACTION_CAPABILITY_PATHS,
   createGraphBackendInteractionCapability,
   createGraphBackendMathInteractionCapabilities,
+  createGraphCoordinateSystemDragController,
   createGraphRelationInvalidationPlan,
   createGraphRelationSnapshot,
   createGraphCapabilitiesForObject,
@@ -1966,6 +1967,96 @@ describe('renderer-neutral core runtime contracts', () => {
       clipWorldBounds: { left: -2, right: 10, top: 4, bottom: -8 }
     });
     expect(flushCount).toBe(1);
+  });
+
+  it('routes pointer drags for coordinate systems without stealing child-object hits', () => {
+    const backend = createCoreOnlyTestBackend('runtime-coordinate-drag-controller');
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+
+    runtime.addObject({
+      id: 'coord-controller',
+      kind: 'shape',
+      type: 'coordinate-system',
+      payload: {
+        objectType: 'coordinate-system',
+        dimension: 'plane',
+        origin: { dimension: '2d', x: 0, y: 0 },
+        size: { width: 12, height: 12 },
+        unitPx: 1,
+        xRange: { min: -6, max: 6 },
+        yRange: { min: -6, max: 6 },
+        geometry: {
+          kind: 'coordinate-system',
+          border: [{ x: -6, y: -6 }, { x: 6, y: -6 }, { x: 6, y: 6 }, { x: -6, y: 6 }],
+          xAxis: [{ x: -6, y: 0 }, { x: 6, y: 0 }],
+          yAxis: [{ x: 0, y: -6 }, { x: 0, y: 6 }],
+          labels: []
+        }
+      },
+      renderHints: { draggable: true },
+      meta: { coordinateSystemId: 'coord-controller', draggable: true }
+    });
+    runtime.addObject({
+      id: 'function-controller',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        objectType: 'function',
+        expression: 'x',
+        geometry: { kind: 'polyline', points: [{ x: -1, y: -1 }, { x: 1, y: 1 }] }
+      },
+      renderHints: {
+        draggable: false,
+        clipWorldBounds: { left: -6, right: 6, top: 6, bottom: -6 }
+      },
+      meta: {
+        coordinateSystemId: 'coord-controller',
+        dragDisabled: true
+      }
+    });
+    runtime.addObject({
+      ...createPointNode('child-point', 1, 1),
+      meta: {
+        coordinateSystemId: 'coord-controller',
+        dragDisabled: true
+      }
+    });
+
+    const controller = createGraphCoordinateSystemDragController({
+      runtime,
+      pickOptions: { tolerancePx: 0.1 },
+      resolveWorldPoint: (point) => ({ x: point.x, y: point.y })
+    });
+
+    expect(controller.pointerDown({ pointerId: 1, point: { x: 1, y: 1 } }).handled).toBe(false);
+    expect(controller.isDragging()).toBe(false);
+
+    expect(controller.pointerDown({ pointerId: 2, point: { x: 2, y: 2 } })).toMatchObject({
+      handled: true,
+      objectId: 'coord-controller'
+    });
+    expect(controller.isDragging(2)).toBe(true);
+
+    expect(controller.pointerMove({ pointerId: 2, point: { x: 5, y: 0 } })).toMatchObject({
+      handled: true,
+      objectId: 'coord-controller'
+    });
+    expect(controller.pointerUp({ pointerId: 2, point: { x: 5, y: 0 } }).handled).toBe(true);
+    expect(controller.isDragging()).toBe(false);
+
+    expect(runtime.scene.getObject('coord-controller')?.payload).toMatchObject({
+      origin: { dimension: '2d', x: 3, y: -2 },
+      geometry: {
+        border: [{ x: -3, y: -8 }, { x: 9, y: -8 }, { x: 9, y: 4 }, { x: -3, y: 4 }]
+      }
+    });
+    expect(runtime.scene.getObject('function-controller')?.payload).toMatchObject({
+      geometry: { points: [{ x: 2, y: -3 }, { x: 4, y: -1 }] }
+    });
+    expect(runtime.scene.getObject('function-controller')?.renderHints).toMatchObject({
+      clipWorldBounds: { left: -3, right: 9, top: 4, bottom: -8 }
+    });
   });
 
   it('removes old backend resources before switching GraphSceneRuntime backends', () => {
