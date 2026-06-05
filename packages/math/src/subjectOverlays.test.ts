@@ -284,7 +284,8 @@ describe('subject overlay model', () => {
       end: { x: 1, y: 5 }
     });
     expect(quadraticModel.auxiliaryLines[0].style).toMatchObject({
-      strokeColor: '#2563EB',
+      strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
+      textColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
       strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH
     });
     expect(quadraticModel.auxiliaryLines[0].style?.lineDash).toEqual(SUBJECT_OVERLAY_DASH_PATTERN);

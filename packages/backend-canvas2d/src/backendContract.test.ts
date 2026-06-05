@@ -919,6 +919,80 @@ describe('shared backend contract adapters', () => {
     backend.destroy();
   });
 
+  it('honors disabled selection stroke scaling for selected dashed Canvas2D helper lines', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-selected-helper-line',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, bottom: -10, right: 10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      id: 'selected-helper-line',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: -4, y: 0 }, { x: 4, y: 0 }]
+        }
+      },
+      meta: { selected: true },
+      renderHints: { strokeColor: 'rgba(102, 102, 102, 1)', strokeWidth: 1, selectionStrokeScale: false, lineDash: [4, 8] },
+      layerId: 'content'
+    }).ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'setLineDash', pattern: [4, 8] }),
+      expect.objectContaining({ name: 'stroke', strokeStyle: 'rgba(102, 102, 102, 1)', lineWidth: 1 })
+    ]));
+
+    backend.destroy();
+  });
+
+  it('still doubles selected dashed Canvas2D geometry without an explicit selection stroke policy', () => {
+    const { context, ops } = createRecordingCanvasContext();
+    const backend = createCanvas2DGraphBackend({
+      id: 'canvas-selected-dashed-line',
+      canvas: document.createElement('canvas'),
+      context,
+      pixelRatio: 1,
+      worldBounds: { left: -10, top: 10, bottom: -10, right: 10 },
+      showAxes: false
+    });
+
+    backend.mount(document.createElement('div'), { size: { width: 200, height: 200 } });
+    expect(backend.create({
+      id: 'selected-dashed-line',
+      kind: 'shape',
+      type: 'function',
+      payload: {
+        geometry: {
+          kind: 'polyline',
+          points: [{ x: -4, y: 0 }, { x: 4, y: 0 }]
+        }
+      },
+      meta: { selected: true },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 1, lineDash: [4, 8] },
+      layerId: 'content'
+    }).ok).toBe(true);
+    ops.splice(0);
+    backend.flush();
+
+    expect(ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'setLineDash', pattern: [4, 8] }),
+      expect.objectContaining({ name: 'stroke', strokeStyle: '#0ea5e9', lineWidth: 2 })
+    ]));
+
+    backend.destroy();
+  });
+
   it('renders Canvas2D point-specific marker fill and stroke hints', () => {
     const { context, ops } = createRecordingCanvasContext();
     const backend = createCanvas2DGraphBackend({

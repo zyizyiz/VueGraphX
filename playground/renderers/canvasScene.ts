@@ -245,6 +245,7 @@ const withRenderHints = (node: GraphObjectNode, command: PlaygroundCanvasCommand
     fillColor: readString(options.fillColor, `${command.color}26`),
     fillOpacity: readNumber(options.fillOpacity, readNumber(existingHints.fillOpacity, 1)),
     strokeWidth: readNumber(options.strokeWidth, 2),
+    selectionStrokeScale: readSelectionStrokeScale(options.selectionStrokeScale, existingHints.selectionStrokeScale),
     lineDash: readLineDashPattern(options.lineDash) ?? readLineDashPattern(existingHints.lineDash),
     radius: readNumber(options.size, readNumber(options.radius, readNumber(existingHints.radius, STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx)))
   };
@@ -1463,6 +1464,13 @@ const readPoint = (value: unknown): { x: number; y: number } | null => {
 const asRecord = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
 const readString = (value: unknown, fallback: string): string => typeof value === 'string' ? value : fallback;
 const readNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const readSelectionStrokeScale = (value: unknown, fallback: unknown): number | false | undefined => (
+  value === false || typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : fallback === false || typeof fallback === 'number' && Number.isFinite(fallback) && fallback > 0
+      ? fallback
+      : undefined
+);
 const readStringOrNumber = (value: unknown, fallback: string | number): string | number => (
   typeof value === 'string' || typeof value === 'number' && Number.isFinite(value) ? value : fallback
 );

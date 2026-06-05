@@ -701,6 +701,46 @@ describe('GraphXEngine scene document support', () => {
     });
   });
 
+  it('keeps dashed JSXGraph backend command helpers at their configured stroke width when selected', () => {
+    const engine = createFakeEngine();
+    const created: Array<{ type: string; args: unknown[]; attrs: Record<string, unknown>; element: Record<string, unknown> }> = [];
+    const board = (engine as any).boardMgr.board;
+    board.containerObj = document.createElement('div');
+    board.create = vi.fn((type: string, args: unknown[], attrs: Record<string, unknown>) => {
+      const element: Record<string, unknown> = { id: `${type}-${created.length + 1}`, elType: type };
+      created.push({ type, args, attrs, element });
+      return element;
+    });
+    board.removeObject = vi.fn();
+
+    engine.executeCommand('cmd_a', 'A = (0, 0)', '#0ea5e9');
+    engine.executeCommand('cmd_b', 'B = (2, 0)', '#0ea5e9');
+    engine.executeCommand('cmd_helper', 'helper = Segment(A, B)', '#64748b', {
+      strokeWidth: 1,
+      selectionStrokeScale: false,
+      lineDash: [4, 8]
+    });
+
+    const initialHelper = [...created].reverse().find((entry) => entry.type === 'segment');
+    expect(initialHelper?.attrs).toMatchObject({
+      strokeWidth: 1,
+      dash: 2
+    });
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'helper')?.renderHints).toMatchObject({
+      lineDash: [4, 8],
+      selectionStrokeScale: false
+    });
+
+    expect(engine.executeRuntimeCapability('math.object.select', { scope: 'object', objectId: 'helper' }, true)).toBe(true);
+
+    const selectedHelper = [...created].reverse().find((entry) => entry.type === 'segment');
+    expect(engine.exportRuntimeScene().scene?.objects.find((node) => node.id === 'helper')?.meta?.selected).toBe(true);
+    expect(selectedHelper?.attrs).toMatchObject({
+      strokeWidth: 1,
+      dash: 2
+    });
+  });
+
   it('keeps runtime object deselection scoped to the requested object', () => {
     const engine = createFakeEngine();
 

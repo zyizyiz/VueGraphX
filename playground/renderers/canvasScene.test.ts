@@ -114,6 +114,16 @@ describe('buildPlaygroundCanvasScene', () => {
         }
       },
       {
+        id: 'helper',
+        expression: 'helper = Segment(Point(-2, 0), Point(2, 0))',
+        color: '#64748B',
+        options: {
+          strokeWidth: 1,
+          selectionStrokeScale: false,
+          lineDash: [4, 8]
+        }
+      },
+      {
         id: 'label',
         expression: 'label = Text(P, "P")',
         color: '#FF3333',
@@ -140,6 +150,11 @@ describe('buildPlaygroundCanvasScene', () => {
       pointFillColor: '#FFFFFF',
       pointStrokeColor: '#333333',
       pointStrokeWidth: 1.5
+    });
+    expect(result.nodes.find((node) => node.id === 'helper')?.renderHints).toMatchObject({
+      strokeWidth: 1,
+      selectionStrokeScale: false,
+      lineDash: [4, 8]
     });
     expect(result.nodes.find((node) => node.id === 'label')?.renderHints).toMatchObject({
       textColor: '#FF3333',

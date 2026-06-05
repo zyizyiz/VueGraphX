@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS,
+  SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
   SUBJECT_OVERLAY_DASH_PATTERN,
   SUBJECT_OVERLAY_DASH_STROKE_WIDTH
 } from '@vuegraphx/math';
@@ -50,15 +51,16 @@ describe('subject tools representative playground demos', () => {
     expect(rows.filter((row) => !row.active).every((row) => Object.values(row.categories).every((status) => status === 'unsupported'))).toBe(true);
   });
 
-  it('uses core annotation defaults and target-colored symmetry axis in the function annotation demo', () => {
+  it('uses core annotation defaults and standard auxiliary-line style in the function annotation demo', () => {
     const annotationDemo = subjectToolsRepresentativeDemos.find((demo) => demo.category === 'annotation');
     expect(annotationDemo).toBeDefined();
     const commands = annotationDemo!.commands.filter((command): command is { expr: string; options?: Record<string, unknown> } => typeof command !== 'string');
 
     const symmetryAxis = commands.find((command) => command.expr.startsWith('q_aux_1 = Segment'));
     expect(symmetryAxis?.options).toMatchObject({
-      strokeColor: '#2563EB',
+      strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
       strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+      selectionStrokeScale: false,
       lineDash: SUBJECT_OVERLAY_DASH_PATTERN
     });
 

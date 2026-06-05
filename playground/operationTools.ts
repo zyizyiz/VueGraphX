@@ -19,6 +19,9 @@ import {
   createSubjectShapeEditModel,
   createTangentSubjectFunction,
   point2D,
+  SUBJECT_OVERLAY_DASH_PATTERN,
+  SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+  SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
   type MathPoint2D,
   type SubjectGeometryGridSnapOptions,
   type SubjectAuxiliaryLineConstructionContact,
@@ -350,8 +353,7 @@ const operationGeometryTransform = createSubjectGeometryTransformModel(operation
   snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 },
   preview: {
     includeCenterLines: true,
-    includeTrajectories: true,
-    style: { strokeColor: '#7C3AED', textColor: '#7C3AED' }
+    includeTrajectories: true
   }
 });
 const operationGeometryTransformVertices = operationGeometryTransform.after.kind === 'polygon'
@@ -366,10 +368,7 @@ const operationShapeEdit = createSubjectShapeEditModel(operationShapeEditTarget,
 }, {
   bounds: { minX: -5, minY: -4, maxX: 5, maxY: 4 },
   boundsMode: 'translate-inside',
-  snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 },
-  preview: {
-    style: { strokeColor: '#7C3AED', textColor: '#7C3AED' }
-  }
+  snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 }
 });
 const operationShapeEditVertices = operationShapeEdit.after.kind === 'polygon'
   ? operationShapeEdit.after.vertices
@@ -403,11 +402,6 @@ const operationGeometryOverlayConfig: SubjectOverlayConfig = {
     labels: {
       altitude: '高',
       median: '中线'
-    },
-    styles: {
-      altitude: { strokeColor: '#EF4444' },
-      median: { strokeColor: '#16A34A' },
-      free: { strokeColor: '#7C3AED' }
     }
   },
   coordinates: {
@@ -433,8 +427,7 @@ const operationAuxiliaryConstruction = createSubjectAuxiliaryLineConstructionMod
   { start: point2D(-4.4, 0.75), end: point2D(3.2, 0.75) },
   {
     label: '构造候选线',
-    state: 'confirmed',
-    style: { strokeColor: '#7C3AED', lineDash: [4, 8], strokeWidth: 1 }
+    state: 'confirmed'
   }
 );
 
@@ -475,8 +468,7 @@ const operationTangentOverlay = createSubjectOverlayModel({
     includeKinds: ['asymptote'],
     defaultVisibleKinds: ['asymptote'],
     maxCandidates: 6,
-    labels: { asymptote: '渐近线' },
-    styles: { asymptote: { strokeColor: '#EA580C' } }
+    labels: { asymptote: '渐近线' }
   },
   annotations: {
     includeKinds: ['asymptote']
@@ -604,7 +596,12 @@ const operationAuxiliaryConstructionCommands: readonly OperationCommandSpec[] = 
   { expr: 'constructTri = Polygon(A, B, C)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.14, strokeWidth: 2 } },
   {
     expr: `draftLine = Segment(${operationPointTuple(operationAuxiliaryConstruction.draft.start)}, ${operationPointTuple(operationAuxiliaryConstruction.draft.end)})`,
-    options: { strokeColor: '#94A3B8', lineDash: [2, 6] }
+    options: {
+      strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
+      lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
+      strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+      selectionStrokeScale: false
+    }
   },
   ...(operationAuxiliaryConstruction.candidate ? operationOverlayLineCommands([operationAuxiliaryConstruction.candidate], { labels: false }) : []),
   ...operationConstructionContactCommands(operationAuxiliaryConstruction.contacts, { prefix: 'constructContact', limit: 4 }),
@@ -851,6 +848,7 @@ function operationOverlayStyleOptions(style: SubjectOverlayStyle | undefined, fa
     strokeColor: style?.strokeColor ?? style?.textColor ?? fallbackColor
   };
   if (typeof style?.strokeWidth === 'number') options.strokeWidth = style.strokeWidth;
+  if (style?.selectionStrokeScale !== undefined) options.selectionStrokeScale = style.selectionStrokeScale;
   if (style?.fillColor) options.fillColor = style.fillColor;
   if (style?.lineDash?.length) options.lineDash = [...style.lineDash];
   return options;

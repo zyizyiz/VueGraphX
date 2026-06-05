@@ -41,7 +41,7 @@ describe('subject auxiliary line selection', () => {
     expect(model.confirmedIds).toEqual([]);
     expect(model.hoveredLine?.state).toBe('preview');
     expect(model.hoveredLine?.visible).toBe(true);
-    expect(model.hoveredLine?.style?.emphasis).toBe('highlight');
+    expect(model.hoveredLine?.style?.emphasis).toBeUndefined();
     expect(model.entries.find((entry) => entry.lineId === 'altitude-a')).toMatchObject({
       hovered: true,
       selected: false,
@@ -68,6 +68,7 @@ describe('subject auxiliary line selection', () => {
     expect(limited.selectedIds).toEqual(['altitude-a', 'median-b']);
     expect(limited.diagnostics.map((diagnostic) => diagnostic.code)).toContain('subject-auxiliary-selection.limit-reached');
     expect(limited.selectedLines.map((selectedLine) => selectedLine.state)).toEqual(['preview', 'preview']);
+    expect(limited.selectedLines.map((selectedLine) => selectedLine.style?.emphasis)).toEqual([undefined, undefined]);
   });
 
   it('keeps single-select replacement deterministic', () => {

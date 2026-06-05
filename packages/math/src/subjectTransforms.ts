@@ -21,6 +21,7 @@ import type {
   SubjectPolygonOverlayTarget,
   SubjectSegmentOverlayTarget
 } from './subjectOverlays';
+import { createSubjectAuxiliaryLineStyle } from './subjectAuxiliaryLineStyle';
 
 export type SubjectGeometryTransformTarget =
   | SubjectPolygonOverlayTarget
@@ -589,14 +590,9 @@ const cloneMeta = (meta: Record<string, unknown> | undefined): Record<string, un
   meta ? { ...meta } : undefined
 );
 
-const transformPreviewStyle = (style: SubjectOverlayStyle | undefined): SubjectOverlayStyle => ({
-  strokeColor: '#94A3B8',
-  textColor: '#94A3B8',
-  strokeWidth: 1,
-  opacity: 0.9,
-  lineDash: [4, 8],
-  ...style
-});
+const transformPreviewStyle = (style: SubjectOverlayStyle | undefined): SubjectOverlayStyle => (
+  createSubjectAuxiliaryLineStyle({ kind: 'free', style })
+);
 
 const formatNumber = (value: number): string => (
   Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')

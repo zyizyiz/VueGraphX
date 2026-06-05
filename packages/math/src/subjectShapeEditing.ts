@@ -21,6 +21,7 @@ import type {
   SubjectRayOverlayTarget,
   SubjectSegmentOverlayTarget
 } from './subjectOverlays';
+import { createSubjectAuxiliaryLineStyle } from './subjectAuxiliaryLineStyle';
 import {
   resolveSubjectGeometryGridSnapOptions,
   shouldApplySubjectGeometryGridSnap,
@@ -394,12 +395,7 @@ const createEditPreviewLines = (
     visible: true,
     state: 'preview',
     selectable: false,
-    style: {
-      strokeColor: '#7C3AED',
-      strokeWidth: 1,
-      lineDash: [4, 8],
-      ...cloneStyle(options?.style)
-    },
+    style: createSubjectAuxiliaryLineStyle({ kind: 'free', style: options?.style }),
     meta: { previewKind: 'shape-edit-handle' }
   }];
 };
@@ -489,10 +485,6 @@ const clonePoint = (point: MathPoint2D): MathPoint2D => ({ x: point.x, y: point.
 
 const cloneMeta = <T extends Record<string, unknown> | undefined>(meta: T): T => (
   meta ? { ...meta } as T : undefined as T
-);
-
-const cloneStyle = (style: SubjectOverlayStyle | undefined): SubjectOverlayStyle | undefined => (
-  style ? { ...style, ...(style.lineDash ? { lineDash: [...style.lineDash] } : {}) } : undefined
 );
 
 const formatNumber = (value: number): string => {

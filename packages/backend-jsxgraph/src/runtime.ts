@@ -665,7 +665,7 @@ const createAttributes = (node: GraphObjectNode, _context: GraphBackendContext):
     strokeColor: node.type === 'point' ? pointStrokeColor : strokeColor,
     fillColor,
     fillOpacity: node.type === 'point' ? readNumber(hints.fillOpacity, 1) : readNumber(hints.fillOpacity, 0.15),
-    strokeWidth: selected ? resolveSelectedStrokeWidth(strokeWidth) : strokeWidth,
+    strokeWidth: selected ? resolveSelectedStrokeWidth(strokeWidth, hints) : strokeWidth,
     size: node.type === 'point' ? pointSize : readNumber(hints.radius, 3),
     visible: hints.visible !== false,
     fixed: isJsxGraphDragDisabled(node),
@@ -874,7 +874,13 @@ const normalizeElements = (value: JsxGraphElement | JsxGraphElement[] | null | u
 const asRecord = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
 const isSelectedNode = (node: GraphObjectNode): boolean => node.meta?.selected === true || node.renderHints?.selected === true;
 
-const resolveSelectedStrokeWidth = (strokeWidth: number): number => Math.max(1, strokeWidth) * 2;
+const resolveSelectedStrokeWidth = (strokeWidth: number, renderHints?: Record<string, unknown>): number => {
+  const scale = readSelectionStrokeScale(renderHints?.selectionStrokeScale);
+  return scale === false || scale === 1 ? strokeWidth : Math.max(1, strokeWidth) * scale;
+};
+const readSelectionStrokeScale = (value: unknown): number | false => (
+  value === false || typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 2
+);
 const readJsxGraphLineCap = (value: unknown, fallback: 'butt' | 'round' | 'square'): 'butt' | 'round' | 'square' => (
   value === 'butt' || value === 'round' || value === 'square' ? value : fallback
 );

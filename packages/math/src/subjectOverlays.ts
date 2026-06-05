@@ -30,6 +30,15 @@ import {
   type SubjectFunctionProperty
 } from './subjectFunctions';
 import { createSubjectAuxiliaryLineConstructionModel } from './subjectGeometryConstruction';
+import { createSubjectAuxiliaryLineStyle } from './subjectAuxiliaryLineStyle';
+
+export {
+  createSubjectAuxiliaryLineStyle,
+  SUBJECT_OVERLAY_DASH_PATTERN,
+  SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+  SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
+  type SubjectAuxiliaryLineStyleOptions
+} from './subjectAuxiliaryLineStyle';
 
 export type SubjectOverlayTargetKind =
   | 'polygon'
@@ -103,6 +112,7 @@ export interface SubjectOverlayStyle {
   fillColor?: string;
   textColor?: string;
   strokeWidth?: number;
+  selectionStrokeScale?: number | false;
   opacity?: number;
   lineDash?: readonly number[];
   emphasis?: 'normal' | 'muted' | 'highlight';
@@ -157,9 +167,6 @@ export interface SubjectOverlayConfig {
   meta?: Record<string, unknown>;
 }
 
-export const SUBJECT_OVERLAY_DASH_PATTERN = [4, 8] as const;
-export const SUBJECT_OVERLAY_DASH_STROKE_WIDTH = 1;
-export const SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR = 'rgba(102, 102, 102, 1)';
 export const SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS = {
   vertex: '#EF4444',
   intercept: '#16A34A'
@@ -1402,22 +1409,10 @@ const defaultLineLabels: Record<string, string> = {
   free: '自由辅助线'
 };
 
-const followTargetStrokeKinds = new Set<SubjectAuxiliaryLineKind>(['symmetry-axis', 'asymptote']);
-
 const dashedStyle = (
   targetStrokeColor?: string,
   kind?: SubjectAuxiliaryLineKind
-): SubjectOverlayStyle => {
-  const strokeColor = followTargetStrokeKinds.has(kind ?? '')
-    ? targetStrokeColor ?? SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR
-    : SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR;
-  return {
-    strokeColor,
-    textColor: strokeColor,
-    lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
-    strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH
-  };
-};
+): SubjectOverlayStyle => createSubjectAuxiliaryLineStyle({ targetStrokeColor, kind });
 
 const defaultAnnotationStyle = (kind: SubjectAnnotationKind): SubjectOverlayStyle | undefined => {
   const strokeColor = SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS[kind as keyof typeof SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS];

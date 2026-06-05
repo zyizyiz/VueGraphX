@@ -381,7 +381,7 @@ const decorateLine = (
     ...line,
     visible: active ? true : line.visible,
     state: readDecoratedOverlayState(line.state, entry),
-    style: decorateLineStyle(line.style, entry),
+    style: cloneStyle(line.style),
     meta: {
       ...line.meta,
       auxiliaryLineSelection: entry
@@ -425,15 +425,6 @@ const readDecoratedOverlayState = (
   if (entry.confirmed) return 'confirmed';
   if (entry.hovered || entry.selected) return 'preview';
   return state;
-};
-
-const decorateLineStyle = (
-  style: SubjectOverlayStyle | undefined,
-  entry: SubjectAuxiliaryLineSelectionEntry
-): SubjectOverlayStyle | undefined => {
-  const cloned = cloneStyle(style);
-  if (!entry.hovered && !entry.selected) return cloned;
-  return { ...cloned, emphasis: 'highlight' };
 };
 
 const cloneStyle = (style: SubjectOverlayStyle | undefined): SubjectOverlayStyle | undefined => (

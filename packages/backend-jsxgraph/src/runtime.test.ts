@@ -401,6 +401,72 @@ describe('JsxGraphRuntime', () => {
     }));
   });
 
+  it('honors disabled selection stroke scaling for selected dashed JSXGraph helper lines', () => {
+    const create = vi.fn((type: string) => ({ id: `${type}-1` }));
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      id: 'helper-line',
+      kind: 'shape',
+      type: 'segment',
+      payload: { geometry: { kind: 'segment', start: { x: -4, y: 0 }, end: { x: 4, y: 0 } } },
+      meta: { selected: true },
+      renderHints: { strokeColor: 'rgba(102, 102, 102, 1)', strokeWidth: 1, selectionStrokeScale: false, lineDash: [4, 8] },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:helper-line',
+      objectId: 'helper-line',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'helper-line', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(create).toHaveBeenCalledWith('segment', [[-4, 0], [4, 0]], expect.objectContaining({
+      strokeColor: 'rgba(102, 102, 102, 1)',
+      strokeWidth: 1,
+      dash: 2
+    }));
+  });
+
+  it('still doubles selected dashed JSXGraph geometry without an explicit selection stroke policy', () => {
+    const create = vi.fn((type: string) => ({ id: `${type}-1` }));
+    const runtime = createJsxGraphRuntime({} as any, {
+      board: {
+        create,
+        removeObject: vi.fn(),
+        update: vi.fn()
+      }
+    });
+
+    runtime.createObject({
+      id: 'dashed-line',
+      kind: 'shape',
+      type: 'segment',
+      payload: { geometry: { kind: 'segment', start: { x: -4, y: 0 }, end: { x: 4, y: 0 } } },
+      meta: { selected: true },
+      renderHints: { strokeColor: '#0ea5e9', strokeWidth: 1, lineDash: [4, 8] },
+      layerId: 'content'
+    }, {
+      id: 'jsxgraph:dashed-line',
+      objectId: 'dashed-line',
+      backendId: 'jsxgraph',
+      layerId: 'content',
+      target: { scope: 'object', objectId: 'dashed-line', backendId: 'jsxgraph', layerId: 'content' }
+    });
+
+    expect(create).toHaveBeenCalledWith('segment', [[-4, 0], [4, 0]], expect.objectContaining({
+      strokeColor: '#0ea5e9',
+      strokeWidth: 2,
+      dash: 2
+    }));
+  });
+
   it('maps point-specific style hints to JSXGraph point attributes', () => {
     const create = vi.fn((type: string) => ({ id: `${type}-1` }));
     const runtime = createJsxGraphRuntime({} as any, {

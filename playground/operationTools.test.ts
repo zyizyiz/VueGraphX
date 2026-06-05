@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS,
+  SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
   SUBJECT_OVERLAY_DASH_PATTERN,
   SUBJECT_OVERLAY_DASH_STROKE_WIDTH
 } from '@vuegraphx/math';
@@ -109,7 +110,7 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     expect((commands[3].options?.coordinateSystem as any).origin).toEqual({ x: 4, y: 5 });
   });
 
-  it('uses core annotation defaults and target-colored symmetry axis in operation tools', () => {
+  it('uses core annotation defaults and standard auxiliary-line style in operation tools', () => {
     const tool = operationToolGroups
       .flatMap((group) => group.tools)
       .find((entry) => entry.id === 'quadratic-overlay-tools');
@@ -117,8 +118,9 @@ describe('updateOperationCoordinateSystemOrigin', () => {
 
     const symmetryAxis = tool!.commands.find((command) => command.expr.startsWith('Segment('));
     expect(symmetryAxis?.options).toMatchObject({
-      strokeColor: '#2563EB',
+      strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
       strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+      selectionStrokeScale: false,
       lineDash: SUBJECT_OVERLAY_DASH_PATTERN
     });
 

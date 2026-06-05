@@ -444,7 +444,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const strokeColor = readString(node.renderHints?.strokeColor, '#1f6feb');
     const fillColor = readString(node.renderHints?.fillColor, 'rgba(31, 111, 235, 0.15)');
     const baseStrokeWidth = readNumber(node.renderHints?.strokeWidth, lineDash ? CANVAS2D_DASH_STROKE_WIDTH : 2);
-    const strokeWidth = (selected ? resolveSelectedStrokeWidth(baseStrokeWidth) : baseStrokeWidth) * (lineDash ? 1 : visualScale);
+    const strokeWidth = (selected ? resolveSelectedStrokeWidth(baseStrokeWidth, node.renderHints) : baseStrokeWidth) * (lineDash ? 1 : visualScale);
     this.context.save();
     this.context.strokeStyle = strokeColor;
     this.context.fillStyle = fillColor;
@@ -1028,7 +1028,7 @@ export class Canvas2DGraphBackend extends MemoryGraphBackend {
     const fillColor = readString(hints.pointFillColor, options.strokeColor);
     const strokeColor = readString(hints.pointStrokeColor, options.strokeColor);
     const baseStrokeWidth = readNumber(hints.pointStrokeWidth, options.baseStrokeWidth);
-    const strokeWidth = (options.selected ? resolveSelectedStrokeWidth(baseStrokeWidth) : baseStrokeWidth) * options.visualScale;
+    const strokeWidth = (options.selected ? resolveSelectedStrokeWidth(baseStrokeWidth, hints) : baseStrokeWidth) * options.visualScale;
     const pathRadius = Math.max(0, visualRadius - strokeWidth / 2);
     this.context.beginPath();
     this.context.fillStyle = fillColor;
@@ -1306,7 +1306,13 @@ const readRenderZIndex = (node: GraphObjectNode): number => {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 };
 
-const resolveSelectedStrokeWidth = (strokeWidth: number): number => Math.max(1, strokeWidth) * 2;
+const resolveSelectedStrokeWidth = (strokeWidth: number, renderHints?: Record<string, unknown>): number => {
+  const scale = readSelectionStrokeScale(renderHints?.selectionStrokeScale);
+  return scale === false || scale === 1 ? strokeWidth : Math.max(1, strokeWidth) * scale;
+};
+const readSelectionStrokeScale = (value: unknown): number | false => (
+  value === false || typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 2
+);
 const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value) ? Number(value.toFixed(3)).toString() : '';
 const renderLatexHtmlAndMathMl = (descriptor: GraphTextRenderDescriptor): string => (
   katex.renderToString(descriptor.latex ?? descriptor.text, {

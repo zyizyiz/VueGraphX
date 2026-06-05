@@ -286,6 +286,16 @@ const formatCoreNumber = (value: number): string => Number.isInteger(value) ? St
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
+const readCommandLineDashPattern = (value: unknown): number[] | null => (
+  Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry > 0)
+    ? [...value]
+    : null
+);
+
+const readCommandSelectionStrokeScale = (value: unknown): number | false | undefined => (
+  value === false || typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
+);
+
 const isEngineMode = (value: unknown): value is EngineMode => value === '2d' || value === '3d' || value === 'geometry';
 
 const cloneSelectionItem = (item: GraphSelectionItem): GraphSelectionItem => ({
@@ -2371,10 +2381,13 @@ export class GraphXEngine {
 
   private createCommandRenderHints(color: string, extraOptions?: any): Record<string, unknown> {
     const options = isRecord(extraOptions) ? extraOptions : {};
+    const lineDash = readCommandLineDashPattern(options.lineDash);
     return {
       strokeColor: typeof options.strokeColor === 'string' ? options.strokeColor : color,
       fillColor: typeof options.fillColor === 'string' ? options.fillColor : `${color}26`,
       strokeWidth: typeof options.strokeWidth === 'number' ? options.strokeWidth : undefined,
+      selectionStrokeScale: readCommandSelectionStrokeScale(options.selectionStrokeScale),
+      lineDash: lineDash ?? undefined,
       visible: options.visible === false || options.plot === false ? false : undefined
     };
   }

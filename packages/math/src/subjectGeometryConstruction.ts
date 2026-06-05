@@ -24,6 +24,7 @@ import type {
   SubjectRayOverlayTarget,
   SubjectSegmentOverlayTarget
 } from './subjectOverlays';
+import { createSubjectAuxiliaryLineStyle } from './subjectAuxiliaryLineStyle';
 
 export type SubjectAuxiliaryLineConstructionTarget =
   | SubjectPolygonOverlayTarget
@@ -412,7 +413,7 @@ const createDescriptor = (
   visible: true,
   state: options.state ?? 'preview',
   selectable: options.selectable ?? true,
-  style: cloneStyle(options.style),
+  style: createSubjectAuxiliaryLineStyle({ kind: 'free', style: options.style }),
   meta: { freeDraw: true, construction: true, ...options.meta }
 });
 
@@ -548,7 +549,3 @@ const hashConstructionValue = (value: unknown): string => {
 const isFinitePoint = (point: MathPoint2D): boolean => Number.isFinite(point.x) && Number.isFinite(point.y);
 
 const clonePoint = (point: MathPoint2D): MathPoint2D => ({ x: point.x, y: point.y });
-
-const cloneStyle = (style: SubjectOverlayStyle | undefined): SubjectOverlayStyle | undefined => (
-  style ? { ...style, ...(style.lineDash ? { lineDash: [...style.lineDash] } : {}) } : undefined
-);

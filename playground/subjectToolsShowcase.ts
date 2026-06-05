@@ -13,6 +13,9 @@ import {
   createSubjectOverlayModel,
   createSubjectShapeEditModel,
   point2D,
+  SUBJECT_OVERLAY_DASH_PATTERN,
+  SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+  SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
   tickSubjectDynamicPoint,
   updateSubjectFunctionParameters,
   type MathPoint2D,
@@ -113,11 +116,6 @@ const geometryOverlayConfig: SubjectOverlayConfig = {
       altitude: '高',
       median: '中线',
       'angle-bisector': '角平分线'
-    },
-    styles: {
-      altitude: { strokeColor: '#EF4444' },
-      median: { strokeColor: '#16A34A' },
-      free: { strokeColor: '#7C3AED' }
     }
   },
   shapes: {
@@ -163,8 +161,7 @@ const geometryTransform = createSubjectGeometryTransformModel(geometryTransformT
   snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 },
   preview: {
     includeCenterLines: true,
-    includeTrajectories: true,
-    style: { strokeColor: '#7C3AED', textColor: '#7C3AED' }
+    includeTrajectories: true
   }
 });
 const geometryTransformVertices = geometryTransform.after.kind === 'polygon' ? geometryTransform.after.vertices : [];
@@ -183,10 +180,7 @@ const geometryEdit = createSubjectShapeEditModel(geometryEditTarget, {
 }, {
   bounds: { minX: -5, minY: -4, maxX: 5, maxY: 4 },
   boundsMode: 'translate-inside',
-  snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 },
-  preview: {
-    style: { strokeColor: '#7C3AED', textColor: '#7C3AED' }
-  }
+  snapToGrid: { enabled: true, step: 0.5, tolerance: 0.12 }
 });
 const geometryEditVertices = geometryEdit.after.kind === 'polygon' ? geometryEdit.after.vertices : [];
 const geometryConstruction = createSubjectAuxiliaryLineConstructionModel(
@@ -194,8 +188,7 @@ const geometryConstruction = createSubjectAuxiliaryLineConstructionModel(
   { start: point2D(-4.4, 0.75), end: point2D(3.2, 0.75) },
   {
     label: '构造候选线',
-    state: 'confirmed',
-    style: { strokeColor: '#7C3AED', lineDash: [4, 8], strokeWidth: 1 }
+    state: 'confirmed'
   }
 );
 
@@ -354,7 +347,12 @@ export const subjectToolsRepresentativeDemos: readonly SubjectToolsPlaygroundDem
       { expr: 'constructTri = Polygon(A, B, C)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.14, strokeWidth: 2 } },
       {
         expr: `draft = Segment(${formatPointTuple(geometryConstruction.draft.start)}, ${formatPointTuple(geometryConstruction.draft.end)})`,
-        options: { strokeColor: '#94A3B8', lineDash: [2, 6] }
+        options: {
+          strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
+          lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
+          strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+          selectionStrokeScale: false
+        }
       },
       ...(geometryConstruction.candidate ? overlayLineCommands([geometryConstruction.candidate], { prefix: 'construct_candidate', labels: false }) : []),
       ...constructionContactCommands(geometryConstruction.contacts, { prefix: 'construct_contact', limit: 4 })
@@ -509,6 +507,7 @@ function overlayStyleOptions(style: SubjectOverlayStyle | undefined, fallbackCol
     strokeColor: style?.strokeColor ?? style?.textColor ?? fallbackColor
   };
   if (typeof style?.strokeWidth === 'number') options.strokeWidth = style.strokeWidth;
+  if (style?.selectionStrokeScale !== undefined) options.selectionStrokeScale = style.selectionStrokeScale;
   if (style?.fillColor) options.fillColor = style.fillColor;
   if (style?.lineDash?.length) options.lineDash = [...style.lineDash];
   return options;
