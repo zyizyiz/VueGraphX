@@ -22,3 +22,4 @@ export * from './subjectAuxiliaryLineSelection';
 export * from './subjectTransforms';
 export * from './subjectGeometryConstruction';
 export * from './subjectShapeEditing';
+export * from './subjectShapeEditOverlay';
