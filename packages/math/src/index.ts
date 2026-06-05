@@ -18,6 +18,7 @@ export * from './calculus';
 export * from './sceneSampling';
 export * from './subjectFunctions';
 export * from './subjectOverlays';
+export * from './subjectAuxiliaryLineSelection';
 export * from './subjectTransforms';
 export * from './subjectGeometryConstruction';
 export * from './subjectShapeEditing';
