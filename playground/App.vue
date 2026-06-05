@@ -476,12 +476,11 @@ import {
 import { registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 import {
-  classifyCoreRendererWheelGesture,
-  fitBoundsToViewportAspect,
-  panFittedBoundsByPointerDelta,
-  panFittedBoundsByWheelDelta,
-  zoomFittedBoundsAroundClientPoint
-} from './viewportBounds';
+  createGraphViewportNavigationController,
+  fitGraphBoundsToViewportAspect,
+  type GraphViewportNavigationController,
+  type GraphViewportNavigationKind
+} from '@vuegraphx/core';
 
 let nextOperationCoordinateSystemSequence = 1;
 let nextOperationShapeEditSequence = 1;
@@ -613,19 +612,6 @@ const coreSelectedObjectId = computed(() => coreRuntimeSelection.value.primaryOb
 const BUSINESS_OVERLAY_ANCHOR = { dimension: '2d', x: 0, y: 0 } as const;
 const BUSINESS_OVERLAY_OFFSET = { x: 0, y: -18 } as const;
 
-interface CorePanSession {
-  pointerId: number;
-  startPoint: GraphClientPoint;
-  startBounds: CanvasWorldBounds;
-}
-
-interface CorePinchSession {
-  pointerIds: [number, number];
-  startDistance: number;
-  startCenter: GraphClientPoint;
-  startBounds: CanvasWorldBounds;
-}
-
 interface CoordinateSystemDragSession {
   pointerId: number;
   objectId: string;
@@ -655,11 +641,9 @@ interface OperationShapeEditDragSession {
   element: HTMLElement;
 }
 
-let corePanSession: CorePanSession | null = null;
-let corePinchSession: CorePinchSession | null = null;
+let coreNavigationController: GraphViewportNavigationController<CanvasWorldBounds> | null = null;
 let coordinateSystemDragSession: CoordinateSystemDragSession | null = null;
 let operationShapeEditDragSession: OperationShapeEditDragSession | null = null;
-const corePointers = new Map<number, GraphClientPoint>();
 let disposeViewportChangeSubscription: (() => void) | null = null;
 let disposeCoreRuntimeSelectionSubscription: (() => void) | null = null;
 
@@ -837,11 +821,13 @@ const createCoreViewportBoundsForCurrentMode = (): CanvasWorldBounds => {
 };
 const resetCoreViewportBounds = () => {
   coreViewportBounds.value = createCoreViewportBoundsForCurrentMode();
+  resetCoreNavigationController();
   applyCoreViewportBounds();
 };
 
 const setCoreViewportBounds = (bounds: CanvasWorldBounds, reason: string) => {
   coreViewportBounds.value = cloneBounds(bounds);
+  coreNavigationController?.setBounds(coreViewportBounds.value);
   applyCoreViewportBounds();
   pushCoreInteractionDiagnostic(reason);
 };
@@ -850,6 +836,36 @@ const applyCoreViewportBounds = () => {
   canvasBackendRef.value?.setWorldBounds(coreViewportBounds.value);
   babylonBackendRef.value?.setWorldBounds(coreViewportBounds.value);
   refreshBusinessOverlayPosition();
+};
+
+const resetCoreNavigationController = () => {
+  coreNavigationController = createGraphViewportNavigationController({
+    bounds: coreViewportBounds.value,
+    viewport: getGraphViewportSize()
+  });
+};
+
+const requireCoreNavigationController = (): GraphViewportNavigationController<CanvasWorldBounds> => {
+  if (!coreNavigationController) {
+    resetCoreNavigationController();
+  }
+  if (!coreNavigationController) {
+    throw new Error('Core viewport navigation controller is missing.');
+  }
+  return coreNavigationController;
+};
+
+const describeCoreNavigationKind = (kind: GraphViewportNavigationKind, event?: WheelEvent): string => {
+  if (kind === 'wheel-zoom') {
+    const direction = event && event.deltaY < 0 ? 'in' : 'out';
+    return `${event?.ctrlKey || event?.metaKey ? 'pinch-like' : 'wheel'} zoom ${direction}`;
+  }
+  if (kind === 'wheel-pan') return 'trackpad pan';
+  if (kind === 'pointer-pan') return 'pointer pan';
+  if (kind === 'pointer-pinch') return 'native pointer pinch zoom';
+  if (kind === 'pointer-pan-start') return 'background pan started';
+  if (kind === 'pointer-pinch-start') return 'native pointer pinch started';
+  return kind;
 };
 
 const getActiveCoreRuntime = () => (
@@ -908,7 +924,7 @@ const getOperationPlacementBounds = (): CanvasWorldBounds => {
 
 const getOperationVisiblePlacementBounds = (): CanvasWorldBounds => {
   const bounds = getOperationPlacementBounds();
-  return isCoreRendererActive.value ? fitBoundsToViewportAspect(bounds, getGraphViewportSize()) : bounds;
+  return isCoreRendererActive.value ? fitGraphBoundsToViewportAspect(bounds, getGraphViewportSize()) : bounds;
 };
 
 const getWorldPointForCanvasPoint = (point: GraphClientPoint): { dimension: '2d'; x: number; y: number } => {
@@ -1036,8 +1052,7 @@ const startOperationShapeEditHandleDrag = (event: PointerEvent, handleId: string
 
   operationShapeEditDragSession = { pointerId: event.pointerId, handleId, element };
   activeOperationShapeEditDragHandleId.value = handleId;
-  corePanSession = null;
-  corePinchSession = null;
+  coreNavigationController?.resetPointers();
   coordinateSystemDragSession = null;
   element.setPointerCapture?.(event.pointerId);
   window.addEventListener('pointermove', handleOperationShapeEditHandleMove);
@@ -1360,7 +1375,7 @@ const startCoordinateSystemDrag = (
     backend,
     lastWorldPoint: getWorldPointForCanvasPoint(point)
   };
-  corePanSession = null;
+  coreNavigationController?.resetPointers();
   graphContainerRef.value?.setPointerCapture?.(event.pointerId);
   suppressCoordinateSystemDragEvent(event);
   pushCoreInteractionDiagnostic(`coordinate system drag started: ${objectId}`);
@@ -1632,23 +1647,18 @@ const handleCoreRendererWheel = (event: WheelEvent) => {
 
   const point = getCoreLocalPoint(event);
   if (!point) return;
-  const gesture = classifyCoreRendererWheelGesture(event);
-  if (gesture === 'ignore') return;
+  const result = requireCoreNavigationController().handleWheel({
+    point,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    deltaMode: event.deltaMode,
+    deltaX: event.deltaX,
+    deltaY: event.deltaY
+  });
+  if (!result.handled) return;
+
   event.preventDefault();
-
-  if (gesture === 'zoom') {
-    const scale = event.deltaY < 0 ? 0.88 : 1.14;
-    setCoreViewportBounds(
-      zoomFittedBoundsAroundClientPoint(coreViewportBounds.value, point, getGraphViewportSize(), scale),
-      `${event.ctrlKey || event.metaKey ? 'pinch-like' : 'wheel'} zoom ${scale < 1 ? 'in' : 'out'}`
-    );
-    return;
-  }
-
-  setCoreViewportBounds(
-    panFittedBoundsByWheelDelta(coreViewportBounds.value, { x: event.deltaX, y: event.deltaY }, getGraphViewportSize()),
-    'trackpad pan'
-  );
+  setCoreViewportBounds(result.bounds, describeCoreNavigationKind(result.kind, event));
 };
 
 const handleCoreRendererPointerDown = (event: PointerEvent) => {
@@ -1667,19 +1677,18 @@ const handleCoreRendererPointerDown = (event: PointerEvent) => {
   }
 
   if (!isCoreRendererActive.value) return;
-  corePointers.set(event.pointerId, point);
+  const controller = requireCoreNavigationController();
+  if (controller.getPointerCount() > 0) {
+    const result = controller.handlePointerDown({
+      pointerId: event.pointerId,
+      point
+    });
+    if (!result.handled) return;
 
-  if (corePointers.size >= 2) {
-    const [first, second] = [...corePointers.entries()].slice(0, 2);
-    corePinchSession = {
-      pointerIds: [first[0], second[0]],
-      startDistance: distanceBetweenPoints(first[1], second[1]),
-      startCenter: midpoint(first[1], second[1]),
-      startBounds: cloneBounds(coreViewportBounds.value)
-    };
-    corePanSession = null;
     coordinateSystemDragSession = null;
-    pushCoreInteractionDiagnostic('native pointer pinch started');
+    event.preventDefault();
+    graphContainerRef.value?.setPointerCapture?.(event.pointerId);
+    pushCoreInteractionDiagnostic(describeCoreNavigationKind(result.kind));
     return;
   }
 
@@ -1699,12 +1708,16 @@ const handleCoreRendererPointerDown = (event: PointerEvent) => {
   clearCoreSelection('selection cleared via background');
   if (isBabylonRendererActive.value && getBabylonRenderModeForCurrentMode() === '3d') return;
 
-  corePanSession = {
+  const result = controller.handlePointerDown({
     pointerId: event.pointerId,
-    startPoint: point,
-    startBounds: cloneBounds(coreViewportBounds.value)
-  };
-  pushCoreInteractionDiagnostic('background pan started');
+    point
+  });
+  if (!result.handled) return;
+
+  coordinateSystemDragSession = null;
+  event.preventDefault();
+  graphContainerRef.value?.setPointerCapture?.(event.pointerId);
+  pushCoreInteractionDiagnostic(describeCoreNavigationKind(result.kind));
 };
 
 const handleCoreRendererPointerMove = (event: PointerEvent) => {
@@ -1713,47 +1726,26 @@ const handleCoreRendererPointerMove = (event: PointerEvent) => {
   if (!point) return;
   if (moveCoordinateSystemDrag(event, point)) return;
   if (!isCoreRendererActive.value) return;
-  if (corePointers.has(event.pointerId)) corePointers.set(event.pointerId, point);
+  const result = requireCoreNavigationController().handlePointerMove({
+    pointerId: event.pointerId,
+    point
+  });
+  if (!result.handled) return;
 
-  if (corePinchSession) {
-    const first = corePointers.get(corePinchSession.pointerIds[0]);
-    const second = corePointers.get(corePinchSession.pointerIds[1]);
-    if (!first || !second || corePinchSession.startDistance <= 1) return;
-    const currentDistance = distanceBetweenPoints(first, second);
-    const scale = Math.max(0.25, Math.min(4, corePinchSession.startDistance / Math.max(1, currentDistance)));
-    setCoreViewportBounds(
-      zoomFittedBoundsAroundClientPoint(corePinchSession.startBounds, corePinchSession.startCenter, getGraphViewportSize(), scale),
-      'native pointer pinch zoom'
-    );
-    return;
-  }
-
-  if (corePanSession?.pointerId === event.pointerId) {
-    setCoreViewportBounds(
-      panFittedBoundsByPointerDelta(
-        corePanSession.startBounds,
-        { x: point.x - corePanSession.startPoint.x, y: point.y - corePanSession.startPoint.y },
-        getGraphViewportSize()
-      ),
-      'pointer pan'
-    );
-  }
+  event.preventDefault();
+  setCoreViewportBounds(result.bounds, describeCoreNavigationKind(result.kind));
 };
 
 const handleCoreRendererPointerUp = (event: PointerEvent) => {
   if (!isCoreRendererActive.value && !coordinateSystemDragSession) return;
   stopCoordinateSystemDrag(event);
   if (!isCoreRendererActive.value) return;
-  corePointers.delete(event.pointerId);
-  if (corePanSession?.pointerId === event.pointerId) corePanSession = null;
-  if (corePinchSession?.pointerIds.includes(event.pointerId)) corePinchSession = null;
+  const result = requireCoreNavigationController().handlePointerUp({ pointerId: event.pointerId });
+  graphContainerRef.value?.releasePointerCapture?.(event.pointerId);
+  if (result.handled) {
+    event.preventDefault();
+  }
 };
-
-const distanceBetweenPoints = (a: GraphClientPoint, b: GraphClientPoint) => Math.hypot(a.x - b.x, a.y - b.y);
-const midpoint = (a: GraphClientPoint, b: GraphClientPoint): GraphClientPoint => ({
-  x: (a.x + b.x) / 2,
-  y: (a.y + b.y) / 2
-});
 
 let modeResizeObserver: ResizeObserver | null = null;
 let modeResizeRaf: number | null = null;
@@ -1856,11 +1848,9 @@ watch(
 );
 
 const destroyPrimaryRenderer = () => {
-  corePanSession = null;
-  corePinchSession = null;
+  coreNavigationController = null;
   coordinateSystemDragSession = null;
   clearOperationShapeEditDragSession();
-  corePointers.clear();
   stopViewportChangeSubscription();
   stopCoreRuntimeSelectionSubscription();
   resetCoreRuntimeSelection();
