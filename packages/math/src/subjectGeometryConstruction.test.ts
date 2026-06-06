@@ -30,6 +30,64 @@ describe('subject auxiliary line construction', () => {
     expect(model.diagnostics.map((diagnostic) => diagnostic.code)).toContain('subject-construction.clipped');
   });
 
+  it('keeps fully internal polygon drafts at the user-drawn endpoints', () => {
+    const model = createSubjectAuxiliaryLineConstructionModel(
+      triangle,
+      { start: point2D(1, 1), end: point2D(2, 1) },
+      { state: 'confirmed' }
+    );
+
+    expect(model.applied).toBe(true);
+    expect(model.candidate?.start).toEqual({ x: 1, y: 1 });
+    expect(model.candidate?.end).toEqual({ x: 2, y: 1 });
+    expect(model.contacts.map((contact) => contact.kind)).toEqual(['inside-endpoint', 'inside-endpoint']);
+    expect(model.candidate?.meta).toMatchObject({ internalDraft: true });
+    expect(model.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('subject-construction.clipped');
+  });
+
+  it('keeps endpoint-near-boundary polygon drafts instead of extending them to another edge', () => {
+    const model = createSubjectAuxiliaryLineConstructionModel(
+      triangle,
+      { start: point2D(1, -0.05), end: point2D(1, 1) },
+      { state: 'confirmed', snapDistance: 0.12 }
+    );
+
+    expect(model.applied).toBe(true);
+    expect(model.candidate?.start).toEqual({ x: 1, y: -0.05 });
+    expect(model.candidate?.end).toEqual({ x: 1, y: 1 });
+    expect(model.contacts.map((contact) => contact.kind)).toEqual(['inside-endpoint', 'inside-endpoint']);
+    expect(model.candidate?.meta).toMatchObject({ internalDraft: true });
+    expect(model.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('subject-construction.clipped');
+  });
+
+  it('keeps endpoint-anchored polygon drafts instead of extending backward to another edge', () => {
+    const model = createSubjectAuxiliaryLineConstructionModel(
+      triangle,
+      { start: point2D(1, 1), end: point2D(5, 1) },
+      { state: 'confirmed' }
+    );
+
+    expect(model.applied).toBe(true);
+    expect(model.candidate?.start).toEqual({ x: 1, y: 1 });
+    expect(model.candidate?.end).toEqual({ x: 5, y: 1 });
+    expect(model.contacts.map((contact) => contact.kind)).toEqual(['inside-endpoint']);
+    expect(model.candidate?.meta).toMatchObject({ endpointAnchoredDraft: true });
+    expect(model.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('subject-construction.clipped');
+  });
+
+  it('rejects endpoint-anchored polygon drafts when single-contact candidates are disabled', () => {
+    const model = createSubjectAuxiliaryLineConstructionModel(
+      triangle,
+      { start: point2D(1, 1), end: point2D(5, 1) },
+      { allowSingleContact: false }
+    );
+
+    expect(model.applied).toBe(false);
+    expect(model.candidate).toBeNull();
+    expect(model.contacts.map((contact) => contact.kind)).toEqual(['inside-endpoint']);
+    expect(model.diagnostics.map((diagnostic) => diagnostic.code)).toContain('subject-construction.no-contact');
+  });
+
   it('keeps single-contact drafts as free helper candidates when enabled', () => {
     const model = createSubjectAuxiliaryLineConstructionModel(
       triangle,

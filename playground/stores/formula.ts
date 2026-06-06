@@ -73,6 +73,37 @@ export const useFormulaStore = defineStore('formula', () => {
     });
   };
 
+  const replaceCommandsByIds = (ids: readonly string[], items: readonly CommandInput[]): string[] => {
+    const list = commandsMap.value[activeMode.value];
+    const indexedIds = ids
+      .map((id) => ({ id, index: list.findIndex(command => command.id === id) }))
+      .filter((entry) => entry.index >= 0)
+      .sort((a, b) => a.index - b.index);
+
+    if (indexedIds.length === 0) {
+      const previousLength = list.length;
+      appendCommands(items);
+      return list.slice(previousLength, previousLength + items.length).map(command => command.id);
+    }
+
+    const startIndex = indexedIds[0].index;
+    const deleteCount = indexedIds[indexedIds.length - 1].index - startIndex + 1;
+    const previousCommands = list.slice(startIndex, startIndex + deleteCount);
+    const nextCommands = items.map((item, index) => {
+      const previous = previousCommands[index];
+      return {
+        id: previous?.id ?? createCommandId(list),
+        expression: item.expr,
+        color: previous?.color ?? commandColors[(startIndex + index) % commandColors.length],
+        visible: previous?.visible ?? true,
+        options: item.options
+      };
+    });
+
+    list.splice(startIndex, deleteCount, ...nextCommands);
+    return nextCommands.map(command => command.id);
+  };
+
   const removeCommand = (id: string) => {
     const list = commandsMap.value[activeMode.value];
     const idx = list.findIndex(c => c.id === id);
@@ -126,6 +157,7 @@ export const useFormulaStore = defineStore('formula', () => {
     activeMode,
     addCommand,
     appendCommands,
+    replaceCommandsByIds,
     removeCommand,
     updateCommand,
     setCommandError,

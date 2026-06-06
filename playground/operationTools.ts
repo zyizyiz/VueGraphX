@@ -23,6 +23,7 @@ import {
   SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
   SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
   type MathPoint2D,
+  type SubjectAuxiliaryLineConstructionTarget,
   type SubjectGeometryGridSnapOptions,
   type SubjectAuxiliaryLineConstructionContact,
   type SubjectAuxiliaryLineDescriptor,
@@ -80,7 +81,7 @@ export interface OperationCommandWithOptions {
   options?: unknown;
 }
 
-export type OperationInteractiveToolKind = 'geometry-shape-edit';
+export type OperationInteractiveToolKind = 'geometry-shape-edit' | 'geometry-auxiliary-construction';
 export type OperationToolPlacement = 'coordinate-system' | 'world';
 
 export interface OperationToolCommandContext {
@@ -88,11 +89,17 @@ export interface OperationToolCommandContext {
 }
 
 export interface OperationGeometryShapeEditInteraction {
-  kind: OperationInteractiveToolKind;
+  kind: 'geometry-shape-edit';
   snapToGrid?: boolean | SubjectGeometryGridSnapOptions;
 }
 
-export type OperationToolInteraction = OperationGeometryShapeEditInteraction;
+export interface OperationAuxiliaryConstructionInteraction {
+  kind: 'geometry-auxiliary-construction';
+}
+
+export type OperationToolInteraction =
+  | OperationGeometryShapeEditInteraction
+  | OperationAuxiliaryConstructionInteraction;
 
 export interface OperationTool {
   id: string;
@@ -112,6 +119,11 @@ export interface OperationToolGroup {
 }
 
 export type OperationShapeEditPolygonTarget = Extract<SubjectShapeEditTarget, { kind: 'polygon' }>;
+export type OperationAuxiliaryConstructionTarget = Extract<SubjectAuxiliaryLineConstructionTarget, { kind: 'polygon' }>;
+export interface OperationAuxiliaryConstructionDraft {
+  start: MathPoint2D;
+  end: MathPoint2D;
+}
 
 const OPERATION_COORDINATE_RANGE = { min: -6, max: 6 } as const;
 const OPERATION_COORDINATE_SNAP = { enabled: true, phase: 'end' } as const;
@@ -195,6 +207,19 @@ export const clampOperationCoordinateSystemOrigin = (
     y: clampToFitRange(origin.y, minOriginY, maxOriginY)
   };
 };
+
+export const isOperationPointInsideCoordinateSystem = (
+  point: MathPoint2D,
+  coordinateSystem: Pick<OperationCoordinateSystemRuntimeOptions, 'xRange' | 'yRange'>,
+  tolerance = 1e-7
+): boolean => (
+  Number.isFinite(point.x)
+  && Number.isFinite(point.y)
+  && point.x >= coordinateSystem.xRange.min - tolerance
+  && point.x <= coordinateSystem.xRange.max + tolerance
+  && point.y >= coordinateSystem.yRange.min - tolerance
+  && point.y <= coordinateSystem.yRange.max + tolerance
+);
 
 export const alignOperationCoordinateSystemOriginToGrid = (
   origin: { x: number; y: number },
@@ -283,6 +308,76 @@ export const createOperationShapeEditVertexCommand = (
   index: number,
   point: MathPoint2D
 ): string => `${prefix}_E${index + 1} = ${formatOperationPointTuple(point)}`;
+
+export const createOperationAuxiliaryConstructionTarget = (
+  id = 'operation-auxiliary-construction-triangle'
+): OperationAuxiliaryConstructionTarget => ({
+  id,
+  kind: 'polygon',
+  shapeKind: 'triangle',
+  vertices: [point2D(-3.5, -2), point2D(2.5, -2), point2D(-0.5, 3)],
+  strokeColor: '#2563EB'
+});
+
+const OPERATION_AUXILIARY_CONSTRUCTION_DEFAULT_DRAFT: OperationAuxiliaryConstructionDraft = {
+  start: point2D(-4.4, 0.75),
+  end: point2D(3.2, 0.75)
+};
+
+export const createOperationAuxiliaryConstructionCommands = (
+  prefix: string,
+  target: OperationAuxiliaryConstructionTarget = createOperationAuxiliaryConstructionTarget(`${prefix}-target`),
+  draft: OperationAuxiliaryConstructionDraft | null = OPERATION_AUXILIARY_CONSTRUCTION_DEFAULT_DRAFT,
+  pendingStart: MathPoint2D | null = null
+): OperationCommandSpec[] => {
+  const commands: OperationCommandSpec[] = [
+    ...operationPointDefinitionCommands(`${prefix}_P`, target.vertices),
+    {
+      expr: `${prefix}_triangle = Polygon(${target.vertices.map((_, index) => `${prefix}_P${index + 1}`).join(', ')})`,
+      options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.14, strokeWidth: 2 }
+    }
+  ];
+
+  if (!draft) {
+    if (pendingStart) {
+      commands.push({
+        expr: `${prefix}_pending_start = Point(${operationPointText(pendingStart)})`,
+        options: operationPointStyleOptions('#B45309', { pointStrokeColor: '#B45309' })
+      });
+    }
+    commands.push({
+      expr: `Text(-4.8, 3.6, "自由辅助线构造: ${pendingStart ? '等待终点' : '拖动或两点点击'} / contacts=0 / applied=false")`,
+      options: { strokeColor: '#475569' }
+    });
+    return commands;
+  }
+
+  const model = createSubjectAuxiliaryLineConstructionModel(target, draft, {
+    id: `${prefix}_candidate`,
+    label: '构造候选线',
+    state: 'confirmed'
+  });
+
+  if (model.candidate) {
+    commands.push(...operationOverlayLineCommands([model.candidate], { labels: false }));
+  } else {
+    commands.push({
+      expr: `${prefix}_draft = Segment(${operationPointTuple(model.draft.start)}, ${operationPointTuple(model.draft.end)})`,
+      options: {
+        strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
+        lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
+        strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+        selectionStrokeScale: false
+      }
+    });
+  }
+  commands.push(...operationConstructionContactCommands(model.contacts, { prefix: `${prefix}_contact`, limit: 4 }));
+  commands.push({
+    expr: `Text(-4.8, 3.6, "自由辅助线构造: contacts=${model.contacts.length} / applied=${model.applied}")`,
+    options: { strokeColor: '#475569' }
+  });
+  return commands;
+};
 
 export const formatOperationPointTuple = (point: MathPoint2D): string => operationPointTuple(point);
 
@@ -440,15 +535,6 @@ const operationFreeIntersections = createSubjectAuxiliaryLineIntersectionAnnotat
   operationFreeLine ? [operationFreeLine] : [],
   operationGeometryOverlayConfig
 );
-const operationAuxiliaryConstruction = createSubjectAuxiliaryLineConstructionModel(
-  operationGeometryOverlayTarget,
-  { start: point2D(-4.4, 0.75), end: point2D(3.2, 0.75) },
-  {
-    label: '构造候选线',
-    state: 'confirmed'
-  }
-);
-
 const operationQuadraticOverlay = createSubjectOverlayModel({
   id: 'operation-function-overlay-quadratic',
   kind: 'function',
@@ -626,27 +712,7 @@ const operationShapeEditCommands: readonly OperationCommandSpec[] = [
   }
 ];
 
-const operationAuxiliaryConstructionCommands: readonly OperationCommandSpec[] = [
-  { expr: 'A = (-3.5, -2)', options: operationPointStyleOptions('#0F172A') },
-  { expr: 'B = (2.5, -2)', options: operationPointStyleOptions('#0F172A') },
-  { expr: 'C = (-0.5, 3)', options: operationPointStyleOptions('#0F172A') },
-  { expr: 'constructTri = Polygon(A, B, C)', options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.14, strokeWidth: 2 } },
-  {
-    expr: `draftLine = Segment(${operationPointTuple(operationAuxiliaryConstruction.draft.start)}, ${operationPointTuple(operationAuxiliaryConstruction.draft.end)})`,
-    options: {
-      strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
-      lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
-      strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
-      selectionStrokeScale: false
-    }
-  },
-  ...(operationAuxiliaryConstruction.candidate ? operationOverlayLineCommands([operationAuxiliaryConstruction.candidate], { labels: false }) : []),
-  ...operationConstructionContactCommands(operationAuxiliaryConstruction.contacts, { prefix: 'constructContact', limit: 4 }),
-  {
-    expr: `Text(-4.8, 3.6, "自由辅助线构造: contacts=${operationAuxiliaryConstruction.contacts.length} / applied=${operationAuxiliaryConstruction.applied}")`,
-    options: { strokeColor: '#475569' }
-  }
-];
+const operationAuxiliaryConstructionCommands: readonly OperationCommandSpec[] = createOperationAuxiliaryConstructionCommands('construct');
 
 export const operationToolGroups: readonly OperationToolGroup[] = [
   {
@@ -765,10 +831,11 @@ export const operationToolGroups: readonly OperationToolGroup[] = [
       {
         id: 'auxiliary-construction-preview',
         label: '自由辅助线构造',
-        description: '拖入后展示草稿线如何裁剪成辅助线候选，并标出接触点',
+        description: '点击或拖入后在画布中拖动绘制辅助线候选，并标出接触点',
         icon: '⌁',
         iconClass: 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
-        commands: operationAuxiliaryConstructionCommands
+        commands: operationAuxiliaryConstructionCommands,
+        interaction: { kind: 'geometry-auxiliary-construction' }
       }
     ]
   }

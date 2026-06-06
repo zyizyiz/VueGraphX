@@ -329,7 +329,8 @@
             id="vuegraphx-mount"
             :class="[
               'absolute inset-0 z-[5] jxgbox',
-              isCoreRendererActive ? 'core-interaction-surface' : ''
+              isCoreRendererActive ? 'core-interaction-surface' : '',
+              operationAuxiliaryConstructionSession ? 'operation-auxiliary-draw-surface' : ''
             ]"
             ref="graphContainerRef"
             @wheel.capture="handleCoreRendererWheel"
@@ -463,15 +464,20 @@ import {
   OPERATION_TOOL_MIME,
   alignOperationCoordinateSystemOriginToGrid,
   clampOperationCoordinateSystemOrigin,
+  createOperationAuxiliaryConstructionCommands,
+  createOperationAuxiliaryConstructionTarget,
   createOperationShapeEditCommands,
   createOperationShapeEditTarget,
   createOperationShapeEditVertexCommand,
   createOperationScopedCommands,
   createOperationToolCommands,
   findOperationToolById,
+  isOperationPointInsideCoordinateSystem,
   resolveOperationCommandOrigin,
   shouldScopeOperationTool,
   updateOperationCoordinateSystemOrigin,
+  type OperationAuxiliaryConstructionDraft,
+  type OperationAuxiliaryConstructionTarget,
   type OperationCoordinateSystemRuntimeOptions,
   type OperationShapeEditPolygonTarget,
   type OperationTool
@@ -487,11 +493,17 @@ import {
 
 let nextOperationCoordinateSystemSequence = 1;
 let nextOperationShapeEditSequence = 1;
+let nextOperationAuxiliaryConstructionSequence = 1;
 
 const OPERATION_SHAPE_EDIT_LOG_PREFIX = '[VueGraphX operation shape edit]';
+const OPERATION_AUXILIARY_CONSTRUCTION_LOG_PREFIX = '[VueGraphX operation auxiliary construction]';
 
 const debugOperationShapeEdit = (message: string, data?: Record<string, unknown>) => {
   console.info(OPERATION_SHAPE_EDIT_LOG_PREFIX, message, data ?? {});
+};
+
+const debugOperationAuxiliaryConstruction = (message: string, data?: Record<string, unknown>) => {
+  console.info(OPERATION_AUXILIARY_CONSTRUCTION_LOG_PREFIX, message, data ?? {});
 };
 
 const readOperationToolFromDrop = (event: DragEvent): OperationTool | null => {
@@ -585,6 +597,7 @@ const coreViewportBounds = ref<CanvasWorldBounds>({ ...PLAYGROUND_CANVAS_WORLD_B
 const coreInteractionDiagnostics = ref<string[]>([]);
 const businessOverlayRefreshKey = ref(0);
 const operationShapeEditSession = ref<OperationShapeEditSession | null>(null);
+const operationAuxiliaryConstructionSession = ref<OperationAuxiliaryConstructionSession | null>(null);
 const activeOperationShapeEditDragHandleId = ref('');
 const operationShapeEditProjectionRevision = ref(0);
 
@@ -633,6 +646,17 @@ interface OperationShapeEditSession {
   commandIdsByVertex: readonly string[];
 }
 
+interface OperationAuxiliaryConstructionSession {
+  toolId: string;
+  coordinateSystemId: string;
+  commandPrefix: string;
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions;
+  target: OperationAuxiliaryConstructionTarget;
+  commandIds: readonly string[];
+  draft: OperationAuxiliaryConstructionDraft | null;
+  pendingStart: MathPoint2D | null;
+}
+
 interface OperationShapeEditHandleProjection extends SubjectShapeEditHandleDescriptor {
   x: number;
   y: number;
@@ -645,9 +669,15 @@ interface OperationShapeEditDragSession {
   element: HTMLElement;
 }
 
+interface OperationAuxiliaryConstructionDragSession {
+  pointerId: number;
+  start: MathPoint2D;
+}
+
 let coreNavigationController: GraphViewportNavigationController<CanvasWorldBounds> | null = null;
 let coordinateSystemDragSession: CoordinateSystemDragSession | null = null;
 let operationShapeEditDragSession: OperationShapeEditDragSession | null = null;
+let operationAuxiliaryConstructionDragSession: OperationAuxiliaryConstructionDragSession | null = null;
 let disposeViewportChangeSubscription: (() => void) | null = null;
 let disposeCoreRuntimeSelectionSubscription: (() => void) | null = null;
 
@@ -662,7 +692,11 @@ const supportsBabylonRenderer = computed(() => isBackendSelectableForMode(store.
 const isCanvasRendererActive = computed(() => activeRendererBackend.value === 'canvas2d' && supportsCanvasRenderer.value);
 const isBabylonRendererActive = computed(() => activeRendererBackend.value === 'babylon' && supportsBabylonRenderer.value);
 const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBabylonRendererActive.value);
-const activeOperationToolId = computed(() => operationShapeEditSession.value?.toolId ?? '');
+const activeOperationToolId = computed(() => (
+  operationShapeEditSession.value?.toolId
+  ?? operationAuxiliaryConstructionSession.value?.toolId
+  ?? ''
+));
 const operationShapeEditHandleProjections = computed<OperationShapeEditHandleProjection[]>(() => {
   operationShapeEditProjectionRevision.value;
   void coreViewportBounds.value;
@@ -975,6 +1009,10 @@ const handleActivateOperationTool = (tool: OperationTool, dropPoint: GraphClient
     createOperationShapeEditSession(tool, dropPoint);
     return;
   }
+  if (tool.interaction?.kind === 'geometry-auxiliary-construction') {
+    createOperationAuxiliaryConstructionSession(tool, dropPoint);
+    return;
+  }
   handleCreateOperationToolCommands(tool, dropPoint);
 };
 
@@ -988,6 +1026,7 @@ const handleCreateOperationToolCommands = (tool: OperationTool, dropPoint: Graph
 
 const createOperationShapeEditSession = (tool: OperationTool, dropPoint: GraphClientPoint | null = null) => {
   if (store.activeMode !== 'operation') return;
+  clearOperationAuxiliaryConstructionSession();
   clearOperationShapeEditSession();
   activeDemo.value = -1;
 
@@ -1048,6 +1087,258 @@ const createOperationShapeEditSession = (tool: OperationTool, dropPoint: GraphCl
     syncAllToEngine({ keepSelection: coordinateSystemId });
     refreshOperationShapeEditProjection();
   });
+};
+
+const createOperationAuxiliaryConstructionSession = (tool: OperationTool, dropPoint: GraphClientPoint | null = null) => {
+  if (store.activeMode !== 'operation') return;
+  clearOperationShapeEditSession();
+  clearOperationAuxiliaryConstructionSession();
+  activeDemo.value = -1;
+
+  const coordinateSystemId = `coord_${nextOperationCoordinateSystemSequence++}`;
+  const commandPrefix = `aux_${nextOperationAuxiliaryConstructionSequence++}`;
+  const target = createOperationAuxiliaryConstructionTarget(`${commandPrefix}_target`);
+  const bounds = getOperationVisiblePlacementBounds();
+  const origin = getWorldPointForOperationDrop(dropPoint);
+  const scopedCommands = createOperationScopedCommands(
+    createOperationAuxiliaryConstructionCommands(commandPrefix, target, null),
+    origin,
+    coordinateSystemId,
+    bounds
+  );
+  const coordinateSystem = (scopedCommands[0]?.options as { coordinateSystem?: OperationCoordinateSystemRuntimeOptions } | undefined)?.coordinateSystem;
+  if (!coordinateSystem) {
+    pushCoreInteractionDiagnostic('auxiliary construction failed: coordinate system was not created');
+    return;
+  }
+
+  const previousCommandCount = store.commands.length;
+  store.appendCommands(scopedCommands);
+  const commandIds = store.commands
+    .slice(previousCommandCount, previousCommandCount + scopedCommands.length)
+    .map((command) => command.id);
+
+  operationAuxiliaryConstructionSession.value = {
+    toolId: tool.id,
+    coordinateSystemId,
+    commandPrefix,
+    coordinateSystem,
+    target,
+    commandIds,
+    draft: null,
+    pendingStart: null
+  };
+  debugOperationAuxiliaryConstruction('session created', {
+    toolId: tool.id,
+    coordinateSystemId,
+    commandPrefix,
+    origin,
+    coordinateSystem,
+    commandIds,
+    vertices: target.vertices
+  });
+  nextTick(() => {
+    syncAllToEngine({ keepSelection: coordinateSystemId });
+  });
+};
+
+const startOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean => {
+  const session = operationAuxiliaryConstructionSession.value;
+  if (!session || store.activeMode !== 'operation') return false;
+  const start = getOperationAuxiliaryConstructionLocalPoint(event, session);
+  if (!start) {
+    cancelOperationAuxiliaryConstructionSession('pointerdown-outside-coordinate-system');
+    suppressOperationAuxiliaryConstructionEvent(event);
+    return true;
+  }
+
+  operationAuxiliaryConstructionDragSession = { pointerId: event.pointerId, start };
+  coordinateSystemDragSession = null;
+  coreNavigationController?.resetPointers();
+  graphContainerRef.value?.setPointerCapture?.(event.pointerId);
+  document.body.classList.add('operation-auxiliary-construction-drag-active');
+  debugOperationAuxiliaryConstruction('pointerdown', {
+    pointerId: event.pointerId,
+    localPoint: start,
+    client: { x: event.clientX, y: event.clientY }
+  });
+  suppressOperationAuxiliaryConstructionEvent(event);
+  return true;
+};
+
+const moveOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean => {
+  const dragSession = operationAuxiliaryConstructionDragSession;
+  const session = operationAuxiliaryConstructionSession.value;
+  if (!dragSession || dragSession.pointerId !== event.pointerId || !session) return false;
+
+  const end = getOperationAuxiliaryConstructionLocalPoint(event, session);
+  if (!end) {
+    suppressOperationAuxiliaryConstructionEvent(event);
+    return true;
+  }
+  const draft = createOperationAuxiliaryConstructionDraft(dragSession.start, end);
+  if (draft) updateOperationAuxiliaryConstructionDraft(draft, null);
+  debugOperationAuxiliaryConstruction('pointermove', {
+    pointerId: event.pointerId,
+    draft,
+    client: { x: event.clientX, y: event.clientY }
+  });
+  suppressOperationAuxiliaryConstructionEvent(event);
+  return true;
+};
+
+const stopOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean => {
+  const dragSession = operationAuxiliaryConstructionDragSession;
+  const session = operationAuxiliaryConstructionSession.value;
+  if (!dragSession || dragSession.pointerId !== event.pointerId || !session) return false;
+
+  const end = getOperationAuxiliaryConstructionLocalPoint(event, session);
+  const draft = end ? createOperationAuxiliaryConstructionDraft(dragSession.start, end) : null;
+  if (!end) {
+    cancelOperationAuxiliaryConstructionSession('pointerup-outside-coordinate-system', { resetDraft: true });
+    debugOperationAuxiliaryConstruction(event.type, {
+      pointerId: event.pointerId,
+      cancelled: true,
+      reason: 'outside-coordinate-system',
+      client: { x: event.clientX, y: event.clientY }
+    });
+    suppressOperationAuxiliaryConstructionEvent(event);
+    return true;
+  }
+  if (draft) {
+    updateOperationAuxiliaryConstructionDraft(draft, null);
+  } else {
+    applyOperationAuxiliaryConstructionClick(end);
+  }
+  clearOperationAuxiliaryConstructionDragSession();
+  debugOperationAuxiliaryConstruction(event.type, {
+    pointerId: event.pointerId,
+    draft,
+    client: { x: event.clientX, y: event.clientY }
+  });
+  suppressOperationAuxiliaryConstructionEvent(event);
+  return true;
+};
+
+const createOperationAuxiliaryConstructionDraft = (
+  start: MathPoint2D,
+  end: MathPoint2D
+): OperationAuxiliaryConstructionDraft | null => (
+  Math.hypot(end.x - start.x, end.y - start.y) >= 0.08
+    ? { start, end }
+    : null
+);
+
+const applyOperationAuxiliaryConstructionClick = (point: MathPoint2D) => {
+  const session = operationAuxiliaryConstructionSession.value;
+  if (!session) return;
+  if (!session.pendingStart) {
+    updateOperationAuxiliaryConstructionDraft(null, point);
+    debugOperationAuxiliaryConstruction('pending start set', { point });
+    return;
+  }
+
+  const draft = createOperationAuxiliaryConstructionDraft(session.pendingStart, point);
+  if (!draft) {
+    updateOperationAuxiliaryConstructionDraft(null, session.pendingStart);
+    debugOperationAuxiliaryConstruction('second click ignored: points too close', { point });
+    return;
+  }
+
+  updateOperationAuxiliaryConstructionDraft(draft, null);
+  debugOperationAuxiliaryConstruction('two-click draft applied', { draft });
+};
+
+const updateOperationAuxiliaryConstructionDraft = (
+  draft: OperationAuxiliaryConstructionDraft | null,
+  pendingStart: MathPoint2D | null
+) => {
+  const session = operationAuxiliaryConstructionSession.value;
+  if (!session) return;
+  const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
+  const scopedCommands = createOperationScopedCommands(
+    createOperationAuxiliaryConstructionCommands(session.commandPrefix, session.target, draft, pendingStart),
+    coordinateSystem.origin,
+    session.coordinateSystemId,
+    getOperationVisiblePlacementBounds()
+  );
+  const commandIds = store.replaceCommandsByIds(session.commandIds, scopedCommands);
+  operationAuxiliaryConstructionSession.value = {
+    ...session,
+    coordinateSystem,
+    commandIds,
+    draft,
+    pendingStart
+  };
+  syncAllToEngine({ keepSelection: session.coordinateSystemId });
+};
+
+const getOperationAuxiliaryConstructionLocalPoint = (
+  event: PointerEvent,
+  session: OperationAuxiliaryConstructionSession
+): MathPoint2D | null => {
+  const localPoint = getCoreLocalPoint(event);
+  if (!localPoint) return null;
+  const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
+  const worldPoint = getWorldPointForCanvasPoint(localPoint);
+  const point = operationWorldPointToLocal(worldPoint, coordinateSystem);
+  return isOperationPointInsideCoordinateSystem(point, coordinateSystem) ? point : null;
+};
+
+const cancelOperationAuxiliaryConstructionSession = (
+  reason: string,
+  options: { resetDraft?: boolean } = {}
+) => {
+  const session = operationAuxiliaryConstructionSession.value;
+  if (!session) return;
+  const shouldResetCommands = options.resetDraft === true || !!session.pendingStart;
+  if (shouldResetCommands) {
+    updateOperationAuxiliaryConstructionDraft(null, null);
+  }
+  debugOperationAuxiliaryConstruction('session cancelled', {
+    reason,
+    resetCommands: shouldResetCommands,
+    coordinateSystemId: session.coordinateSystemId,
+    commandPrefix: session.commandPrefix
+  });
+  clearOperationAuxiliaryConstructionSession();
+};
+
+const shouldClearOperationAuxiliaryConstructionSessionForCommand = (commandId: string): boolean => {
+  const session = operationAuxiliaryConstructionSession.value;
+  if (!session) return false;
+  return session.commandIds.includes(commandId)
+    || store.commands.find((command) => command.id === commandId)?.expression.startsWith(`${session.coordinateSystemId} =`) === true
+    || store.commands.find((command) => command.id === commandId)?.expression.startsWith(`${session.commandPrefix}_`) === true;
+};
+
+const clearOperationAuxiliaryConstructionSession = () => {
+  clearOperationAuxiliaryConstructionDragSession();
+  if (operationAuxiliaryConstructionSession.value) {
+    debugOperationAuxiliaryConstruction('session cleared', {
+      coordinateSystemId: operationAuxiliaryConstructionSession.value.coordinateSystemId,
+      commandPrefix: operationAuxiliaryConstructionSession.value.commandPrefix
+    });
+  }
+  operationAuxiliaryConstructionSession.value = null;
+};
+
+const clearOperationAuxiliaryConstructionDragSession = () => {
+  if (operationAuxiliaryConstructionDragSession) {
+    try {
+      graphContainerRef.value?.releasePointerCapture?.(operationAuxiliaryConstructionDragSession.pointerId);
+    } catch {
+      // Pointer capture can already be released by the browser when the drag ends.
+    }
+  }
+  operationAuxiliaryConstructionDragSession = null;
+  document.body.classList.remove('operation-auxiliary-construction-drag-active');
+};
+
+const suppressOperationAuxiliaryConstructionEvent = (event: PointerEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
 };
 
 const startOperationShapeEditHandleDrag = (event: PointerEvent, handleId: string) => {
@@ -1680,6 +1971,8 @@ const handleCoreRendererPointerDown = (event: PointerEvent) => {
   const point = getCoreLocalPoint(event);
   if (!point) return;
 
+  if (startOperationAuxiliaryConstructionDraw(event)) return;
+
   const jsxGraphDraggableObjectId = getJsxGraphDraggableObjectAtEvent(event);
   if (jsxGraphDraggableObjectId) {
     engineRef.value?.executeRuntimeCapability('math.object.select', {
@@ -1735,9 +2028,10 @@ const handleCoreRendererPointerDown = (event: PointerEvent) => {
 };
 
 const handleCoreRendererPointerMove = (event: PointerEvent) => {
-  if (!isCoreRendererActive.value && !coordinateSystemDragSession) return;
+  if (!isCoreRendererActive.value && !coordinateSystemDragSession && !operationAuxiliaryConstructionDragSession) return;
   const point = getCoreLocalPoint(event);
   if (!point) return;
+  if (moveOperationAuxiliaryConstructionDraw(event)) return;
   if (moveCoordinateSystemDrag(event, point)) return;
   if (!isCoreRendererActive.value) return;
   const result = requireCoreNavigationController().handlePointerMove({
@@ -1751,7 +2045,8 @@ const handleCoreRendererPointerMove = (event: PointerEvent) => {
 };
 
 const handleCoreRendererPointerUp = (event: PointerEvent) => {
-  if (!isCoreRendererActive.value && !coordinateSystemDragSession) return;
+  if (!isCoreRendererActive.value && !coordinateSystemDragSession && !operationAuxiliaryConstructionDragSession) return;
+  if (stopOperationAuxiliaryConstructionDraw(event)) return;
   stopCoordinateSystemDrag(event);
   if (!isCoreRendererActive.value) return;
   const result = requireCoreNavigationController().handlePointerUp({ pointerId: event.pointerId });
@@ -1865,6 +2160,7 @@ const destroyPrimaryRenderer = () => {
   coreNavigationController = null;
   coordinateSystemDragSession = null;
   clearOperationShapeEditDragSession();
+  clearOperationAuxiliaryConstructionDragSession();
   stopViewportChangeSubscription();
   stopCoreRuntimeSelectionSubscription();
   resetCoreRuntimeSelection();
@@ -2082,6 +2378,7 @@ onUnmounted(() => {
 const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolean } = {}) => {
   if (store.activeMode === mode) return;
   clearOperationShapeEditSession();
+  clearOperationAuxiliaryConstructionSession();
   store.activeMode = mode;
   activeDemo.value = -1;
   if (!isRendererBackendSupported(activeRendererBackend.value)) {
@@ -2126,6 +2423,7 @@ const handleCreateOperationCommands = (
 ) => {
   if (commands.length === 0) return;
   clearOperationShapeEditSession();
+  clearOperationAuxiliaryConstructionSession();
   activeDemo.value = -1;
   const bounds = getOperationVisiblePlacementBounds();
   const origin = options.origin ?? getWorldPointForOperationDrop(dropPoint);
@@ -2174,6 +2472,9 @@ const removeLine = (id: string) => {
   if (shouldClearOperationShapeEditSessionForCommand(id)) {
     clearOperationShapeEditSession();
   }
+  if (shouldClearOperationAuxiliaryConstructionSessionForCommand(id)) {
+    clearOperationAuxiliaryConstructionSession();
+  }
   store.removeCommand(id);
   if (isCoreRendererActive.value) {
     syncAllToEngine();
@@ -2184,6 +2485,7 @@ const removeLine = (id: string) => {
 
 const clearAll = () => {
   clearOperationShapeEditSession();
+  clearOperationAuxiliaryConstructionSession();
   store.clearCommands();
   activeDemo.value = -1;
   resetCoreRuntimeSelection();
@@ -2256,6 +2558,7 @@ const loadSelectedDemo = (idx: number) => {
   const demo = currentDemos.value[idx];
   if (!demo) return;
   clearOperationShapeEditSession();
+  clearOperationAuxiliaryConstructionSession();
   activeDemo.value = idx;
   store.injectDemo(store.activeMode, demo.commands);
   // 使用 resetBoard 完全重置 JSXGraph 内部状态，避免 clearBoard/removeObject 的副作用
@@ -2293,6 +2596,7 @@ const handleExportScene = () => {
 const handleImportScene = async () => {
   showScenePanel.value = true;
   clearOperationShapeEditSession();
+  clearOperationAuxiliaryConstructionSession();
   activeDemo.value = -1;
   const result = await importSceneDocument();
   if (result?.scene && engineRef.value) {
@@ -2374,6 +2678,12 @@ body.sidebar-resize-active {
 
 #vuegraphx-mount.core-interaction-surface:active {
   cursor: grabbing;
+}
+
+#vuegraphx-mount.operation-auxiliary-draw-surface,
+#vuegraphx-mount.operation-auxiliary-draw-surface:active,
+body.operation-auxiliary-construction-drag-active {
+  cursor: crosshair;
 }
 
 .operation-shape-edit-handle {

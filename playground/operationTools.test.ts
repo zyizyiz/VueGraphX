@@ -11,6 +11,8 @@ import {
 } from '@vuegraphx/core';
 import {
   alignOperationCoordinateSystemOriginToGrid,
+  createOperationAuxiliaryConstructionCommands,
+  createOperationAuxiliaryConstructionTarget,
   clampOperationCoordinateSystemOrigin,
   createOperationIndependentTriangleCommands,
   createOperationShapeEditCommands,
@@ -20,6 +22,7 @@ import {
   createOperationScopedCommands,
   findOperationToolById,
   formatOperationPointTuple,
+  isOperationPointInsideCoordinateSystem,
   OPERATION_SHAPE_EDIT_DEFAULT_SNAP,
   operationToolGroups,
   resolveOperationCommandOrigin,
@@ -205,6 +208,7 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     expect(editTool).toBeDefined();
     expect(constructionTool).toBeDefined();
     expect(editTool!.interaction).toEqual({ kind: 'geometry-shape-edit' });
+    expect(constructionTool!.interaction).toEqual({ kind: 'geometry-auxiliary-construction' });
     expect(OPERATION_SHAPE_EDIT_DEFAULT_SNAP).toEqual({
       enabled: true,
       step: 0.5,
@@ -221,7 +225,7 @@ describe('updateOperationCoordinateSystemOrigin', () => {
 
     const constructionExpressions = constructionTool!.commands.map((command) => command.expr);
     expect(constructionExpressions.filter((expr) => expr.includes('Polygon('))).toHaveLength(1);
-    expect(constructionExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(2);
+    expect(constructionExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(1);
     expect(constructionExpressions.some((expr) => expr.includes('自由辅助线构造'))).toBe(true);
 
     const commands = createOperationScopedCommands(constructionTool!.commands, { x: 0, y: 0 }, 'coord_construct');
@@ -278,5 +282,71 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     });
     expect(createOperationShapeEditVertexCommand('edit_1', 1, { x: 1.25, y: -0.5 })).toBe('edit_1_E2 = (1.25, -0.5)');
     expect(formatOperationPointTuple({ x: 0.333333, y: -0 })).toBe('(0.333, 0)');
+  });
+
+  it('checks whether operation-local points are inside a coordinate system range', () => {
+    const coordinateSystem = {
+      xRange: { min: -6, max: 6 },
+      yRange: { min: -6, max: 6 }
+    };
+
+    expect(isOperationPointInsideCoordinateSystem({ x: 0, y: 0 }, coordinateSystem)).toBe(true);
+    expect(isOperationPointInsideCoordinateSystem({ x: 6, y: -6 }, coordinateSystem)).toBe(true);
+    expect(isOperationPointInsideCoordinateSystem({ x: 6.25, y: 0 }, coordinateSystem)).toBe(false);
+    expect(isOperationPointInsideCoordinateSystem({ x: 0, y: -6.25 }, coordinateSystem)).toBe(false);
+    expect(isOperationPointInsideCoordinateSystem({ x: Number.NaN, y: 0 }, coordinateSystem)).toBe(false);
+  });
+
+  it('creates prefixed commands for interactive auxiliary-line construction', () => {
+    const target = createOperationAuxiliaryConstructionTarget('interactive-aux');
+    const initialCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, null);
+
+    expect(target.vertices).toEqual([
+      { x: -3.5, y: -2 },
+      { x: 2.5, y: -2 },
+      { x: -0.5, y: 3 }
+    ]);
+    expect(initialCommands.map((command) => command.expr)).toEqual([
+      'aux_1_P1 = (-3.5, -2)',
+      'aux_1_P2 = (2.5, -2)',
+      'aux_1_P3 = (-0.5, 3)',
+      'aux_1_triangle = Polygon(aux_1_P1, aux_1_P2, aux_1_P3)',
+      'Text(-4.8, 3.6, "自由辅助线构造: 拖动或两点点击 / contacts=0 / applied=false")'
+    ]);
+
+    const pendingCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, null, { x: -1, y: 1 });
+    expect(pendingCommands.map((command) => command.expr)).toEqual([
+      'aux_1_P1 = (-3.5, -2)',
+      'aux_1_P2 = (2.5, -2)',
+      'aux_1_P3 = (-0.5, 3)',
+      'aux_1_triangle = Polygon(aux_1_P1, aux_1_P2, aux_1_P3)',
+      'aux_1_pending_start = Point(-1, 1)',
+      'Text(-4.8, 3.6, "自由辅助线构造: 等待终点 / contacts=0 / applied=false")'
+    ]);
+
+    const draftCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, {
+      start: { x: -4.4, y: 0.75 },
+      end: { x: 3.2, y: 0.75 }
+    });
+    const expressions = draftCommands.map((command) => command.expr);
+
+    expect(expressions).toEqual(expect.arrayContaining([
+      expect.stringContaining('自由辅助线构造: contacts=2 / applied=true')
+    ]));
+    expect(expressions.some((expr) => expr.startsWith('aux_1_draft = Segment('))).toBe(false);
+    expect(expressions.filter((expr) => expr.includes('Segment('))).toHaveLength(1);
+    expect(expressions.filter((expr) => expr.includes('Point('))).toHaveLength(2);
+
+    const internalCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, {
+      start: { x: -1, y: 1 },
+      end: { x: -0.5, y: 1 }
+    });
+    const internalExpressions = internalCommands.map((command) => command.expr);
+    expect(internalExpressions).toEqual(expect.arrayContaining([
+      'Segment((-1, 1), (-0.5, 1))',
+      expect.stringContaining('自由辅助线构造: contacts=2 / applied=true')
+    ]));
+    expect(internalExpressions.some((expr) => expr.startsWith('aux_1_draft = Segment('))).toBe(false);
+    expect(internalExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(1);
   });
 });

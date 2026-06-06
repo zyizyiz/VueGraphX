@@ -177,6 +177,28 @@ const constructPolygonAuxiliaryLine = (
 ): { candidate: SubjectAuxiliaryLineDescriptor | null; contacts: SubjectAuxiliaryLineConstructionContact[] } => {
   const contacts: SubjectAuxiliaryLineConstructionContact[] = [];
   const points: MathPoint2D[] = [];
+  const endpointTolerance = options.snapDistance ?? 0.12;
+  const draftEndpointContacts: SubjectAuxiliaryLineConstructionContact[] = [draft.start, draft.end]
+    .filter((endpoint) => pointInPolygonInclusive(endpoint, target.vertices, endpointTolerance))
+    .map((point) => ({ kind: 'inside-endpoint', point: clonePoint(point), targetPart: 'polygon-edge' }));
+
+  if (draftEndpointContacts.length === 1 && (options.allowSingleContact ?? options.allowSingleIntersection ?? true) === false) {
+    return noContact(target, diagnostics, draftEndpointContacts);
+  }
+
+  if (draftEndpointContacts.length > 0) {
+    return {
+      candidate: createDescriptor(target, draft, {
+        ...options,
+        meta: {
+          ...options.meta,
+          internalDraft: draftEndpointContacts.length === 2,
+          endpointAnchoredDraft: draftEndpointContacts.length === 1
+        }
+      }),
+      contacts: draftEndpointContacts
+    };
+  }
 
   for (const edge of polygonEdges(target.vertices)) {
     const edgeLine = lineFromPoints(edge.start, edge.end);
@@ -199,7 +221,7 @@ const constructPolygonAuxiliaryLine = (
   }
 
   for (const endpoint of [draft.start, draft.end]) {
-    if (pointInPolygonInclusive(endpoint, target.vertices)) {
+    if (pointInPolygonInclusive(endpoint, target.vertices, endpointTolerance)) {
       points.push(endpoint);
       contacts.push({ kind: 'inside-endpoint', point: clonePoint(endpoint), targetPart: 'polygon-edge' });
     }
@@ -492,8 +514,13 @@ const uniqueContacts = (
   return unique;
 };
 
-const pointInPolygonInclusive = (point: MathPoint2D, vertices: readonly MathPoint2D[]): boolean => {
-  if (polygonEdges(vertices).some((edge) => pointOnSegment2D(point, edge))) return true;
+const pointInPolygonInclusive = (
+  point: MathPoint2D,
+  vertices: readonly MathPoint2D[],
+  boundaryTolerance = 1e-7
+): boolean => {
+  if (polygonEdges(vertices).some((edge) => pointOnSegment2D(point, edge, boundaryTolerance))) return true;
+  if (polygonEdges(vertices).some((edge) => distancePointToSegment(point, edge) <= boundaryTolerance)) return true;
   let inside = false;
   for (let index = 0, previousIndex = vertices.length - 1; index < vertices.length; previousIndex = index, index += 1) {
     const current = vertices[index];
@@ -530,6 +557,22 @@ const pointOnRay2D = (
 const distancePointToLine = (point: MathPoint2D, line: MathLine2D): number => (
   Math.abs(cross2D(line.direction, subtract2D(point, line.point))) / Math.max(GRAPH_MATH_EPSILON, length2D(line.direction))
 );
+
+const distancePointToSegment = (
+  point: MathPoint2D,
+  segment: Pick<MathSegment2D, 'start' | 'end'>
+): number => {
+  const segmentVector = subtract2D(segment.end, segment.start);
+  const lengthSquared = dot2D(segmentVector, segmentVector);
+  if (lengthSquared <= GRAPH_MATH_EPSILON) return distance2D(point, segment.start);
+
+  const rawProjection = dot2D(subtract2D(point, segment.start), segmentVector) / lengthSquared;
+  const projection = Math.max(0, Math.min(1, rawProjection));
+  return distance2D(point, {
+    x: segment.start.x + segmentVector.x * projection,
+    y: segment.start.y + segmentVector.y * projection
+  });
+};
 
 const defaultConstructionId = (
   target: SubjectAuxiliaryLineConstructionTarget,
