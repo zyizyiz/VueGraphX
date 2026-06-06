@@ -6,6 +6,10 @@ import {
   type GraphOperationResult,
   type GraphWorldPoint
 } from './contracts';
+import {
+  isGraphRelationDrivenDrag,
+  readGraphDragDisabledReason
+} from './dragPolicy';
 import { resolveGraphGridSnapOptions, snapDeltaToGraphGrid } from './gridSnapping';
 
 export interface GraphDragDelta2D {
@@ -79,12 +83,12 @@ export const resolveGraphDragOperation = (
     return dragFailure(node, 'drag.locked-object', `Graph object ${node.id} is locked and cannot be dragged.`);
   }
 
-  const disabledReason = readDragDisabledReason(node, options);
+  const disabledReason = readGraphDragDisabledReason(node, options);
   if (disabledReason) {
     return dragFailure(node, 'drag.disabled-object', disabledReason);
   }
 
-  if (isRelationDrivenDrag(node)) {
+  if (isGraphRelationDrivenDrag(node)) {
     return dragFailure(node, 'drag.relation-driven-object', `Graph object ${node.id} is relation-driven and must be recomputed from its dependencies instead of directly dragged.`);
   }
 
@@ -445,28 +449,6 @@ const readDragBounds2D = (node: GraphObjectNode): GraphDragBounds2D | null => {
   if (typeof record.minY === 'number' && Number.isFinite(record.minY)) parsed.minY = record.minY;
   if (typeof record.maxY === 'number' && Number.isFinite(record.maxY)) parsed.maxY = record.maxY;
   return parsed;
-};
-
-const isRelationDrivenDrag = (node: GraphObjectNode): boolean => {
-  const meta = node.meta as Record<string, unknown> | undefined;
-  return meta?.relationDriven === true || meta?.dragMode === 'relation-driven';
-};
-
-const readDragDisabledReason = (
-  node: GraphObjectNode,
-  options: GraphCreateDragPatchOptions = {}
-): string | null => {
-  const meta = node.meta as Record<string, unknown> | undefined;
-  const coordinateSystemId = typeof meta?.coordinateSystemId === 'string' ? meta.coordinateSystemId : null;
-  const configuredReason = typeof meta?.dragDisabledReason === 'string' ? meta.dragDisabledReason : null;
-  if (coordinateSystemId && node.type !== 'coordinate-system') {
-    if (options.allowCoordinateScoped) return null;
-    return configuredReason ?? `Graph object ${node.id} belongs to coordinate system ${coordinateSystemId} and cannot be freely dragged.`;
-  }
-  if (meta?.draggable === false || meta?.dragDisabled === true || meta?.dragMode === 'disabled') {
-    return configuredReason ?? `Graph object ${node.id} is not draggable.`;
-  }
-  return null;
 };
 
 const readScopedCoordinateSystemId = (node: GraphObjectNode): string | null => {

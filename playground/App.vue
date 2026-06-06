@@ -415,6 +415,7 @@ import { GraphXEngine, type EngineMode } from 'vuegraphx';
 import {
   GraphSceneRuntime,
   createCenteredWorldBoundsForViewportGrid,
+  isGraphDraggableNode,
   resolveGraphOverlayPosition,
   resolveGraphViewportGridOptions,
   resolveGraphGridSnapOptions,
@@ -1259,13 +1260,12 @@ const suppressOperationShapeEditEvent = (event: PointerEvent) => {
   event.stopImmediatePropagation?.();
 };
 
-const isCoordinateSystemDraggableNode = (node: { type?: string; meta?: Record<string, unknown>; renderHints?: Record<string, unknown> } | null | undefined): boolean => (
-  node?.type === 'coordinate-system'
-  && node.meta?.locked !== true
-  && node.meta?.dragDisabled !== true
-  && node.meta?.dragMode !== 'disabled'
-  && node.meta?.draggable !== false
-  && node.renderHints?.draggable !== false
+const isRuntimeDraggableNode = (node: GraphObjectNode | null | undefined): boolean => (
+  isGraphDraggableNode(node)
+);
+
+const isCoordinateSystemDraggableNode = (node: GraphObjectNode | null | undefined): boolean => (
+  node?.type === 'coordinate-system' && isRuntimeDraggableNode(node)
 );
 
 const readCoreObjectIdFromJsxGraphObject = (object: unknown): string | null => {
@@ -1282,31 +1282,34 @@ const readCoreObjectIdFromJsxGraphObject = (object: unknown): string | null => {
   return null;
 };
 
-const getJsxGraphCoordinateSystemObjectAtEvent = (event: PointerEvent): string | null => {
+const getJsxGraphDraggableObjectAtEvent = (event: PointerEvent): string | null => {
   if (isCoreRendererActive.value || activeRendererBackend.value !== 'jsxgraph') return null;
   const board = engineRef.value?.getBoard() as { getAllObjectsUnderMouse?: (event: PointerEvent) => unknown[] } | null;
   const scene = engineRef.value?.exportRuntimeScene().scene;
   if (!board || !scene) return null;
   const objects = board.getAllObjectsUnderMouse?.(event) ?? [];
+  let draggableObjectId: string | null = null;
   let coordinateSystemObjectId: string | null = null;
   for (const object of objects) {
     const objectId = readCoreObjectIdFromJsxGraphObject(object);
     if (!objectId) continue;
     const node = scene.objects.find((entry) => entry.id === objectId);
     if (!node) continue;
-    if (isCoordinateSystemDraggableNode(node)) {
-      coordinateSystemObjectId ??= objectId;
+    if (isRuntimeDraggableNode(node as GraphObjectNode)) {
+      if (node.type === 'coordinate-system') coordinateSystemObjectId ??= objectId;
+      else draggableObjectId ??= objectId;
       continue;
     }
     return null;
   }
+  if (draggableObjectId) return draggableObjectId;
   if (coordinateSystemObjectId) return coordinateSystemObjectId;
 
   const localPoint = getCoreLocalPoint(event);
   if (!localPoint) return null;
   const worldPoint = getWorldPointForCanvasPoint(localPoint);
   for (const node of [...scene.objects].reverse()) {
-    if (isCoordinateSystemDraggableNode(node) && isPointInsideCoordinateSystemRegion(node, worldPoint)) return node.id;
+    if (isCoordinateSystemDraggableNode(node as GraphObjectNode) && isPointInsideCoordinateSystemRegion(node as GraphObjectNode, worldPoint)) return node.id;
   }
   return null;
 };
@@ -1666,13 +1669,13 @@ const handleCoreRendererPointerDown = (event: PointerEvent) => {
   const point = getCoreLocalPoint(event);
   if (!point) return;
 
-  const jsxGraphCoordinateObjectId = getJsxGraphCoordinateSystemObjectAtEvent(event);
-  if (jsxGraphCoordinateObjectId) {
+  const jsxGraphDraggableObjectId = getJsxGraphDraggableObjectAtEvent(event);
+  if (jsxGraphDraggableObjectId) {
     engineRef.value?.executeRuntimeCapability('math.object.select', {
       scope: 'object',
-      objectId: jsxGraphCoordinateObjectId
+      objectId: jsxGraphDraggableObjectId
     });
-    startCoordinateSystemDrag(event, jsxGraphCoordinateObjectId, 'jsxgraph', point);
+    startCoordinateSystemDrag(event, jsxGraphDraggableObjectId, 'jsxgraph', point);
     return;
   }
 
@@ -1699,7 +1702,7 @@ const handleCoreRendererPointerDown = (event: PointerEvent) => {
     const objectId = routed.pick.target.objectId;
     selectCoreObject(objectId, routed.pick);
     const node = runtime?.scene.getObject(objectId);
-    if (isCoordinateSystemDraggableNode(node)) {
+    if (isRuntimeDraggableNode(node)) {
       startCoordinateSystemDrag(event, objectId, 'core', point);
     }
     return;

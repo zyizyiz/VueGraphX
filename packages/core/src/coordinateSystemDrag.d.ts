@@ -50,6 +50,7 @@ export interface GraphCoordinateSystemDragController {
 type PlainRecord = Record<string, unknown>;
 export declare const createGraphCoordinateSystemDragController: (options: GraphCoordinateSystemDragControllerOptions) => GraphCoordinateSystemDragController;
 export declare const resolveCoordinateSystemDragObjectId: (runtime: GraphCoordinateSystemDragRuntime, point: GraphClientPoint, options?: Partial<Pick<GraphCoordinateSystemDragControllerOptions, "pickOptions" | "fallbackToRegion" | "resolveWorldPoint" | "isDraggableNode">>) => string | null;
+export declare const isGraphDraggableNode: (node: GraphObjectNode | null | undefined) => boolean;
 export declare const isGraphCoordinateSystemDraggableNode: (node: {
     type?: string;
     meta?: PlainRecord;

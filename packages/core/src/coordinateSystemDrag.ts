@@ -7,6 +7,7 @@ import {
   type GraphPickOptions,
   type GraphPickResult
 } from './contracts';
+import { isGraphObjectDraggableByPolicy } from './dragPolicy';
 import type { GraphCreateDragPatchOptions, GraphDragDelta2D } from './dragOperations';
 
 export interface GraphCoordinateSystemDragPoint2D {
@@ -75,7 +76,7 @@ type PlainRecord = Record<string, unknown>;
 export const createGraphCoordinateSystemDragController = (
   options: GraphCoordinateSystemDragControllerOptions
 ): GraphCoordinateSystemDragController => {
-  const isDraggableNode = options.isDraggableNode ?? isGraphCoordinateSystemDraggableNode;
+  const isDraggableNode = options.isDraggableNode ?? isGraphDraggableNode;
   let session: GraphCoordinateSystemDragSession | null = null;
 
   const cloneSession = (): GraphCoordinateSystemDragSession | null => (
@@ -203,7 +204,7 @@ export const resolveCoordinateSystemDragObjectId = (
     'pickOptions' | 'fallbackToRegion' | 'resolveWorldPoint' | 'isDraggableNode'
   >> = {}
 ): string | null => {
-  const isDraggableNode = options.isDraggableNode ?? isGraphCoordinateSystemDraggableNode;
+  const isDraggableNode = options.isDraggableNode ?? isGraphDraggableNode;
   const routed = pickRuntimeObject(runtime, point, options.pickOptions);
   if (routed?.target.objectId) {
     const node = runtime.scene.getObject(routed.target.objectId);
@@ -222,15 +223,20 @@ export const resolveCoordinateSystemDragObjectId = (
   return null;
 };
 
+export const isGraphDraggableNode = (
+  node: GraphObjectNode | null | undefined
+): boolean => isGraphObjectDraggableByPolicy(node);
+
 export const isGraphCoordinateSystemDraggableNode = (
   node: { type?: string; meta?: PlainRecord; renderHints?: PlainRecord } | null | undefined
 ): boolean => (
   node?.type === 'coordinate-system'
-  && node.meta?.locked !== true
-  && node.meta?.dragDisabled !== true
-  && node.meta?.dragMode !== 'disabled'
-  && node.meta?.draggable !== false
-  && node.renderHints?.draggable !== false
+  && isGraphObjectDraggableByPolicy({
+    id: 'coordinate-system',
+    type: node.type,
+    meta: node.meta,
+    renderHints: node.renderHints
+  })
 );
 
 export const isPointInsideGraphCoordinateSystemRegion = (

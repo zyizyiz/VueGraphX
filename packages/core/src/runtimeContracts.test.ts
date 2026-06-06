@@ -1187,6 +1187,28 @@ describe('renderer-neutral core runtime contracts', () => {
       message: SUBJECT_CANVAS_DRAG_DISABLED_REASON
     });
 
+    const coordinateScopedFree = {
+      ...createPointNode('coord-free-point', 0, 0),
+      meta: {
+        coordinateSystemId: 'coord-A',
+        draggable: true
+      },
+      renderHints: {
+        draggable: true
+      }
+    };
+    const coordinateScopedFreePatch = createGraphDragPatch(coordinateScopedFree, {
+      delta: { dimension: '2d', dx: 2, dy: 1 }
+    });
+    expect(coordinateScopedFreePatch.ok).toBe(true);
+    expect(coordinateScopedFreePatch.value?.payload).toMatchObject({
+      objectType: 'point',
+      position: { dimension: '2d', x: 2, y: 1 }
+    });
+    expect(createGraphCapabilitiesForObject(coordinateScopedFree).find((capability) => capability.id === 'math.object.move')).toMatchObject({
+      status: 'supported'
+    });
+
     const coordinateSystemPatch = createGraphDragPatch({
       id: 'coord-A',
       kind: 'shape',
@@ -2079,11 +2101,32 @@ describe('renderer-neutral core runtime contracts', () => {
         dragDisabled: true
       }
     });
+    runtime.addObject({
+      ...createPointNode('free-child-point', 4, 4),
+      renderHints: { draggable: true },
+      meta: {
+        coordinateSystemId: 'coord-controller',
+        draggable: true
+      }
+    });
 
     const controller = createGraphCoordinateSystemDragController({
       runtime,
       pickOptions: { tolerancePx: 0.1 },
       resolveWorldPoint: (point) => ({ x: point.x, y: point.y })
+    });
+
+    expect(controller.pointerDown({ pointerId: 4, point: { x: 4, y: 4 } })).toMatchObject({
+      handled: true,
+      objectId: 'free-child-point'
+    });
+    expect(controller.pointerMove({ pointerId: 4, point: { x: 6, y: 5 } })).toMatchObject({
+      handled: true,
+      objectId: 'free-child-point'
+    });
+    expect(controller.pointerUp({ pointerId: 4, point: { x: 6, y: 5 } }).handled).toBe(true);
+    expect(runtime.scene.getObject('free-child-point')?.payload).toMatchObject({
+      position: { dimension: '2d', x: 6, y: 5 }
     });
 
     expect(controller.pointerDown({ pointerId: 1, point: { x: 1, y: 1 } }).handled).toBe(false);
@@ -2113,6 +2156,64 @@ describe('renderer-neutral core runtime contracts', () => {
     });
     expect(runtime.scene.getObject('function-controller')?.renderHints).toMatchObject({
       clipWorldBounds: { left: -3, right: 9, top: 4, bottom: -8 }
+    });
+    expect(runtime.scene.getObject('free-child-point')?.payload).toMatchObject({
+      position: { dimension: '2d', x: 9, y: 3 }
+    });
+  });
+
+  it('routes pointer drags for independent geometry objects without coordinate systems', () => {
+    const backend = createCoreOnlyTestBackend('runtime-independent-drag-controller');
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+    runtime.addObject({
+      id: 'free-polygon',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: -2, y: 3 }, { x: 0, y: 3 }, { x: -2, y: 5 }]
+        }
+      },
+      layerId: 'content'
+    });
+    const dragRuntime = {
+      scene: runtime.scene,
+      router: {
+        pick: (point: { x: number; y: number }) => (
+          point.x === -2 && point.y === 3
+            ? {
+                target: { scope: 'object' as const, objectId: 'free-polygon' },
+                backendId: backend.id,
+                layerId: 'content' as const,
+                clientPoint: { ...point }
+              }
+            : null
+        )
+      },
+      applyDragToObject: runtime.applyDragToObject.bind(runtime)
+    };
+
+    const controller = createGraphCoordinateSystemDragController({
+      runtime: dragRuntime,
+      pickOptions: { tolerancePx: 0.1 },
+      resolveWorldPoint: (point) => ({ x: point.x, y: point.y })
+    });
+
+    expect(controller.pointerDown({ pointerId: 1, point: { x: -2, y: 3 } })).toMatchObject({
+      handled: true,
+      objectId: 'free-polygon'
+    });
+    expect(controller.pointerMove({ pointerId: 1, point: { x: 1, y: 5 } })).toMatchObject({
+      handled: true,
+      objectId: 'free-polygon'
+    });
+    expect(controller.pointerUp({ pointerId: 1, point: { x: 1, y: 5 } }).handled).toBe(true);
+    expect(runtime.scene.getObject('free-polygon')?.payload).toMatchObject({
+      geometry: {
+        vertices: [{ x: 1, y: 5 }, { x: 3, y: 5 }, { x: 1, y: 7 }]
+      }
     });
   });
 
