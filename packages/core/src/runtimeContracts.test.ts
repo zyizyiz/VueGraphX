@@ -17,6 +17,7 @@ import {
   createGraphCapabilitiesForObject,
   createGraphDragPatch,
   createGraphObjectNode,
+  createGraphObjectSelectionController,
   createGraphSceneObjectIrNode,
   createGraphViewportCoordinateModel,
   executeGraphCapability,
@@ -1801,6 +1802,62 @@ describe('renderer-neutral core runtime contracts', () => {
     unsubscribe();
     runtime.selectObject('A');
     expect(events).toHaveLength(5);
+  });
+
+  it('routes pointer selection through configurable selectable-node rules', () => {
+    const backend = createCoreOnlyTestBackend('runtime-object-selection-controller');
+    const runtime = new GraphSceneRuntime({ backend });
+    runtime.mount(document.createElement('div'));
+    runtime.addObject({
+      ...createPointNode('locked-point', 1, 1),
+      meta: { selectable: false }
+    });
+    runtime.addObject({
+      ...createPointNode('selectable-point', 2, 2),
+      meta: { selectable: true }
+    });
+
+    const events: GraphRuntimeSelectionChangeEvent[] = [];
+    runtime.subscribeSelection((event) => events.push(event));
+
+    const controller = createGraphObjectSelectionController({
+      runtime,
+      pickOptions: { tolerancePx: 0.1 },
+      isSelectableNode: (node) => node?.meta?.selectable === true
+    });
+
+    expect(controller.pointerDown({ pointerId: 1, point: { x: 1, y: 1 } })).toMatchObject({
+      handled: false,
+      action: 'ignored',
+      objectId: 'locked-point'
+    });
+    expect(runtime.getSelectionItems()).toEqual([]);
+    expect(events).toHaveLength(1);
+
+    expect(controller.pointerDown({ pointerId: 2, point: { x: 2, y: 2 } })).toMatchObject({
+      handled: true,
+      action: 'selected',
+      objectId: 'selectable-point'
+    });
+    expect(runtime.scene.getObject('selectable-point')?.meta?.selected).toBe(true);
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      reason: 'select',
+      source: 'pointer',
+      selected: [{ id: 'selectable-point' }]
+    });
+
+    expect(controller.pointerDown({ pointerId: 3, point: { x: 9, y: 9 } })).toMatchObject({
+      handled: false,
+      action: 'cleared'
+    });
+    expect(runtime.getSelectionItems()).toEqual([]);
+    expect(events).toHaveLength(3);
+    expect(events[2]).toMatchObject({
+      reason: 'clear',
+      source: 'pointer',
+      selected: []
+    });
   });
 
   it('emits one runtime selection event per syncObjects batch', () => {
