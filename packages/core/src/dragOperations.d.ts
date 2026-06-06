@@ -1,4 +1,5 @@
-import { type GraphObjectNode, type GraphObjectPatch, type GraphOperationDiagnostic, type GraphOperationResult, type GraphWorldPoint } from './contracts';
+import { type GraphClientPoint, type GraphObjectNode, type GraphObjectPatch, type GraphOperationDiagnostic, type GraphOperationResult, type GraphWorldPoint } from './contracts';
+import { type GraphGridSnapPixelScale } from './gridSnapping';
 export interface GraphDragDelta2D {
     dimension: '2d';
     dx: number;
@@ -16,6 +17,11 @@ export interface GraphCreateDragPatchOptions {
     startWorldPoint?: GraphWorldPoint;
     currentWorldPoint?: GraphWorldPoint;
     dragPhase?: 'move' | 'end';
+    projectWorldPoint?: (point: GraphWorldPoint & {
+        dimension: '2d';
+    }) => GraphClientPoint | null;
+    tolerancePx?: number;
+    pixelsPerUnit?: GraphGridSnapPixelScale;
     /**
      * Internal group-drag escape hatch: coordinate-scoped children are normally
      * not freely draggable, but they must move when their owning coordinate

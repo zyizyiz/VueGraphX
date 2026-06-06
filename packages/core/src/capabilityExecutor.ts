@@ -10,8 +10,10 @@ import {
 import {
   createGraphCoordinateSystemDragPatches,
   createGraphDragPatch,
+  type GraphCreateDragPatchOptions,
   type GraphDragDelta
 } from './dragOperations';
+import type { GraphGridSnapPixelScale } from './gridSnapping';
 import { GraphSceneStore } from './sceneDocument';
 
 export interface GraphCapabilityExecutionInput {
@@ -104,10 +106,7 @@ export const executeGraphCapability = (
         if (!delta) {
           return errorResult('capability.invalid-delta', 'Move capability requires a 2D or 3D drag delta.', input.target);
         }
-        const patches = createGraphCoordinateSystemDragPatches(input.scene.listObjects(), node, {
-          delta,
-          dragPhase: readDragPhase(input.payload)
-        });
+        const patches = createGraphCoordinateSystemDragPatches(input.scene.listObjects(), node, readDragPatchOptions(input.payload, delta));
         if (!patches.ok || !patches.value) return { ok: false, diagnostics: patches.diagnostics };
         let movedObject: GraphObjectNode | null = null;
         for (const scopedPatch of patches.value) {
@@ -338,7 +337,23 @@ const dragPatch = (node: GraphObjectNode, payload: unknown): GraphOperationResul
       objectId: node.id
     });
   }
-  return createGraphDragPatch(node, { delta, dragPhase: readDragPhase(payload) });
+  return createGraphDragPatch(node, readDragPatchOptions(payload, delta));
+};
+
+const readDragPatchOptions = (
+  payload: unknown,
+  delta: GraphDragDelta
+): GraphCreateDragPatchOptions => {
+  const record = asRecord(payload);
+  const options: GraphCreateDragPatchOptions = {
+    delta,
+    dragPhase: readDragPhase(payload)
+  };
+  const tolerancePx = readPositiveFiniteNumber(record?.tolerancePx);
+  if (tolerancePx !== undefined) options.tolerancePx = tolerancePx;
+  const pixelsPerUnit = readGridSnapPixelScale(record?.pixelsPerUnit);
+  if (pixelsPerUnit !== undefined) options.pixelsPerUnit = pixelsPerUnit;
+  return options;
 };
 
 const readDragPhase = (payload: unknown): 'move' | 'end' | undefined => {
@@ -478,6 +493,25 @@ const asRecord = (value: unknown): PlainRecord | null => typeof value === 'objec
 const readString = (value: unknown): string | undefined => typeof value === 'string' && value.trim() !== '' ? value : undefined;
 const readBoolean = (value: unknown, fallback: boolean): boolean => typeof value === 'boolean' ? value : fallback;
 const readFiniteNumber = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
+const readPositiveFiniteNumber = (value: unknown): number | undefined => {
+  const number = readFiniteNumber(value);
+  return number !== null && number > 0 ? number : undefined;
+};
+
+const readGridSnapPixelScale = (value: unknown): GraphGridSnapPixelScale | undefined => {
+  const scalar = readPositiveFiniteNumber(value);
+  if (scalar !== undefined) return scalar;
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const x = readPositiveFiniteNumber(record.x);
+  const y = readPositiveFiniteNumber(record.y);
+  return x !== undefined || y !== undefined
+    ? {
+        ...(x !== undefined ? { x } : {}),
+        ...(y !== undefined ? { y } : {})
+      }
+    : undefined;
+};
 
 const readGraphObjectNode = (value: unknown): GraphObjectNode | null => {
   const record = asRecord(value);

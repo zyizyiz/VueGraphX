@@ -467,8 +467,10 @@ import {
   createOperationShapeEditTarget,
   createOperationShapeEditVertexCommand,
   createOperationScopedCommands,
+  createOperationToolCommands,
   findOperationToolById,
   resolveOperationCommandOrigin,
+  shouldScopeOperationTool,
   updateOperationCoordinateSystemOrigin,
   type OperationCoordinateSystemRuntimeOptions,
   type OperationShapeEditPolygonTarget,
@@ -531,14 +533,15 @@ const readOperationCommandsFromDrop = (event: DragEvent): CommandInput[] | null 
 
 const onDrop = (e: DragEvent) => {
   e.preventDefault();
+  const dropPoint = getCoreLocalPoint(e);
   const operationTool = readOperationToolFromDrop(e);
-  if (operationTool?.interaction) {
-    handleActivateOperationTool(operationTool, getCoreLocalPoint(e));
+  if (operationTool) {
+    handleActivateOperationTool(operationTool, dropPoint);
     return;
   }
   const operationCommands = readOperationCommandsFromDrop(e);
   if (operationCommands) {
-    handleCreateOperationCommands(operationCommands, getCoreLocalPoint(e));
+    handleCreateOperationCommands(operationCommands, dropPoint);
     return;
   }
   if (engineRef.value) {
@@ -972,7 +975,15 @@ const handleActivateOperationTool = (tool: OperationTool, dropPoint: GraphClient
     createOperationShapeEditSession(tool, dropPoint);
     return;
   }
-  handleCreateOperationCommands(tool.commands, dropPoint);
+  handleCreateOperationToolCommands(tool, dropPoint);
+};
+
+const handleCreateOperationToolCommands = (tool: OperationTool, dropPoint: GraphClientPoint | null = null) => {
+  const origin = getWorldPointForOperationDrop(dropPoint);
+  handleCreateOperationCommands(createOperationToolCommands(tool, { origin }), dropPoint, {
+    origin,
+    scopeToCoordinateSystem: shouldScopeOperationTool(tool)
+  });
 };
 
 const createOperationShapeEditSession = (tool: OperationTool, dropPoint: GraphClientPoint | null = null) => {
@@ -2108,13 +2119,18 @@ const handleRendererBackendChange = (event: Event) => {
   }
 };
 
-const handleCreateOperationCommands = (commands: readonly CommandInput[], dropPoint: GraphClientPoint | null = null) => {
+const handleCreateOperationCommands = (
+  commands: readonly CommandInput[],
+  dropPoint: GraphClientPoint | null = null,
+  options: { origin?: MathPoint2D; scopeToCoordinateSystem?: boolean } = {}
+) => {
   if (commands.length === 0) return;
   clearOperationShapeEditSession();
   activeDemo.value = -1;
   const bounds = getOperationVisiblePlacementBounds();
-  const origin = getWorldPointForOperationDrop(dropPoint);
-  const nextCommands = store.activeMode === 'operation'
+  const origin = options.origin ?? getWorldPointForOperationDrop(dropPoint);
+  const scopeToCoordinateSystem = options.scopeToCoordinateSystem ?? true;
+  const nextCommands = store.activeMode === 'operation' && scopeToCoordinateSystem
     ? createOperationScopedCommands(
       commands,
       origin,

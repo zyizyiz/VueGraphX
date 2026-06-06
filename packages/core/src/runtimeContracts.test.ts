@@ -1327,6 +1327,183 @@ describe('renderer-neutral core runtime contracts', () => {
         yAxis: [{ x: 2, y: -8 }, { x: 2, y: 4 }]
       }
     });
+
+    const nearGridPolygon = {
+      id: 'poly-snap-nearest',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: 0.2, y: 0.1 }, { x: 2.4, y: 0.4 }, { x: 0.8, y: 2.2 }]
+        }
+      }
+    } satisfies GraphObjectNode;
+    const nearGridMovePatch = createGraphDragPatch(nearGridPolygon, {
+      delta: { dimension: '2d', dx: 0.65, dy: 0.86 },
+      dragPhase: 'move'
+    });
+    expect((nearGridMovePatch.value?.payload as any).geometry.vertices).toEqual([
+      { x: 0.85, y: 0.96 },
+      { x: 3.05, y: 1.26 },
+      { x: 1.45, y: 3.06 }
+    ]);
+
+    const nearGridEndPatch = createGraphDragPatch(nearGridPolygon, {
+      delta: { dimension: '2d', dx: 0.65, dy: 0.86 },
+      dragPhase: 'end'
+    });
+    expect((nearGridEndPatch.value?.payload as any).geometry.vertices).toEqual([
+      { x: 1, y: 1 },
+      { x: 3.2, y: 1.3 },
+      { x: 1.6, y: 3.1 }
+    ]);
+
+    const disabledGeometrySnapPatch = createGraphDragPatch({
+      ...nearGridPolygon,
+      meta: { snapToGrid: false }
+    }, {
+      delta: { dimension: '2d', dx: 0.65, dy: 0.86 },
+      dragPhase: 'end'
+    });
+    expect((disabledGeometrySnapPatch.value?.payload as any).geometry.vertices).toEqual([
+      { x: 0.85, y: 0.96 },
+      { x: 3.05, y: 1.26 },
+      { x: 1.45, y: 3.06 }
+    ]);
+
+    const strictToleranceGeometrySnapPatch = createGraphDragPatch(nearGridPolygon, {
+      delta: { dimension: '2d', dx: 0.65, dy: 0.86 },
+      dragPhase: 'end',
+      tolerancePx: 3
+    });
+    expect((strictToleranceGeometrySnapPatch.value?.payload as any).geometry.vertices).toEqual([
+      { x: 0.85, y: 0.96 },
+      { x: 3.05, y: 1.26 },
+      { x: 1.45, y: 3.06 }
+    ]);
+  });
+
+  it('snaps generated geometry objects by nearest vertex or center before rendering', () => {
+    const runtime = new GraphSceneRuntime();
+    const polygon = runtime.addObject({
+      id: 'generated-poly',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: -2.4, y: 0.2 }, { x: 0.9, y: 0.95 }, { x: -1.5, y: 2.4 }]
+        }
+      }
+    });
+
+    expect(polygon.ok).toBe(true);
+    expect((polygon.value?.payload as any).geometry.vertices).toEqual([
+      { x: -2.3, y: 0.25 },
+      { x: 1, y: 1 },
+      { x: -1.4, y: 2.45 }
+    ]);
+
+    const circle = runtime.addObject({
+      id: 'generated-circle',
+      kind: 'shape',
+      type: 'circle',
+      payload: {
+        geometry: {
+          kind: 'circle',
+          center: { x: 3.1, y: -1.05 },
+          radius: 2
+        }
+      }
+    });
+
+    expect(circle.ok).toBe(true);
+    expect((circle.value?.payload as any).geometry).toMatchObject({
+      center: { x: 3, y: -1 },
+      radius: 2
+    });
+
+    const disabled = runtime.addObject({
+      id: 'generated-disabled',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: 5.1, y: 5.05 }, { x: 6, y: 5 }, { x: 5, y: 6 }]
+        }
+      },
+      meta: { snapToGrid: false }
+    });
+
+    expect(disabled.ok).toBe(true);
+    expect((disabled.value?.payload as any).geometry.vertices[0]).toEqual({ x: 5.1, y: 5.05 });
+
+    const projectedRuntime = new GraphSceneRuntime({
+      backend: {
+        ...createCoreOnlyTestBackend('geometry-snap-projection'),
+        project: (point) => ({ x: point.x * 10, y: point.y * 10 })
+      }
+    });
+    const projectedPolygon = projectedRuntime.addObject({
+      id: 'generated-projected',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: 0.4, y: 0.1 }, { x: 2.4, y: 0.2 }, { x: 0.2, y: 2.4 }]
+        }
+      }
+    });
+
+    expect(projectedPolygon.ok).toBe(true);
+    expect((projectedPolygon.value?.payload as any).geometry.vertices).toEqual([
+      { x: 0, y: 0 },
+      { x: 2, y: 0.1 },
+      { x: -0.2, y: 2.3 }
+    ]);
+
+    const strictRuntime = new GraphSceneRuntime({ geometryGridSnap: { tolerancePx: 3 } });
+    const strictPolygon = strictRuntime.addObject({
+      id: 'generated-strict',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: 0.1, y: 0.1 }, { x: 2.2, y: 0.2 }, { x: 0.2, y: 2.2 }]
+        }
+      }
+    });
+
+    expect(strictPolygon.ok).toBe(true);
+    expect((strictPolygon.value?.payload as any).geometry.vertices).toEqual([
+      { x: 0.1, y: 0.1 },
+      { x: 2.2, y: 0.2 },
+      { x: 0.2, y: 2.2 }
+    ]);
+
+    const objectOverride = strictRuntime.addObject({
+      id: 'generated-object-override',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: 0.1, y: 0.1 }, { x: 2.2, y: 0.2 }, { x: 0.2, y: 2.2 }]
+        }
+      },
+      meta: { snapToGrid: { tolerancePx: 5 } }
+    });
+
+    expect(objectOverride.ok).toBe(true);
+    expect((objectOverride.value?.payload as any).geometry.vertices).toEqual([
+      { x: 0, y: 0 },
+      { x: 2.1, y: 0.1 },
+      { x: 0.1, y: 2.1 }
+    ]);
   });
 
   it('explains drag success, constrained clamps, and relation-driven failures', () => {
@@ -1380,6 +1557,34 @@ describe('renderer-neutral core runtime contracts', () => {
     });
     expect(move.ok).toBe(true);
     expect(scene.getObject('A')?.payload).toMatchObject({ objectType: 'point', position: { dimension: '2d', x: 4, y: 5 } });
+
+    scene.addObject({
+      id: 'capability-poly',
+      kind: 'shape',
+      type: 'polygon',
+      payload: {
+        geometry: {
+          kind: 'polygon',
+          vertices: [{ x: 0.2, y: 0.1 }, { x: 2.4, y: 0.4 }, { x: 0.8, y: 2.2 }]
+        }
+      }
+    });
+    const strictGeometryMove = executeGraphCapability({
+      scene,
+      capabilityId: 'math.object.move',
+      target: { scope: 'object', objectId: 'capability-poly' },
+      payload: {
+        delta: { dimension: '2d', dx: 0.65, dy: 0.86 },
+        dragPhase: 'end',
+        tolerancePx: 3
+      }
+    });
+    expect(strictGeometryMove.ok).toBe(true);
+    expect((scene.getObject('capability-poly')?.payload as any).geometry.vertices).toEqual([
+      { x: 0.85, y: 0.96 },
+      { x: 3.05, y: 1.26 },
+      { x: 1.45, y: 3.06 }
+    ]);
 
     const color = executeGraphCapability({
       scene,

@@ -1,6 +1,7 @@
 import { type GraphBackendContext, type GraphBackendHost, type GraphBackendMountOptions, type GraphBackendMountResult, type GraphDragSession, type GraphLayerId, type GraphObjectNode, type GraphObjectPatch, type GraphOperationResult, type GraphRenderBackend, type GraphRenderHandle } from './contracts';
 import { type GraphCreateDragPatchOptions } from './dragOperations';
 import { GraphInteractionRouter } from './eventRouter';
+import { type GraphGridSnapPixelScale } from './gridSnapping';
 import { GraphSceneStore, type GraphSceneStoreSnapshot } from './sceneDocument';
 import { type GraphRuntimeSelectionChangeSource, type GraphRuntimeSelectionItem, type GraphRuntimeSelectionListener } from './selection';
 export interface GraphSceneRuntimeOptions {
@@ -9,6 +10,11 @@ export interface GraphSceneRuntimeOptions {
     router?: GraphInteractionRouter;
     defaultLayerId?: GraphLayerId;
     defaultContext?: GraphBackendContext;
+    geometryGridSnap?: GraphSceneRuntimeGeometryGridSnapOptions;
+}
+export interface GraphSceneRuntimeGeometryGridSnapOptions {
+    tolerancePx?: number;
+    pixelsPerUnit?: GraphGridSnapPixelScale;
 }
 export interface GraphSceneRuntimeSnapshot extends GraphSceneStoreSnapshot {
     handles: readonly GraphRenderHandle[];

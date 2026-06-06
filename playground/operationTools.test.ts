@@ -12,9 +12,11 @@ import {
 import {
   alignOperationCoordinateSystemOriginToGrid,
   clampOperationCoordinateSystemOrigin,
+  createOperationIndependentTriangleCommands,
   createOperationShapeEditCommands,
   createOperationShapeEditTarget,
   createOperationShapeEditVertexCommand,
+  createOperationToolCommands,
   createOperationScopedCommands,
   findOperationToolById,
   formatOperationPointTuple,
@@ -224,6 +226,23 @@ describe('updateOperationCoordinateSystemOrigin', () => {
 
     const commands = createOperationScopedCommands(constructionTool!.commands, { x: 0, y: 0 }, 'coord_construct');
     expect(commands.every((command) => (command.options?.coordinateSystem as any)?.id === 'coord_construct')).toBe(true);
+  });
+
+  it('exposes an independent triangle tool without operation coordinate-system placement', () => {
+    const tool = operationToolGroups
+      .flatMap((group) => group.tools)
+      .find((entry) => entry.id === 'independent-triangle');
+
+    expect(tool).toBeDefined();
+    expect(tool!.placement).toBe('world');
+    expect(tool!.interaction).toBeUndefined();
+    expect(tool!.commands).toEqual(createOperationIndependentTriangleCommands({ x: 0, y: 0 }));
+
+    const commands = createOperationToolCommands(tool!, { origin: { x: 4, y: -2 } });
+    expect(commands).toHaveLength(1);
+    expect(commands[0].expr).toBe('Polygon((2, -3.3), (6, -3.3), (4, 0))');
+    expect(commands[0].options).not.toHaveProperty('coordinateSystem');
+    expect(commands[0].options).not.toHaveProperty('operationCoordinateSystem');
   });
 
   it('creates prefixed commands for interactive geometry shape editing', () => {

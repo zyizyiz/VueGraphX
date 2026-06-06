@@ -19,6 +19,11 @@ import {
   type GraphCreateDragPatchOptions
 } from './dragOperations';
 import { GraphInteractionRouter } from './eventRouter';
+import type { GraphGridSnapPixelScale } from './gridSnapping';
+import {
+  snapGraphObjectGeometryToGrid,
+  type GraphGeometryGridSnapOptions
+} from './geometryGridSnap';
 import { GraphSceneStore, type GraphSceneStoreSnapshot } from './sceneDocument';
 import {
   cloneGraphRuntimeSelectionItem,
@@ -39,6 +44,12 @@ export interface GraphSceneRuntimeOptions {
   router?: GraphInteractionRouter;
   defaultLayerId?: GraphLayerId;
   defaultContext?: GraphBackendContext;
+  geometryGridSnap?: GraphSceneRuntimeGeometryGridSnapOptions;
+}
+
+export interface GraphSceneRuntimeGeometryGridSnapOptions {
+  tolerancePx?: number;
+  pixelsPerUnit?: GraphGridSnapPixelScale;
 }
 
 export interface GraphSceneRuntimeSnapshot extends GraphSceneStoreSnapshot {
@@ -74,6 +85,7 @@ export class GraphSceneRuntime {
   private backend: GraphRenderBackend | null;
   private readonly handlesByObjectId = new Map<string, GraphRenderHandle>();
   private readonly defaultLayerId: GraphLayerId;
+  private readonly geometryGridSnapOptions: GraphSceneRuntimeGeometryGridSnapOptions;
   private defaultContext: GraphBackendContext;
   private selectionListeners: GraphRuntimeSelectionListener[] = [];
   private selectionRevision = 0;
@@ -83,6 +95,7 @@ export class GraphSceneRuntime {
     this.backend = options.backend ?? null;
     this.router = options.router ?? new GraphInteractionRouter();
     this.defaultLayerId = options.defaultLayerId ?? 'content';
+    this.geometryGridSnapOptions = options.geometryGridSnap ? { ...options.geometryGridSnap } : {};
     this.defaultContext = options.defaultContext ? { ...options.defaultContext } : {};
     if (this.backend) {
       this.router.registerBackend(this.backend, this.defaultLayerId);
@@ -126,7 +139,8 @@ export class GraphSceneRuntime {
     node: GraphObjectNode,
     options: { root?: boolean; replace?: boolean; context?: GraphBackendContext } = {}
   ): GraphOperationResult<GraphObjectNode> {
-    const result = this.scene.addObject(node, { root: options.root, replace: options.replace });
+    const snappedNode = this.snapRuntimeGeometryNode(node);
+    const result = this.scene.addObject(snappedNode, { root: options.root, replace: options.replace });
     if (!result.ok || !result.value) return result;
     this.renderNode(result.value, options.context);
     return result;
@@ -184,7 +198,7 @@ export class GraphSceneRuntime {
     nodes: readonly GraphObjectNode[],
     context?: GraphBackendContext
   ): GraphOperationResult<GraphObjectNode[]> {
-    const normalized = normalizeRuntimeSyncNodes(nodes, this.scene.id);
+    const normalized = normalizeRuntimeSyncNodes(nodes, this.scene.id, this.createGeometryGridSnapOptions());
     if (!normalized.ok || !normalized.value) return normalized;
 
     const previousSelection = this.readSelectionItems();
@@ -343,8 +357,9 @@ export class GraphSceneRuntime {
         objectId
       });
     }
+    const dragOptions = this.withGeometryGridSnapProjection(drag);
     if (node.type === 'coordinate-system') {
-      const patches = createGraphCoordinateSystemDragPatches(this.scene.listObjects(), node, drag);
+      const patches = createGraphCoordinateSystemDragPatches(this.scene.listObjects(), node, dragOptions);
       if (!patches.ok || !patches.value) return { ok: false, diagnostics: patches.diagnostics };
 
       let targetResult: GraphOperationResult<GraphObjectNode> | null = null;
@@ -367,7 +382,7 @@ export class GraphSceneRuntime {
           objectId
         });
     }
-    const patch = createGraphDragPatch(node, drag);
+    const patch = createGraphDragPatch(node, dragOptions);
     return patch.ok && patch.value
       ? this.updateObject(objectId, patch.value)
       : { ok: false, diagnostics: patch.diagnostics };
@@ -494,6 +509,32 @@ export class GraphSceneRuntime {
     };
   }
 
+  private snapRuntimeGeometryNode(node: GraphObjectNode): GraphObjectNode {
+    return snapGraphObjectGeometryToGrid(node, this.createGeometryGridSnapOptions());
+  }
+
+  private withGeometryGridSnapProjection<T extends GraphCreateDragPatchOptions | GraphDragSession>(
+    drag: T
+  ): T & GraphGeometryGridSnapOptions {
+    const runtimeOptions = this.createGeometryGridSnapOptions(readRuntimeDragPhase(drag));
+    return {
+      ...runtimeOptions,
+      ...drag,
+      projectWorldPoint: runtimeOptions.projectWorldPoint
+    };
+  }
+
+  private createGeometryGridSnapOptions(
+    options: Pick<GraphGeometryGridSnapOptions, 'dragPhase'> = {}
+  ): GraphGeometryGridSnapOptions {
+    const backend = this.backend;
+    return {
+      ...this.geometryGridSnapOptions,
+      ...options,
+      projectWorldPoint: (point) => backend?.project(point) ?? null
+    };
+  }
+
   private requireBackend(): GraphRenderBackend {
     if (!this.backend) {
       throw new Error('GraphSceneRuntime requires a backend before mounting.');
@@ -502,13 +543,22 @@ export class GraphSceneRuntime {
   }
 }
 
+const readRuntimeDragPhase = (
+  drag: GraphCreateDragPatchOptions | GraphDragSession
+): Pick<GraphGeometryGridSnapOptions, 'dragPhase'> => (
+  'dragPhase' in drag && (drag.dragPhase === 'move' || drag.dragPhase === 'end')
+    ? { dragPhase: drag.dragPhase }
+    : {}
+);
+
 const normalizeRuntimeSyncNodes = (
   nodes: readonly GraphObjectNode[],
-  sceneId: string
+  sceneId: string,
+  snapOptions: GraphGeometryGridSnapOptions = {}
 ): GraphOperationResult<GraphObjectNode[]> => {
   const store = new GraphSceneStore(`${sceneId}:sync`);
   for (const node of nodes) {
-    const added = store.addObject(node);
+    const added = store.addObject(snapGraphObjectGeometryToGrid(node, snapOptions));
     if (!added.ok) return { ok: false, diagnostics: added.diagnostics };
   }
   return okResult(store.listObjects());

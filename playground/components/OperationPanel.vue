@@ -67,18 +67,16 @@ const emit = defineEmits<{
 const handleToolClick = (tool: OperationTool) => {
   console.info('[VueGraphX operation tool]', tool.interaction ? 'activate' : 'create', {
     toolId: tool.id,
+    placement: tool.placement ?? 'coordinate-system',
     interaction: tool.interaction ?? null
   });
-  if (tool.interaction) {
-    emit('activate-tool', tool);
-    return;
-  }
-  emit('create-commands', tool.commands);
+  emit('activate-tool', tool);
 };
 
 const startDrag = (tool: OperationTool, event: DragEvent) => {
   console.info('[VueGraphX operation tool]', 'dragstart', {
     toolId: tool.id,
+    placement: tool.placement ?? 'coordinate-system',
     interaction: tool.interaction ?? null
   });
   const commands = tool.commands;

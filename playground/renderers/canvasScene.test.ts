@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { GraphSceneRuntime, compareParitySnapshots } from '@vuegraphx/core';
 import { createCanvas2DGraphBackend } from '@vuegraphx/backend-canvas2d';
 import { createJsxGraphBackend } from '@vuegraphx/backend-jsxgraph';
-import { createOperationScopedCommands, operationToolGroups, updateOperationCoordinateSystemOrigin } from '../operationTools';
+import {
+  createOperationScopedCommands,
+  createOperationToolCommands,
+  operationToolGroups,
+  updateOperationCoordinateSystemOrigin
+} from '../operationTools';
 import { allDemos } from '../showcase';
 import {
   getParityCapabilitySummaries,
@@ -540,6 +545,29 @@ describe('buildPlaygroundCanvasScene', () => {
       expect(scopedGraphs.some((node) => node.meta?.coordinateSystemId === 'coord_right'), backend.id).toBe(true);
       expect(scopedGraphs.every((node) => node.renderHints?.draggable === false), backend.id).toBe(true);
     }
+  });
+
+  it('builds independent operation-area triangles without coordinate-system scope', () => {
+    const tool = operationToolGroups
+      .flatMap((group) => group.tools)
+      .find((entry) => entry.id === 'independent-triangle');
+    expect(tool).toBeDefined();
+
+    const commands = toCommands(createOperationToolCommands(tool!, { origin: { x: 1, y: -2 } }));
+    const result = buildPlaygroundCanvasScene(commands);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes.filter((node) => node.type === 'coordinate-system')).toEqual([]);
+
+    const triangle = result.nodes.find((node) => node.type === 'polygon');
+    expect(triangle).toBeDefined();
+    expect(triangle?.meta?.coordinateSystemId).toBeUndefined();
+    expect(triangle?.meta?.dragDisabled).toBeUndefined();
+    expect(triangle?.renderHints?.draggable).not.toBe(false);
+    expect((triangle?.payload as any).geometry).toMatchObject({
+      kind: 'polygon',
+      vertices: [{ x: -1, y: -3.3 }, { x: 3, y: -3.3 }, { x: 1, y: 0 }]
+    });
   });
 
   it('keeps operation-area geometry annotations scoped inside their coordinate windows', () => {

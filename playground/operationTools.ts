@@ -81,6 +81,11 @@ export interface OperationCommandWithOptions {
 }
 
 export type OperationInteractiveToolKind = 'geometry-shape-edit';
+export type OperationToolPlacement = 'coordinate-system' | 'world';
+
+export interface OperationToolCommandContext {
+  origin: MathPoint2D;
+}
 
 export interface OperationGeometryShapeEditInteraction {
   kind: OperationInteractiveToolKind;
@@ -96,6 +101,8 @@ export interface OperationTool {
   icon: string;
   iconClass: string;
   commands: readonly OperationCommandSpec[];
+  placement?: OperationToolPlacement;
+  createCommands?: (context: OperationToolCommandContext) => readonly OperationCommandSpec[];
   interaction?: OperationToolInteraction;
 }
 
@@ -281,6 +288,17 @@ export const formatOperationPointTuple = (point: MathPoint2D): string => operati
 
 export const findOperationToolById = (toolId: string): OperationTool | null => (
   operationToolGroups.flatMap((group) => group.tools).find((tool) => tool.id === toolId) ?? null
+);
+
+export const shouldScopeOperationTool = (tool: OperationTool): boolean => (
+  (tool.placement ?? 'coordinate-system') === 'coordinate-system'
+);
+
+export const createOperationToolCommands = (
+  tool: OperationTool,
+  context: OperationToolCommandContext
+): readonly OperationCommandSpec[] => (
+  tool.createCommands ? tool.createCommands(context) : tool.commands
 );
 
 const asMutableRecord = (value: unknown): Record<string, unknown> | null => (
@@ -536,6 +554,25 @@ const operationGeometryOverlayCommands: readonly OperationCommandSpec[] = [
   })
 ];
 
+export const createOperationIndependentTriangleCommands = (
+  origin: MathPoint2D
+): OperationCommandSpec[] => {
+  const vertices = [
+    point2D(origin.x - 2, origin.y - 1.3),
+    point2D(origin.x + 2, origin.y - 1.3),
+    point2D(origin.x, origin.y + 2)
+  ];
+  return [{
+    expr: `Polygon(${vertices.map(operationPointTuple).join(', ')})`,
+    options: {
+      strokeColor: '#0F766E',
+      fillColor: '#CCFBF1',
+      fillOpacity: 0.24,
+      strokeWidth: 2
+    }
+  }];
+};
+
 const operationFunctionOverlayCommands: readonly OperationCommandSpec[] = [
   { expr: 'Function("x^2 - 2*x - 3", -4, 5)', options: { strokeColor: '#2563EB' } },
   ...operationOverlayLineCommands(operationQuadraticOverlay),
@@ -682,6 +719,16 @@ export const operationToolGroups: readonly OperationToolGroup[] = [
   {
     title: '标注与辅助线',
     tools: [
+      {
+        id: 'independent-triangle',
+        label: '独立三角形',
+        description: '生成不带坐标系的几何三角形，可直接拖拽移动',
+        icon: '△',
+        iconClass: 'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
+        commands: createOperationIndependentTriangleCommands(point2D(0, 0)),
+        placement: 'world',
+        createCommands: ({ origin }) => createOperationIndependentTriangleCommands(origin)
+      },
       {
         id: 'triangle-overlay-tools',
         label: '三角形标注',
