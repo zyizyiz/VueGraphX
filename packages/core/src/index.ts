@@ -15,6 +15,7 @@ export * from './capabilityExecutor';
 export * from './eventRouter';
 export * from './dragOperations';
 export * from './coordinateSystemDrag';
+export * from './auxiliaryLineInteraction';
 export * from './objectSelection';
 export * from './renderRuntime';
 export * from './parityMatrix';

@@ -12,6 +12,7 @@ export interface GraphCoordinateSystemDragSession {
 export interface GraphCoordinateSystemDragPointerInput {
     pointerId: number;
     point: GraphClientPoint;
+    fallbackToRegion?: boolean;
 }
 export interface GraphCoordinateSystemDragRuntime {
     scene: {

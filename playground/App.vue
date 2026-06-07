@@ -476,6 +476,7 @@ import {
   resolveOperationCommandOrigin,
   shouldScopeOperationTool,
   updateOperationCoordinateSystemOrigin,
+  type OperationAuxiliaryConstructionAnchor,
   type OperationAuxiliaryConstructionDraft,
   type OperationAuxiliaryConstructionTarget,
   type OperationCoordinateSystemRuntimeOptions,
@@ -485,8 +486,14 @@ import {
 import { registerPlaygroundShapes } from './shapes';
 import { getBoardOptionsForPlaygroundMode, getEngineModeForPlayground, type PlaygroundMode } from './types/mode';
 import {
+  createGraphAuxiliaryLineInteractionController,
   createGraphViewportNavigationController,
   fitGraphBoundsToViewportAspect,
+  type GraphAuxiliaryLineInteractionAnchorState,
+  type GraphAuxiliaryLineInteractionController,
+  type GraphAuxiliaryLineInteractionDraft,
+  type GraphAuxiliaryLineInteractionEvent,
+  type GraphAuxiliaryLineInteractionResult,
   type GraphViewportNavigationController,
   type GraphViewportNavigationKind
 } from '@vuegraphx/core';
@@ -655,6 +662,8 @@ interface OperationAuxiliaryConstructionSession {
   commandIds: readonly string[];
   draft: OperationAuxiliaryConstructionDraft | null;
   pendingStart: MathPoint2D | null;
+  anchors: readonly OperationAuxiliaryConstructionAnchor[];
+  interactionController: GraphAuxiliaryLineInteractionController;
 }
 
 interface OperationShapeEditHandleProjection extends SubjectShapeEditHandleDescriptor {
@@ -669,15 +678,9 @@ interface OperationShapeEditDragSession {
   element: HTMLElement;
 }
 
-interface OperationAuxiliaryConstructionDragSession {
-  pointerId: number;
-  start: MathPoint2D;
-}
-
 let coreNavigationController: GraphViewportNavigationController<CanvasWorldBounds> | null = null;
 let coordinateSystemDragSession: CoordinateSystemDragSession | null = null;
 let operationShapeEditDragSession: OperationShapeEditDragSession | null = null;
-let operationAuxiliaryConstructionDragSession: OperationAuxiliaryConstructionDragSession | null = null;
 let disposeViewportChangeSubscription: (() => void) | null = null;
 let disposeCoreRuntimeSelectionSubscription: (() => void) | null = null;
 
@@ -1117,6 +1120,7 @@ const createOperationAuxiliaryConstructionSession = (tool: OperationTool, dropPo
   const commandIds = store.commands
     .slice(previousCommandCount, previousCommandCount + scopedCommands.length)
     .map((command) => command.id);
+  const interactionController = createOperationAuxiliaryConstructionInteractionController(coordinateSystemId);
 
   operationAuxiliaryConstructionSession.value = {
     toolId: tool.id,
@@ -1126,7 +1130,9 @@ const createOperationAuxiliaryConstructionSession = (tool: OperationTool, dropPo
     target,
     commandIds,
     draft: null,
-    pendingStart: null
+    pendingStart: null,
+    anchors: [],
+    interactionController
   };
   debugOperationAuxiliaryConstruction('session created', {
     toolId: tool.id,
@@ -1145,21 +1151,25 @@ const createOperationAuxiliaryConstructionSession = (tool: OperationTool, dropPo
 const startOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean => {
   const session = operationAuxiliaryConstructionSession.value;
   if (!session || store.activeMode !== 'operation') return false;
-  const start = getOperationAuxiliaryConstructionLocalPoint(event, session);
-  if (!start) {
-    cancelOperationAuxiliaryConstructionSession('pointerdown-outside-coordinate-system');
-    suppressOperationAuxiliaryConstructionEvent(event);
-    return true;
-  }
 
-  operationAuxiliaryConstructionDragSession = { pointerId: event.pointerId, start };
-  coordinateSystemDragSession = null;
-  coreNavigationController?.resetPointers();
-  graphContainerRef.value?.setPointerCapture?.(event.pointerId);
-  document.body.classList.add('operation-auxiliary-construction-drag-active');
+  const point = getCoreLocalPoint(event);
+  if (!point) return false;
+  const result = session.interactionController.pointerDown({
+    pointerId: event.pointerId,
+    point
+  });
+  applyOperationAuxiliaryConstructionInteractionResult(result);
+  if (!result.handled) return false;
+
+  if (session.interactionController.isPointerActive(event.pointerId)) {
+    coordinateSystemDragSession = null;
+    coreNavigationController?.resetPointers();
+    graphContainerRef.value?.setPointerCapture?.(event.pointerId);
+    document.body.classList.add('operation-auxiliary-construction-drag-active');
+  }
   debugOperationAuxiliaryConstruction('pointerdown', {
     pointerId: event.pointerId,
-    localPoint: start,
+    localPoint: point,
     client: { x: event.clientX, y: event.clientY }
   });
   suppressOperationAuxiliaryConstructionEvent(event);
@@ -1167,20 +1177,26 @@ const startOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean =
 };
 
 const moveOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean => {
-  const dragSession = operationAuxiliaryConstructionDragSession;
   const session = operationAuxiliaryConstructionSession.value;
-  if (!dragSession || dragSession.pointerId !== event.pointerId || !session) return false;
+  if (!session) return false;
+  if (!session.interactionController.isPointerActive(event.pointerId) && !session.interactionController.hasPendingStart()) return false;
 
-  const end = getOperationAuxiliaryConstructionLocalPoint(event, session);
-  if (!end) {
-    suppressOperationAuxiliaryConstructionEvent(event);
-    return true;
-  }
-  const draft = createOperationAuxiliaryConstructionDraft(dragSession.start, end);
-  if (draft) updateOperationAuxiliaryConstructionDraft(draft, null);
+  const point = getCoreLocalPoint(event);
+  if (!point) return false;
+  const result = session.interactionController.pointerMove({
+    pointerId: event.pointerId,
+    point
+  });
+  if (!result.handled) return false;
+  applyOperationAuxiliaryConstructionInteractionResult(result);
   debugOperationAuxiliaryConstruction('pointermove', {
     pointerId: event.pointerId,
-    draft,
+    session: operationAuxiliaryConstructionSession.value
+      ? {
+        draft: operationAuxiliaryConstructionSession.value.draft,
+        pendingStart: operationAuxiliaryConstructionSession.value.pendingStart
+      }
+      : null,
     client: { x: event.clientX, y: event.clientY }
   });
   suppressOperationAuxiliaryConstructionEvent(event);
@@ -1188,76 +1204,39 @@ const moveOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean =>
 };
 
 const stopOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean => {
-  const dragSession = operationAuxiliaryConstructionDragSession;
   const session = operationAuxiliaryConstructionSession.value;
-  if (!dragSession || dragSession.pointerId !== event.pointerId || !session) return false;
+  if (!session || !session.interactionController.isPointerActive(event.pointerId)) return false;
 
-  const end = getOperationAuxiliaryConstructionLocalPoint(event, session);
-  const draft = end ? createOperationAuxiliaryConstructionDraft(dragSession.start, end) : null;
-  if (!end) {
-    cancelOperationAuxiliaryConstructionSession('pointerup-outside-coordinate-system', { resetDraft: true });
-    debugOperationAuxiliaryConstruction(event.type, {
-      pointerId: event.pointerId,
-      cancelled: true,
-      reason: 'outside-coordinate-system',
-      client: { x: event.clientX, y: event.clientY }
-    });
-    suppressOperationAuxiliaryConstructionEvent(event);
-    return true;
-  }
-  if (draft) {
-    updateOperationAuxiliaryConstructionDraft(draft, null);
-  } else {
-    applyOperationAuxiliaryConstructionClick(end);
-  }
-  clearOperationAuxiliaryConstructionDragSession();
+  const point = getCoreLocalPoint(event);
+  const result = point
+    ? session.interactionController.pointerUp({ pointerId: event.pointerId, point })
+    : session.interactionController.cancel(event.pointerId);
+  applyOperationAuxiliaryConstructionInteractionResult(result);
+  clearOperationAuxiliaryConstructionDragSession(event.pointerId);
   debugOperationAuxiliaryConstruction(event.type, {
     pointerId: event.pointerId,
-    draft,
+    session: operationAuxiliaryConstructionSession.value
+      ? {
+        draft: operationAuxiliaryConstructionSession.value.draft,
+        pendingStart: operationAuxiliaryConstructionSession.value.pendingStart
+      }
+      : null,
     client: { x: event.clientX, y: event.clientY }
   });
   suppressOperationAuxiliaryConstructionEvent(event);
   return true;
 };
 
-const createOperationAuxiliaryConstructionDraft = (
-  start: MathPoint2D,
-  end: MathPoint2D
-): OperationAuxiliaryConstructionDraft | null => (
-  Math.hypot(end.x - start.x, end.y - start.y) >= 0.08
-    ? { start, end }
-    : null
-);
-
-const applyOperationAuxiliaryConstructionClick = (point: MathPoint2D) => {
-  const session = operationAuxiliaryConstructionSession.value;
-  if (!session) return;
-  if (!session.pendingStart) {
-    updateOperationAuxiliaryConstructionDraft(null, point);
-    debugOperationAuxiliaryConstruction('pending start set', { point });
-    return;
-  }
-
-  const draft = createOperationAuxiliaryConstructionDraft(session.pendingStart, point);
-  if (!draft) {
-    updateOperationAuxiliaryConstructionDraft(null, session.pendingStart);
-    debugOperationAuxiliaryConstruction('second click ignored: points too close', { point });
-    return;
-  }
-
-  updateOperationAuxiliaryConstructionDraft(draft, null);
-  debugOperationAuxiliaryConstruction('two-click draft applied', { draft });
-};
-
 const updateOperationAuxiliaryConstructionDraft = (
   draft: OperationAuxiliaryConstructionDraft | null,
-  pendingStart: MathPoint2D | null
+  pendingStart: MathPoint2D | null,
+  anchors: readonly OperationAuxiliaryConstructionAnchor[] = []
 ) => {
   const session = operationAuxiliaryConstructionSession.value;
   if (!session) return;
   const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
   const scopedCommands = createOperationScopedCommands(
-    createOperationAuxiliaryConstructionCommands(session.commandPrefix, session.target, draft, pendingStart),
+    createOperationAuxiliaryConstructionCommands(session.commandPrefix, session.target, draft, pendingStart, anchors),
     coordinateSystem.origin,
     session.coordinateSystemId,
     getOperationVisiblePlacementBounds()
@@ -1268,21 +1247,161 @@ const updateOperationAuxiliaryConstructionDraft = (
     coordinateSystem,
     commandIds,
     draft,
-    pendingStart
+    pendingStart,
+    anchors
   };
   syncAllToEngine({ keepSelection: session.coordinateSystemId });
 };
 
-const getOperationAuxiliaryConstructionLocalPoint = (
-  event: PointerEvent,
+const createOperationAuxiliaryConstructionInteractionController = (
+  coordinateSystemId: string
+): GraphAuxiliaryLineInteractionController => createGraphAuxiliaryLineInteractionController({
+  targetObjectId: coordinateSystemId,
+  resolvePoint: ({ clientPoint }) => {
+    const session = operationAuxiliaryConstructionSession.value;
+    if (!session || session.coordinateSystemId !== coordinateSystemId) return null;
+    return resolveOperationAuxiliaryConstructionPoint(clientPoint, session);
+  },
+  isPointInsideTarget: ({ point }) => {
+    const session = operationAuxiliaryConstructionSession.value;
+    if (!session || session.coordinateSystemId !== coordinateSystemId) return false;
+    const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
+    return isOperationPointInsideCoordinateSystem(point, coordinateSystem);
+  },
+  isDraftValid: ({ distance }) => distance >= 0.08
+});
+
+const resolveOperationAuxiliaryConstructionPoint = (
+  canvasPoint: GraphClientPoint,
   session: OperationAuxiliaryConstructionSession
-): MathPoint2D | null => {
-  const localPoint = getCoreLocalPoint(event);
-  if (!localPoint) return null;
+): MathPoint2D => {
   const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId) ?? session.coordinateSystem;
-  const worldPoint = getWorldPointForCanvasPoint(localPoint);
-  const point = operationWorldPointToLocal(worldPoint, coordinateSystem);
-  return isOperationPointInsideCoordinateSystem(point, coordinateSystem) ? point : null;
+  const worldPoint = getWorldPointForCanvasPoint(canvasPoint);
+  return operationWorldPointToLocal(worldPoint, coordinateSystem);
+};
+
+const applyOperationAuxiliaryConstructionInteractionResult = (
+  result: GraphAuxiliaryLineInteractionResult
+) => {
+  if (!result.handled || result.events.length === 0) return;
+  for (const interactionEvent of result.events) {
+    applyOperationAuxiliaryConstructionInteractionEvent(interactionEvent);
+  }
+};
+
+const applyOperationAuxiliaryConstructionInteractionEvent = (
+  interactionEvent: GraphAuxiliaryLineInteractionEvent
+) => {
+  const session = operationAuxiliaryConstructionSession.value;
+  if (!session) return;
+
+  if (interactionEvent.kind === 'pointer-started') {
+    updateOperationAuxiliaryConstructionDraft(
+      session.draft,
+      session.pendingStart,
+      toOperationAuxiliaryConstructionAnchors(interactionEvent.anchors)
+    );
+    debugOperationAuxiliaryConstruction('pointer session started', {
+      pointerId: interactionEvent.pointerId,
+      pendingStartActive: interactionEvent.pendingStartActive,
+      start: interactionEvent.startPoint,
+      current: interactionEvent.currentPoint,
+      anchors: interactionEvent.anchors
+    });
+    return;
+  }
+
+  if (interactionEvent.kind === 'preview') {
+    updateOperationAuxiliaryConstructionDraft(
+      toOperationAuxiliaryConstructionDraft(interactionEvent.draft),
+      null,
+      toOperationAuxiliaryConstructionAnchors(interactionEvent.anchors)
+    );
+    return;
+  }
+
+  if (interactionEvent.kind === 'preview-cleared') {
+    if (interactionEvent.reason === 'commit') return;
+    const pendingStart = session.interactionController.getSession().pendingStart?.point ?? null;
+    updateOperationAuxiliaryConstructionDraft(
+      null,
+      pendingStart,
+      toOperationAuxiliaryConstructionAnchors(interactionEvent.anchors)
+    );
+    return;
+  }
+
+  if (interactionEvent.kind === 'outside-target') {
+    if (interactionEvent.phase === 'pointerdown') {
+      cancelOperationAuxiliaryConstructionSession('pointerdown-outside-coordinate-system');
+      return;
+    }
+    if (interactionEvent.phase === 'pointerup') {
+      cancelOperationAuxiliaryConstructionSession('pointerup-outside-coordinate-system', { resetDraft: true });
+      return;
+    }
+    debugOperationAuxiliaryConstruction('pointer outside coordinate system', {
+      phase: interactionEvent.phase,
+      pointerId: interactionEvent.pointerId,
+      point: interactionEvent.point
+    });
+    return;
+  }
+
+  if (interactionEvent.kind === 'pending-start-set') {
+    updateOperationAuxiliaryConstructionDraft(
+      null,
+      interactionEvent.point,
+      toOperationAuxiliaryConstructionAnchors(interactionEvent.anchors)
+    );
+    debugOperationAuxiliaryConstruction('pending start set', { point: interactionEvent.point, anchors: interactionEvent.anchors });
+    return;
+  }
+
+  if (interactionEvent.kind === 'too-short') {
+    if (interactionEvent.pendingStartActive) {
+      updateOperationAuxiliaryConstructionDraft(
+        null,
+        interactionEvent.draft.start,
+        toOperationAuxiliaryConstructionAnchors(interactionEvent.anchors)
+      );
+      debugOperationAuxiliaryConstruction('second click ignored: points too close', {
+        point: interactionEvent.draft.end
+      });
+    }
+    return;
+  }
+
+  if (interactionEvent.kind === 'commit') {
+    const draft = toOperationAuxiliaryConstructionDraft(interactionEvent.draft);
+    updateOperationAuxiliaryConstructionDraft(
+      draft,
+      null,
+      toOperationAuxiliaryConstructionAnchors(interactionEvent.anchors)
+    );
+    debugOperationAuxiliaryConstruction('auxiliary draft applied', { draft, anchors: interactionEvent.anchors });
+  }
+};
+
+const toOperationAuxiliaryConstructionDraft = (
+  draft: GraphAuxiliaryLineInteractionDraft
+): OperationAuxiliaryConstructionDraft => ({
+  start: { x: draft.start.x, y: draft.start.y },
+  end: { x: draft.end.x, y: draft.end.y }
+});
+
+const toOperationAuxiliaryConstructionAnchors = (
+  anchors: readonly GraphAuxiliaryLineInteractionAnchorState[]
+): OperationAuxiliaryConstructionAnchor[] => anchors.map((anchor) => ({
+  role: anchor.role,
+  point: { x: anchor.point.x, y: anchor.point.y },
+  fixed: anchor.fixed,
+  visible: anchor.visible
+}));
+
+const isOperationAuxiliaryConstructionInteractionActive = (): boolean => {
+  const controller = operationAuxiliaryConstructionSession.value?.interactionController;
+  return !!controller && (controller.isPointerActive() || controller.hasPendingStart());
 };
 
 const cancelOperationAuxiliaryConstructionSession = (
@@ -1323,15 +1442,16 @@ const clearOperationAuxiliaryConstructionSession = () => {
   operationAuxiliaryConstructionSession.value = null;
 };
 
-const clearOperationAuxiliaryConstructionDragSession = () => {
-  if (operationAuxiliaryConstructionDragSession) {
+const clearOperationAuxiliaryConstructionDragSession = (pointerId?: number) => {
+  const activePointerId = pointerId ?? operationAuxiliaryConstructionSession.value?.interactionController.getSession().pointer?.pointerId;
+  if (activePointerId !== undefined) {
     try {
-      graphContainerRef.value?.releasePointerCapture?.(operationAuxiliaryConstructionDragSession.pointerId);
+      graphContainerRef.value?.releasePointerCapture?.(activePointerId);
     } catch {
       // Pointer capture can already be released by the browser when the drag ends.
     }
+    operationAuxiliaryConstructionSession.value?.interactionController.cancel(activePointerId);
   }
-  operationAuxiliaryConstructionDragSession = null;
   document.body.classList.remove('operation-auxiliary-construction-drag-active');
 };
 
@@ -2028,7 +2148,7 @@ const handleCoreRendererPointerDown = (event: PointerEvent) => {
 };
 
 const handleCoreRendererPointerMove = (event: PointerEvent) => {
-  if (!isCoreRendererActive.value && !coordinateSystemDragSession && !operationAuxiliaryConstructionDragSession) return;
+  if (!isCoreRendererActive.value && !coordinateSystemDragSession && !isOperationAuxiliaryConstructionInteractionActive()) return;
   const point = getCoreLocalPoint(event);
   if (!point) return;
   if (moveOperationAuxiliaryConstructionDraw(event)) return;
@@ -2045,7 +2165,7 @@ const handleCoreRendererPointerMove = (event: PointerEvent) => {
 };
 
 const handleCoreRendererPointerUp = (event: PointerEvent) => {
-  if (!isCoreRendererActive.value && !coordinateSystemDragSession && !operationAuxiliaryConstructionDragSession) return;
+  if (!isCoreRendererActive.value && !coordinateSystemDragSession && !isOperationAuxiliaryConstructionInteractionActive()) return;
   if (stopOperationAuxiliaryConstructionDraw(event)) return;
   stopCoordinateSystemDrag(event);
   if (!isCoreRendererActive.value) return;

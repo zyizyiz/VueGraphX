@@ -320,7 +320,7 @@ describe('updateOperationCoordinateSystemOrigin', () => {
       'aux_1_P2 = (2.5, -2)',
       'aux_1_P3 = (-0.5, 3)',
       'aux_1_triangle = Polygon(aux_1_P1, aux_1_P2, aux_1_P3)',
-      'aux_1_pending_start = Point(-1, 1)',
+      'aux_1_anchor_pending_start = Point(-1, 1)',
       'Text(-4.8, 3.6, "自由辅助线构造: 等待终点 / contacts=0 / applied=false")'
     ]);
 
@@ -335,7 +335,11 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     ]));
     expect(expressions.some((expr) => expr.startsWith('aux_1_draft = Segment('))).toBe(false);
     expect(expressions.filter((expr) => expr.includes('Segment('))).toHaveLength(1);
-    expect(expressions.filter((expr) => expr.includes('Point('))).toHaveLength(2);
+    expect(expressions).toEqual(expect.arrayContaining([
+      'aux_1_anchor_start = Point(-4.4, 0.75)',
+      'aux_1_anchor_end = Point(3.2, 0.75)'
+    ]));
+    expect(expressions.filter((expr) => expr.includes('Point('))).toHaveLength(4);
 
     const internalCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, {
       start: { x: -1, y: 1 },

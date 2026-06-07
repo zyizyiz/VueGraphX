@@ -24,6 +24,7 @@ export interface GraphCoordinateSystemDragSession {
 export interface GraphCoordinateSystemDragPointerInput {
   pointerId: number;
   point: GraphClientPoint;
+  fallbackToRegion?: boolean;
 }
 
 export interface GraphCoordinateSystemDragRuntime {
@@ -125,7 +126,7 @@ export const createGraphCoordinateSystemDragController = (
 
       const objectId = resolveCoordinateSystemDragObjectId(options.runtime, input.point, {
         pickOptions: options.pickOptions,
-        fallbackToRegion: options.fallbackToRegion ?? true,
+        fallbackToRegion: input.fallbackToRegion ?? options.fallbackToRegion ?? true,
         resolveWorldPoint: options.resolveWorldPoint,
         isDraggableNode
       });
@@ -207,6 +208,11 @@ export const resolveCoordinateSystemDragObjectId = (
   const isDraggableNode = options.isDraggableNode ?? isGraphDraggableNode;
   const routed = pickRuntimeObject(runtime, point, options.pickOptions);
   if (routed?.target.objectId) {
+    const fallbackPick = isCoordinateSystemRegionFallbackPick(routed);
+    if (options.fallbackToRegion === false && fallbackPick) {
+      return null;
+    }
+
     const node = runtime.scene.getObject(routed.target.objectId);
     return isDraggableNode(node) ? routed.target.objectId : null;
   }
@@ -273,6 +279,10 @@ const pickRuntimeObject = (
     pickOptions: backendPickOptions
   });
 };
+
+const isCoordinateSystemRegionFallbackPick = (pick: GraphPickResult): boolean => (
+  pick.meta?.coordinateSystemHitMode === 'fallback'
+);
 
 const readCoordinateSystemSegments2D = (geometry: PlainRecord): GraphCoordinateSystemDragPoint2D[][] => {
   const segments = Array.isArray(geometry.segments)

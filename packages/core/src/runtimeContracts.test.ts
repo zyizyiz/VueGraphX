@@ -11,6 +11,7 @@ import {
   GRAPH_MATH_INTERACTION_CAPABILITY_PATHS,
   createGraphBackendInteractionCapability,
   createGraphBackendMathInteractionCapabilities,
+  createGraphAuxiliaryLineInteractionController,
   createGraphCoordinateSystemDragController,
   createGraphRelationInvalidationPlan,
   createGraphRelationSnapshot,
@@ -2337,6 +2338,36 @@ describe('renderer-neutral core runtime contracts', () => {
     expect(controller.pointerDown({ pointerId: 1, point: { x: 1, y: 1 } }).handled).toBe(false);
     expect(controller.isDragging()).toBe(false);
 
+    expect(controller.pointerDown({ pointerId: 3, point: { x: 2, y: 2 }, fallbackToRegion: false }).handled).toBe(false);
+    expect(controller.isDragging()).toBe(false);
+
+    const fallbackPickController = createGraphCoordinateSystemDragController({
+      runtime: {
+        scene: runtime.scene,
+        router: {
+          pick: () => ({
+            target: { scope: 'object', objectId: 'coord-controller', backendId: 'test', layerId: 'content' },
+            backendId: 'test',
+            layerId: 'content',
+            clientPoint: { x: 2, y: 2 },
+            worldPoint: { dimension: '2d', x: 2, y: 2 },
+            distancePx: 0,
+            meta: { coordinateSystemHitMode: 'fallback' }
+          })
+        },
+        applyDragToObject: runtime.applyDragToObject.bind(runtime)
+      },
+      pickOptions: { tolerancePx: 0.1 },
+      resolveWorldPoint: (point) => ({ x: point.x, y: point.y })
+    });
+
+    expect(fallbackPickController.pointerDown({ pointerId: 5, point: { x: 2, y: 2 }, fallbackToRegion: false }).handled).toBe(false);
+    expect(fallbackPickController.pointerDown({ pointerId: 6, point: { x: 2, y: 2 } })).toMatchObject({
+      handled: true,
+      objectId: 'coord-controller'
+    });
+    fallbackPickController.cancel(6);
+
     expect(controller.pointerDown({ pointerId: 2, point: { x: 2, y: 2 } })).toMatchObject({
       handled: true,
       objectId: 'coord-controller'
@@ -2420,6 +2451,186 @@ describe('renderer-neutral core runtime contracts', () => {
         vertices: [{ x: 1, y: 5 }, { x: 3, y: 5 }, { x: 1, y: 7 }]
       }
     });
+  });
+
+  it('normalizes free auxiliary-line drag drawing and two-click drawing', () => {
+    const controller = createGraphAuxiliaryLineInteractionController({
+      targetObjectId: 'coord-A',
+      tolerancePx: 4,
+      resolvePoint: ({ clientPoint }) => ({ x: clientPoint.x, y: clientPoint.y }),
+      isPointInsideTarget: ({ point }) => (
+        point.x >= 0 && point.x <= 20 && point.y >= 0 && point.y <= 20
+      )
+    });
+
+    expect(controller.pointerDown({ pointerId: 1, point: { x: 2, y: 2 } })).toMatchObject({
+      handled: true,
+      events: [{ kind: 'pointer-started', pendingStartActive: false }]
+    });
+    const firstDragPreview = controller.pointerMove({ pointerId: 1, point: { x: 12, y: 2 } });
+    expect(firstDragPreview).toMatchObject({
+      handled: true,
+      events: [{
+        kind: 'preview',
+        source: 'drag',
+        draft: { start: { x: 2, y: 2 }, end: { x: 12, y: 2 } },
+        anchors: [
+          { role: 'start', point: { x: 2, y: 2 }, fixed: true, visible: true },
+          { role: 'end', point: { x: 12, y: 2 }, fixed: false, visible: true }
+        ]
+      }]
+    });
+    const secondDragPreview = controller.pointerMove({ pointerId: 1, point: { x: 18, y: 6 } });
+    expect(secondDragPreview).toMatchObject({
+      handled: true,
+      events: [{
+        kind: 'preview',
+        draft: { start: { x: 2, y: 2 }, end: { x: 18, y: 6 } },
+        anchors: [
+          { role: 'start', point: { x: 2, y: 2 }, fixed: true, visible: true },
+          { role: 'end', point: { x: 18, y: 6 }, fixed: false, visible: true }
+        ]
+      }]
+    });
+    expect(controller.pointerUp({ pointerId: 1, point: { x: 18, y: 6 } })).toMatchObject({
+      handled: true,
+      events: [
+        { kind: 'preview-cleared', reason: 'commit' },
+        {
+          kind: 'commit',
+          draft: { start: { x: 2, y: 2 }, end: { x: 18, y: 6 } },
+          anchors: [
+            { role: 'start', point: { x: 2, y: 2 }, fixed: true, visible: true },
+            { role: 'end', point: { x: 18, y: 6 }, fixed: true, visible: true }
+          ]
+        }
+      ]
+    });
+    expect(controller.hasPendingStart()).toBe(false);
+
+    expect(controller.pointerDown({ pointerId: 2, point: { x: 4, y: 4 } }).handled).toBe(true);
+    expect(controller.pointerUp({ pointerId: 2, point: { x: 4, y: 4 } })).toMatchObject({
+      handled: true,
+      events: [
+        { kind: 'preview-cleared', reason: 'too-short' },
+        { kind: 'too-short', pendingStartActive: false },
+        { kind: 'pending-start-set', point: { x: 4, y: 4 } }
+      ]
+    });
+    expect(controller.hasPendingStart()).toBe(true);
+
+    const clickHoverPreview = controller.pointerMove({ pointerId: 3, point: { x: 10, y: 6 } });
+    expect(clickHoverPreview).toMatchObject({
+      handled: true,
+      events: [{
+        kind: 'preview',
+        source: 'click-hover',
+        draft: { start: { x: 4, y: 4 }, end: { x: 10, y: 6 } },
+        anchors: [
+          { role: 'start', point: { x: 4, y: 4 }, fixed: true, visible: true },
+          { role: 'end', point: { x: 10, y: 6 }, fixed: false, visible: true }
+        ]
+      }]
+    });
+    expect(controller.getSession().anchors).toMatchObject([
+      { role: 'pending-start', point: { x: 4, y: 4 }, fixed: true, visible: true }
+    ]);
+    expect(controller.pointerDown({ pointerId: 3, point: { x: 10, y: 6 } })).toMatchObject({
+      handled: true,
+      events: [{ kind: 'pointer-started', pendingStartActive: true }]
+    });
+    expect(controller.pointerUp({ pointerId: 3, point: { x: 10, y: 6 } })).toMatchObject({
+      handled: true,
+      events: [
+        { kind: 'preview-cleared', reason: 'commit' },
+        { kind: 'commit', draft: { start: { x: 4, y: 4 }, end: { x: 10, y: 6 } } }
+      ]
+    });
+    expect(controller.hasPendingStart()).toBe(false);
+  });
+
+  it('keeps free auxiliary-line pending starts while rejecting short or outside drafts', () => {
+    const controller = createGraphAuxiliaryLineInteractionController({
+      targetObjectId: 'coord-B',
+      tolerancePx: 4,
+      resolvePoint: ({ clientPoint }) => ({ x: clientPoint.x, y: clientPoint.y }),
+      isPointInsideTarget: ({ point }) => (
+        point.x >= 0 && point.x <= 10 && point.y >= 0 && point.y <= 10
+      )
+    });
+
+    controller.pointerDown({ pointerId: 1, point: { x: 2, y: 2 } });
+    controller.pointerUp({ pointerId: 1, point: { x: 2, y: 2 } });
+    expect(controller.hasPendingStart()).toBe(true);
+
+    controller.pointerDown({ pointerId: 2, point: { x: 3, y: 2 } });
+    expect(controller.pointerUp({ pointerId: 2, point: { x: 3, y: 2 } })).toMatchObject({
+      handled: true,
+      events: [
+        { kind: 'preview-cleared', reason: 'too-short' },
+        { kind: 'too-short', pendingStartActive: true }
+      ]
+    });
+    expect(controller.hasPendingStart()).toBe(true);
+
+    expect(controller.pointerMove({ pointerId: 3, point: { x: 20, y: 20 } })).toMatchObject({
+      handled: true,
+      events: [
+        { kind: 'preview-cleared', reason: 'outside-target' },
+        { kind: 'outside-target', phase: 'hover' }
+      ]
+    });
+    expect(controller.pointerDown({ pointerId: 3, point: { x: 20, y: 20 } })).toMatchObject({
+      handled: true,
+      events: [{ kind: 'outside-target', phase: 'pointerdown' }]
+    });
+    expect(controller.isPointerActive()).toBe(false);
+    expect(controller.hasPendingStart()).toBe(true);
+
+    controller.pointerDown({ pointerId: 4, point: { x: 4, y: 4 } });
+    expect(controller.pointerMove({ pointerId: 4, point: { x: 20, y: 20 } })).toMatchObject({
+      handled: true,
+      events: [
+        {
+          kind: 'preview-cleared',
+          reason: 'outside-target',
+          anchors: [
+            { role: 'start', point: { x: 2, y: 2 }, fixed: true, visible: true }
+          ]
+        },
+        { kind: 'outside-target', phase: 'pointermove' }
+      ],
+      anchors: [
+        { role: 'start', point: { x: 2, y: 2 }, fixed: true, visible: true }
+      ]
+    });
+    expect(controller.pointerUp({ pointerId: 4, point: { x: 20, y: 20 } })).toMatchObject({
+      handled: true,
+      events: [
+        {
+          kind: 'preview-cleared',
+          reason: 'outside-target',
+          anchors: [
+            { role: 'pending-start', point: { x: 2, y: 2 }, fixed: true, visible: true }
+          ]
+        },
+        { kind: 'outside-target', phase: 'pointerup' }
+      ],
+      anchors: [
+        { role: 'pending-start', point: { x: 2, y: 2 }, fixed: true, visible: true }
+      ]
+    });
+    expect(controller.isPointerActive()).toBe(false);
+    expect(controller.hasPendingStart()).toBe(true);
+
+    expect(controller.cancel()).toMatchObject({
+      handled: true,
+      events: [
+        { kind: 'preview-cleared', reason: 'cancel' },
+        { kind: 'cancelled' }
+      ]
+    });
+    expect(controller.hasPendingStart()).toBe(false);
   });
 
   it('removes old backend resources before switching GraphSceneRuntime backends', () => {

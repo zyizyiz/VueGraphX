@@ -125,6 +125,15 @@ export interface OperationAuxiliaryConstructionDraft {
   end: MathPoint2D;
 }
 
+export type OperationAuxiliaryConstructionAnchorRole = 'start' | 'end' | 'pending-start';
+
+export interface OperationAuxiliaryConstructionAnchor {
+  role: OperationAuxiliaryConstructionAnchorRole;
+  point: MathPoint2D;
+  fixed: boolean;
+  visible?: boolean;
+}
+
 const OPERATION_COORDINATE_RANGE = { min: -6, max: 6 } as const;
 const OPERATION_COORDINATE_SNAP = { enabled: true, phase: 'end' } as const;
 export const OPERATION_SHAPE_EDIT_DEFAULT_SNAP = {
@@ -328,7 +337,12 @@ export const createOperationAuxiliaryConstructionCommands = (
   prefix: string,
   target: OperationAuxiliaryConstructionTarget = createOperationAuxiliaryConstructionTarget(`${prefix}-target`),
   draft: OperationAuxiliaryConstructionDraft | null = OPERATION_AUXILIARY_CONSTRUCTION_DEFAULT_DRAFT,
-  pendingStart: MathPoint2D | null = null
+  pendingStart: MathPoint2D | null = null,
+  anchors: readonly OperationAuxiliaryConstructionAnchor[] = draft
+    ? createOperationAuxiliaryConstructionAnchorsFromDraft(draft, { preview: true })
+    : pendingStart
+      ? [{ role: 'pending-start', point: pendingStart, fixed: true }]
+      : []
 ): OperationCommandSpec[] => {
   const commands: OperationCommandSpec[] = [
     ...operationPointDefinitionCommands(`${prefix}_P`, target.vertices),
@@ -339,14 +353,9 @@ export const createOperationAuxiliaryConstructionCommands = (
   ];
 
   if (!draft) {
-    if (pendingStart) {
-      commands.push({
-        expr: `${prefix}_pending_start = Point(${operationPointText(pendingStart)})`,
-        options: operationPointStyleOptions('#B45309', { pointStrokeColor: '#B45309' })
-      });
-    }
+    commands.push(...operationAuxiliaryAnchorCommands(anchors, { prefix: `${prefix}_anchor` }));
     commands.push({
-      expr: `Text(-4.8, 3.6, "自由辅助线构造: ${pendingStart ? '等待终点' : '拖动或两点点击'} / contacts=0 / applied=false")`,
+      expr: `Text(-4.8, 3.6, "自由辅助线构造: ${anchors.length ? '等待终点' : '拖动或两点点击'} / contacts=0 / applied=false")`,
       options: { strokeColor: '#475569' }
     });
     return commands;
@@ -371,6 +380,7 @@ export const createOperationAuxiliaryConstructionCommands = (
       }
     });
   }
+  commands.push(...operationAuxiliaryAnchorCommands(anchors, { prefix: `${prefix}_anchor` }));
   commands.push(...operationConstructionContactCommands(model.contacts, { prefix: `${prefix}_contact`, limit: 4 }));
   commands.push({
     expr: `Text(-4.8, 3.6, "自由辅助线构造: contacts=${model.contacts.length} / applied=${model.applied}")`,
@@ -877,6 +887,40 @@ function operationConstructionContactCommands(
         }
       ];
     });
+}
+
+function createOperationAuxiliaryConstructionAnchorsFromDraft(
+  draft: OperationAuxiliaryConstructionDraft,
+  options: { preview?: boolean } = {}
+): readonly OperationAuxiliaryConstructionAnchor[] {
+  return [
+    { role: 'start', point: { ...draft.start }, fixed: true },
+    { role: 'end', point: { ...draft.end }, fixed: options.preview !== true }
+  ];
+}
+
+function operationAuxiliaryAnchorCommands(
+  anchors: readonly OperationAuxiliaryConstructionAnchor[],
+  options: { prefix: string }
+): OperationCommandSpec[] {
+  return anchors
+    .filter((anchor) => anchor.visible !== false)
+    .map((anchor) => ({
+      expr: `${options.prefix}_${operationAuxiliaryAnchorRoleId(anchor.role)} = Point(${operationPointText(anchor.point)})`,
+      options: operationPointStyleOptions(operationAuxiliaryAnchorColor(anchor), {
+        pointFillColor: '#FFFFFF',
+        pointStrokeColor: operationAuxiliaryAnchorColor(anchor)
+      })
+    }));
+}
+
+function operationAuxiliaryAnchorRoleId(role: OperationAuxiliaryConstructionAnchorRole): string {
+  return role.replace(/[^a-z-]/g, '').replace(/-/g, '_');
+}
+
+function operationAuxiliaryAnchorColor(anchor: OperationAuxiliaryConstructionAnchor): string {
+  if (anchor.role === 'end') return anchor.fixed ? '#2563EB' : '#64748B';
+  return '#B45309';
 }
 
 function operationOverlayLineCommands(
