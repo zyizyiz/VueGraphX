@@ -6,6 +6,8 @@ import {
   createOperationScopedCommands,
   createOperationToolCommands,
   operationToolGroups,
+  resizeOperationCoordinateSystemAxisRange,
+  setOperationCoordinateSystemAxisRangeAbs,
   updateOperationCoordinateSystemOrigin
 } from '../operationTools';
 import { allDemos } from '../showcase';
@@ -590,6 +592,37 @@ describe('buildPlaygroundCanvasScene', () => {
       expect(scopedGraphs.some((node) => node.meta?.coordinateSystemId === 'coord_right'), backend.id).toBe(true);
       expect(scopedGraphs.every((node) => node.renderHints?.draggable === false), backend.id).toBe(true);
     }
+  });
+
+  it('renders operation coordinate-system axis range changes into axes and clip bounds', () => {
+    const commands = toCommands(createOperationScopedCommands([
+      { expr: 'Function("x", -20, 20)', options: { strokeColor: '#4DA6FF' } }
+    ], { x: 2.3, y: -2.7 }, 'coord_resize'));
+
+    expect(resizeOperationCoordinateSystemAxisRange(commands, 'coord_resize', 'x', 1)).toBe(2);
+    expect(setOperationCoordinateSystemAxisRangeAbs(commands, 'coord_resize', 'y', 4)).toBe(2);
+
+    const result = buildPlaygroundCanvasScene(commands);
+    expect(result.diagnostics).toEqual([]);
+    const coordinateSystem = result.nodes.find((node) => node.id === 'coord_resize');
+    expect(coordinateSystem).toBeDefined();
+    expect(coordinateSystem).toMatchObject({
+      payload: {
+        origin: { x: 2, y: -3 },
+        xRange: { min: -7, max: 7 },
+        yRange: { min: -4, max: 4 },
+        size: { width: 14, height: 8 }
+      }
+    });
+    expectCoordinateSystemAxes(coordinateSystem, {
+      xAxis: [{ x: -5, y: -3 }, { x: 9, y: -3 }],
+      yAxis: [{ x: 2, y: -7 }, { x: 2, y: 1 }]
+    });
+
+    const functionNode = result.nodes.find((node) => node.type === 'function' && node.meta?.coordinateSystemId === 'coord_resize');
+    expect(functionNode?.renderHints).toMatchObject({
+      clipWorldBounds: { left: -5, right: 9, top: 1, bottom: -7 }
+    });
   });
 
   it('builds independent operation-area triangles without coordinate-system scope', () => {

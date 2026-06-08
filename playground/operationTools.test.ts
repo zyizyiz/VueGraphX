@@ -14,6 +14,7 @@ import {
   createOperationAuxiliaryConstructionCommands,
   createOperationAuxiliaryConstructionTarget,
   clampOperationCoordinateSystemOrigin,
+  getOperationCoordinateSystemAxisRangeAbs,
   createOperationIndependentTriangleCommands,
   createOperationShapeEditCommands,
   createOperationShapeEditTarget,
@@ -26,6 +27,9 @@ import {
   OPERATION_SHAPE_EDIT_DEFAULT_SNAP,
   operationToolGroups,
   resolveOperationCommandOrigin,
+  resizeOperationCoordinateSystemAxisRange,
+  setOperationCoordinateSystemAxisRangeAbs,
+  setOperationCoordinateSystemRuntimeOptions,
   updateOperationCoordinateSystemOrigin
 } from './operationTools';
 
@@ -113,6 +117,60 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     expect((commands[1].options?.coordinateSystem as any).origin).toEqual({ x: 1, y: 2 });
     expect((commands[2].options?.coordinateSystem as any).origin).toEqual({ x: 4, y: 5 });
     expect((commands[3].options?.coordinateSystem as any).origin).toEqual({ x: 4, y: 5 });
+  });
+
+  it('persists operation coordinate-system axis range changes across every scoped command', () => {
+    const commands = createOperationScopedCommands([
+      { expr: 'Function("x", -5, 5)', options: { strokeColor: '#4DA6FF' } },
+      { expr: 'Equation("x^2 + y^2 = 4")', options: { strokeColor: '#FF8D1A' } }
+    ], { x: 0, y: 0 }, 'coord_resize');
+
+    expect(resizeOperationCoordinateSystemAxisRange(commands, 'coord_resize', 'x', 1)).toBe(3);
+    expect(commands.map((command) => (command.options?.coordinateSystem as any)?.xRange)).toEqual([
+      { min: -7, max: 7 },
+      { min: -7, max: 7 },
+      { min: -7, max: 7 }
+    ]);
+    expect(commands.map((command) => (command.options?.coordinateSystem as any)?.yRange)).toEqual([
+      { min: -6, max: 6 },
+      { min: -6, max: 6 },
+      { min: -6, max: 6 }
+    ]);
+
+    expect(setOperationCoordinateSystemAxisRangeAbs(commands, 'coord_resize', 'y', 4)).toBe(3);
+    expect(commands.map((command) => (command.options?.coordinateSystem as any)?.yRange)).toEqual([
+      { min: -4, max: 4 },
+      { min: -4, max: 4 },
+      { min: -4, max: 4 }
+    ]);
+    expect(getOperationCoordinateSystemAxisRangeAbs((commands[0].options?.coordinateSystem as any), 'y')).toBe(4);
+  });
+
+  it('syncs full operation coordinate-system runtime options across scoped commands', () => {
+    const commands = createOperationScopedCommands([
+      { expr: 'Function("sin(x)", -6, 6)', options: { strokeColor: '#4DA6FF' } }
+    ], { x: 0, y: 0 }, 'coord_runtime');
+
+    const runtime = {
+      id: 'coord_runtime',
+      origin: { x: 2, y: -1 },
+      unitScale: 2,
+      xRange: { min: -8, max: 8 },
+      yRange: { min: -3, max: 3 },
+      snapToGrid: { enabled: true, step: 2, phase: 'end' },
+      tickPolicy: {
+        x: { kind: 'pi' as const, piMultiple: 0.5 },
+        y: { kind: 'integer' as const }
+      }
+    };
+
+    expect(setOperationCoordinateSystemRuntimeOptions(commands, runtime)).toBe(2);
+    expect(commands.map((command) => (command.options?.coordinateSystem as any))).toEqual([
+      runtime,
+      runtime
+    ]);
+    expect((commands[0].options?.coordinateSystem as any)).not.toBe(commands[1].options?.coordinateSystem);
+    expect((commands[0].options?.coordinateSystem as any).tickPolicy).not.toBe(runtime.tickPolicy);
   });
 
   it('uses core annotation defaults and standard auxiliary-line style in operation tools', () => {

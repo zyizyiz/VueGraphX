@@ -78,6 +78,13 @@ export interface OperationCommandWithOptions {
   options?: unknown;
 }
 
+export type OperationCoordinateAxis = 'x' | 'y';
+
+export interface OperationCoordinateAxisRangeOptions {
+  minAbs?: number;
+  maxAbs?: number;
+}
+
 export type OperationInteractiveToolKind = 'geometry-shape-edit' | 'geometry-auxiliary-construction';
 export type OperationToolPlacement = 'coordinate-system' | 'world';
 
@@ -133,6 +140,8 @@ export interface OperationAuxiliaryConstructionAnchor {
 
 const OPERATION_COORDINATE_RANGE = { min: -6, max: 6 } as const;
 const OPERATION_COORDINATE_SNAP = { enabled: true, phase: 'end' } as const;
+const OPERATION_COORDINATE_RANGE_MIN_ABS = 1;
+const OPERATION_COORDINATE_RANGE_MAX_ABS = 24;
 export const OPERATION_SHAPE_EDIT_DEFAULT_SNAP = {
   enabled: true,
   step: 0.5,
@@ -278,6 +287,125 @@ export const updateOperationCoordinateSystemOrigin = <T extends OperationCommand
     updatedCount += 1;
   }
   return updatedCount;
+};
+
+export const setOperationCoordinateSystemRuntimeOptions = <T extends OperationCommandWithOptions>(
+  commands: readonly T[],
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): number => {
+  if (!coordinateSystem.id) return 0;
+
+  let updatedCount = 0;
+  for (const command of commands) {
+    const optionsRecord = asMutableRecord(command.options);
+    const currentCoordinateSystem = asMutableRecord(optionsRecord?.coordinateSystem);
+    if (currentCoordinateSystem?.id !== coordinateSystem.id) continue;
+
+    command.options = {
+      ...(optionsRecord ?? {}),
+      coordinateSystem: cloneOperationCoordinateSystemRuntimeOptions(coordinateSystem)
+    };
+    updatedCount += 1;
+  }
+  return updatedCount;
+};
+
+export const getOperationCoordinateSystemAxisRangeAbs = (
+  coordinateSystem: Pick<OperationCoordinateSystemRuntimeOptions, 'xRange' | 'yRange'>,
+  axis: OperationCoordinateAxis
+): number => {
+  const range = axis === 'x' ? coordinateSystem.xRange : coordinateSystem.yRange;
+  return Math.max(Math.abs(range.min), Math.abs(range.max));
+};
+
+export const resizeOperationCoordinateSystemAxisRange = <T extends OperationCommandWithOptions>(
+  commands: readonly T[],
+  coordinateSystemId: string,
+  axis: OperationCoordinateAxis,
+  deltaUnits: number,
+  options: OperationCoordinateAxisRangeOptions = {}
+): number => {
+  const coordinateSystem = readOperationCoordinateSystemById(commands, coordinateSystemId);
+  if (!coordinateSystem) return 0;
+  return setOperationCoordinateSystemAxisRangeAbs(
+    commands,
+    coordinateSystemId,
+    axis,
+    getOperationCoordinateSystemAxisRangeAbs(coordinateSystem, axis) + Math.round(deltaUnits),
+    options
+  );
+};
+
+export const setOperationCoordinateSystemAxisRangeAbs = <T extends OperationCommandWithOptions>(
+  commands: readonly T[],
+  coordinateSystemId: string,
+  axis: OperationCoordinateAxis,
+  rangeAbs: number,
+  options: OperationCoordinateAxisRangeOptions = {}
+): number => {
+  if (!coordinateSystemId || axis !== 'x' && axis !== 'y') return 0;
+  const minAbs = Math.max(1, Math.floor(options.minAbs ?? OPERATION_COORDINATE_RANGE_MIN_ABS));
+  const maxAbs = Math.max(minAbs, Math.floor(options.maxAbs ?? OPERATION_COORDINATE_RANGE_MAX_ABS));
+  const nextAbs = clampToFitRange(Math.round(Number.isFinite(rangeAbs) ? rangeAbs : minAbs), minAbs, maxAbs);
+  const nextRange = { min: -nextAbs, max: nextAbs };
+
+  let updatedCount = 0;
+  for (const command of commands) {
+    const optionsRecord = asMutableRecord(command.options);
+    const coordinateSystem = asMutableRecord(optionsRecord?.coordinateSystem);
+    if (coordinateSystem?.id !== coordinateSystemId) continue;
+
+    command.options = {
+      ...(optionsRecord ?? {}),
+      coordinateSystem: {
+        ...coordinateSystem,
+        [axis === 'x' ? 'xRange' : 'yRange']: nextRange
+      }
+    };
+    updatedCount += 1;
+  }
+  return updatedCount;
+};
+
+const readOperationCoordinateSystemById = (
+  commands: readonly OperationCommandWithOptions[],
+  coordinateSystemId: string
+): OperationCoordinateSystemRuntimeOptions | null => {
+  if (!coordinateSystemId) return null;
+  for (const command of commands) {
+    const options = asMutableRecord(command.options);
+    const coordinateSystem = asMutableRecord(options?.coordinateSystem);
+    if (coordinateSystem?.id !== coordinateSystemId) continue;
+    const origin = asMutableRecord(coordinateSystem.origin);
+    const xRange = asMutableRecord(coordinateSystem.xRange);
+    const yRange = asMutableRecord(coordinateSystem.yRange);
+    if (!origin || !xRange || !yRange) continue;
+    const unitScale = typeof coordinateSystem.unitScale === 'number' && Number.isFinite(coordinateSystem.unitScale) && coordinateSystem.unitScale > 0
+      ? coordinateSystem.unitScale
+      : 1;
+    if (
+      typeof origin.x !== 'number' || !Number.isFinite(origin.x)
+      || typeof origin.y !== 'number' || !Number.isFinite(origin.y)
+      || typeof xRange.min !== 'number' || !Number.isFinite(xRange.min)
+      || typeof xRange.max !== 'number' || !Number.isFinite(xRange.max)
+      || typeof yRange.min !== 'number' || !Number.isFinite(yRange.min)
+      || typeof yRange.max !== 'number' || !Number.isFinite(yRange.max)
+    ) {
+      continue;
+    }
+    return {
+      id: coordinateSystemId,
+      origin: { x: origin.x, y: origin.y },
+      unitScale,
+      xRange: { min: xRange.min, max: xRange.max },
+      yRange: { min: yRange.min, max: yRange.max },
+      snapToGrid: coordinateSystem.snapToGrid,
+      ...(isOperationCoordinateTickPolicy(coordinateSystem.tickPolicy)
+        ? { tickPolicy: cloneOperationCoordinateTickPolicy(coordinateSystem.tickPolicy) }
+        : {})
+    };
+  }
+  return null;
 };
 
 export const createOperationShapeEditTarget = (
@@ -431,6 +559,32 @@ const cloneOperationCoordinateTickPolicy = (
   ...(policy.x ? { x: { ...policy.x, ...(policy.x.labels ? { labels: policy.x.labels.map((tick) => ({ ...tick })) } : {}) } } : {}),
   ...(policy.y ? { y: { ...policy.y, ...(policy.y.labels ? { labels: policy.y.labels.map((tick) => ({ ...tick })) } : {}) } } : {})
 });
+
+const cloneOperationCoordinateSystemRuntimeOptions = (
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions
+): OperationCoordinateSystemRuntimeOptions => ({
+  id: coordinateSystem.id,
+  origin: { ...coordinateSystem.origin },
+  unitScale: coordinateSystem.unitScale,
+  xRange: { ...coordinateSystem.xRange },
+  yRange: { ...coordinateSystem.yRange },
+  ...(coordinateSystem.snapToGrid !== undefined ? { snapToGrid: coordinateSystem.snapToGrid } : {}),
+  ...(coordinateSystem.tickPolicy ? { tickPolicy: cloneOperationCoordinateTickPolicy(coordinateSystem.tickPolicy) } : {})
+});
+
+const isOperationCoordinateTickPolicy = (value: unknown): value is OperationCoordinateTickPolicy => {
+  const record = asMutableRecord(value);
+  if (!record) return false;
+  return isOperationCoordinateTickStrategy(record.x) || isOperationCoordinateTickStrategy(record.y);
+};
+
+const isOperationCoordinateTickStrategy = (value: unknown): value is StandardCoordinateAxisTickStrategy => {
+  const record = asMutableRecord(value);
+  return record?.kind === 'integer'
+    || record?.kind === 'step'
+    || record?.kind === 'pi'
+    || record?.kind === 'custom';
+};
 
 const clampToFitRange = (value: number, min: number, max: number): number => {
   if (!Number.isFinite(value)) return Number.isFinite(min) ? min : 0;

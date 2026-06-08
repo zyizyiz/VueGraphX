@@ -362,6 +362,36 @@
               <span>{{ handle.label }}</span>
             </button>
           </div>
+          <div
+            v-if="operationCoordinateAxisResizeProjections.length > 0"
+            class="pointer-events-none absolute inset-0 z-[13]"
+          >
+            <button
+              v-for="handle in operationCoordinateAxisResizeProjections"
+              v-show="handle.visible"
+              :key="handle.id"
+              type="button"
+              class="operation-coordinate-axis-resize-handle pointer-events-auto"
+              :class="[
+                `operation-coordinate-axis-resize-handle-${handle.axis}`,
+                { 'operation-coordinate-axis-resize-handle-active': activeOperationCoordinateAxisResizeHandleId === handle.id }
+              ]"
+              :style="{ left: `${handle.x}px`, top: `${handle.y}px` }"
+              :aria-label="handle.label"
+              :title="handle.label"
+              data-operation-coordinate-axis-resize-handle
+              @pointerdown="startOperationCoordinateAxisResize($event, handle)"
+            >
+              <svg
+                class="operation-coordinate-axis-resize-icon"
+                :class="{ 'operation-coordinate-axis-resize-icon-y': handle.axis === 'y' }"
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+              >
+                <path d="M4 5.5v9M16 5.5v9M7 10h6M7 10l2-2M7 10l2 2M13 10l-2-2M13 10l-2 2" />
+              </svg>
+            </button>
+          </div>
           <div class="pointer-events-none absolute inset-0 z-[12]">
             <div
               v-if="businessOverlayPosition"
@@ -425,7 +455,8 @@ import {
   type GraphObjectNode,
   type GraphOperationDiagnostic,
   type GraphPickResult,
-  type GraphRuntimeSelectionChangeEvent
+  type GraphRuntimeSelectionChangeEvent,
+  type StandardCoordinateAxisTickStrategy
 } from '@vuegraphx/core';
 import {
   createSubjectShapeEditHandles,
@@ -471,14 +502,18 @@ import {
   createOperationShapeEditVertexCommand,
   createOperationScopedCommands,
   createOperationToolCommands,
+  getOperationCoordinateSystemAxisRangeAbs,
   findOperationToolById,
   isOperationPointInsideCoordinateSystem,
   resolveOperationCommandOrigin,
+  setOperationCoordinateSystemAxisRangeAbs,
+  setOperationCoordinateSystemRuntimeOptions,
   shouldScopeOperationTool,
   updateOperationCoordinateSystemOrigin,
   type OperationAuxiliaryConstructionAnchor,
   type OperationAuxiliaryConstructionDraft,
   type OperationAuxiliaryConstructionTarget,
+  type OperationCoordinateAxis,
   type OperationCoordinateSystemRuntimeOptions,
   type OperationShapeEditPolygonTarget,
   type OperationTool
@@ -504,6 +539,9 @@ let nextOperationAuxiliaryConstructionSequence = 1;
 
 const OPERATION_SHAPE_EDIT_LOG_PREFIX = '[VueGraphX operation shape edit]';
 const OPERATION_AUXILIARY_CONSTRUCTION_LOG_PREFIX = '[VueGraphX operation auxiliary construction]';
+const OPERATION_COORDINATE_AXIS_RESIZE_LOG_PREFIX = '[VueGraphX operation coordinate axis resize]';
+const OPERATION_COORDINATE_AXIS_RESIZE_MIN_ABS = 1;
+const OPERATION_COORDINATE_AXIS_RESIZE_MAX_ABS = 24;
 
 const debugOperationShapeEdit = (message: string, data?: Record<string, unknown>) => {
   console.info(OPERATION_SHAPE_EDIT_LOG_PREFIX, message, data ?? {});
@@ -511,6 +549,10 @@ const debugOperationShapeEdit = (message: string, data?: Record<string, unknown>
 
 const debugOperationAuxiliaryConstruction = (message: string, data?: Record<string, unknown>) => {
   console.info(OPERATION_AUXILIARY_CONSTRUCTION_LOG_PREFIX, message, data ?? {});
+};
+
+const debugOperationCoordinateAxisResize = (message: string, data?: Record<string, unknown>) => {
+  console.info(OPERATION_COORDINATE_AXIS_RESIZE_LOG_PREFIX, message, data ?? {});
 };
 
 const readOperationToolFromDrop = (event: DragEvent): OperationTool | null => {
@@ -606,7 +648,9 @@ const businessOverlayRefreshKey = ref(0);
 const operationShapeEditSession = ref<OperationShapeEditSession | null>(null);
 const operationAuxiliaryConstructionSession = ref<OperationAuxiliaryConstructionSession | null>(null);
 const activeOperationShapeEditDragHandleId = ref('');
+const activeOperationCoordinateAxisResizeHandleId = ref('');
 const operationShapeEditProjectionRevision = ref(0);
+const operationCoordinateAxisResizeProjectionRevision = ref(0);
 
 interface CoreRuntimeSelectionProjection {
   primaryObjectId: string;
@@ -672,15 +716,35 @@ interface OperationShapeEditHandleProjection extends SubjectShapeEditHandleDescr
   visible: boolean;
 }
 
+interface OperationCoordinateAxisResizeProjection {
+  id: string;
+  coordinateSystemId: string;
+  axis: OperationCoordinateAxis;
+  x: number;
+  y: number;
+  label: string;
+  visible: boolean;
+}
+
 interface OperationShapeEditDragSession {
   pointerId: number;
   handleId: string;
   element: HTMLElement;
 }
 
+interface OperationCoordinateAxisResizeDragSession {
+  pointerId: number;
+  coordinateSystemId: string;
+  axis: OperationCoordinateAxis;
+  startWorldPoint: { dimension: '2d'; x: number; y: number };
+  startRangeAbs: number;
+  element: HTMLElement;
+}
+
 let coreNavigationController: GraphViewportNavigationController<CanvasWorldBounds> | null = null;
 let coordinateSystemDragSession: CoordinateSystemDragSession | null = null;
 let operationShapeEditDragSession: OperationShapeEditDragSession | null = null;
+let operationCoordinateAxisResizeDragSession: OperationCoordinateAxisResizeDragSession | null = null;
 let disposeViewportChangeSubscription: (() => void) | null = null;
 let disposeCoreRuntimeSelectionSubscription: (() => void) | null = null;
 
@@ -727,6 +791,24 @@ const operationShapeEditHandleProjections = computed<OperationShapeEditHandlePro
       visible: Number.isFinite(x) && Number.isFinite(y) && x >= -24 && x <= width + 24 && y >= -24 && y <= height + 24
     };
   });
+});
+const operationCoordinateAxisResizeProjections = computed<OperationCoordinateAxisResizeProjection[]>(() => {
+  operationCoordinateAxisResizeProjectionRevision.value;
+  void coreViewportBounds.value;
+  void businessOverlayRefreshKey.value;
+  if (store.activeMode !== 'operation') return [];
+
+  const coordinateSystemId = resolveActiveOperationCoordinateSystemId();
+  if (!coordinateSystemId) return [];
+  const coordinateSystem = readStoredOperationCoordinateSystem(coordinateSystemId);
+  if (!coordinateSystem) return [];
+
+  const xHandlePoint = operationLocalPointToWorld({ x: coordinateSystem.xRange.max, y: 0 }, coordinateSystem);
+  const yHandlePoint = operationLocalPointToWorld({ x: 0, y: coordinateSystem.yRange.max }, coordinateSystem);
+  return [
+    createOperationCoordinateAxisResizeProjection(coordinateSystem, 'x', xHandlePoint),
+    createOperationCoordinateAxisResizeProjection(coordinateSystem, 'y', yHandlePoint)
+  ];
 });
 const businessOverlayPosition = computed(() => {
   businessOverlayRefreshKey.value;
@@ -980,6 +1062,55 @@ const operationLocalPointToWorld = (
   x: coordinateSystem.origin.x + point.x * coordinateSystem.unitScale,
   y: coordinateSystem.origin.y + point.y * coordinateSystem.unitScale
 });
+
+const projectOperationWorldPoint = (
+  point: { x: number; y: number }
+): { x: number; y: number; visible: boolean } => {
+  const viewport = getGraphViewportSize();
+  const bounds = getOperationVisiblePlacementBounds();
+  const width = Math.max(1, viewport.width);
+  const height = Math.max(1, viewport.height);
+  const spanX = bounds.right - bounds.left;
+  const spanY = bounds.top - bounds.bottom;
+  if (!Number.isFinite(spanX) || !Number.isFinite(spanY) || Math.abs(spanX) < 1e-9 || Math.abs(spanY) < 1e-9) {
+    return { x: 0, y: 0, visible: false };
+  }
+  const x = ((point.x - bounds.left) / spanX) * width;
+  const y = ((bounds.top - point.y) / spanY) * height;
+  return {
+    x,
+    y,
+    visible: Number.isFinite(x) && Number.isFinite(y) && x >= -36 && x <= width + 36 && y >= -36 && y <= height + 36
+  };
+};
+
+const createOperationCoordinateAxisResizeProjection = (
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions,
+  axis: OperationCoordinateAxis,
+  worldPoint: { x: number; y: number }
+): OperationCoordinateAxisResizeProjection => {
+  const projected = projectOperationWorldPoint(worldPoint);
+  const range = axis === 'x' ? coordinateSystem.xRange : coordinateSystem.yRange;
+  return {
+    id: `${coordinateSystem.id}:${axis}`,
+    coordinateSystemId: coordinateSystem.id,
+    axis,
+    x: projected.x,
+    y: projected.y,
+    label: `${axis.toUpperCase()} 轴范围 ${range.min} 到 ${range.max}`,
+    visible: projected.visible
+  };
+};
+
+const resolveActiveOperationCoordinateSystemId = (): string => {
+  const selectedId = coreSelectedObjectId.value;
+  if (selectedId && readStoredOperationCoordinateSystem(selectedId)) return selectedId;
+  const shapeCoordinateSystemId = operationShapeEditSession.value?.coordinateSystemId;
+  if (shapeCoordinateSystemId && readStoredOperationCoordinateSystem(shapeCoordinateSystemId)) return shapeCoordinateSystemId;
+  const auxiliaryCoordinateSystemId = operationAuxiliaryConstructionSession.value?.coordinateSystemId;
+  if (auxiliaryCoordinateSystemId && readStoredOperationCoordinateSystem(auxiliaryCoordinateSystemId)) return auxiliaryCoordinateSystemId;
+  return '';
+};
 
 const operationWorldPointToLocal = (
   point: { x: number; y: number },
@@ -1240,6 +1371,7 @@ const updateOperationAuxiliaryConstructionDraft = (
     coordinateSystem.origin,
     session.coordinateSystemId
   );
+  setOperationCoordinateSystemRuntimeOptions(scopedCommands, coordinateSystem);
   const commandIds = store.replaceCommandsByIds(session.commandIds, scopedCommands);
   operationAuxiliaryConstructionSession.value = {
     ...session,
@@ -1681,6 +1813,132 @@ const suppressOperationShapeEditEvent = (event: PointerEvent) => {
   event.stopImmediatePropagation?.();
 };
 
+const startOperationCoordinateAxisResize = (
+  event: PointerEvent,
+  handle: OperationCoordinateAxisResizeProjection
+) => {
+  const coordinateSystem = readStoredOperationCoordinateSystem(handle.coordinateSystemId);
+  const point = getCoreLocalPoint(event);
+  const element = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  if (!coordinateSystem || !point || !element) return;
+
+  operationCoordinateAxisResizeDragSession = {
+    pointerId: event.pointerId,
+    coordinateSystemId: handle.coordinateSystemId,
+    axis: handle.axis,
+    startWorldPoint: getWorldPointForCanvasPoint(point),
+    startRangeAbs: getOperationCoordinateSystemAxisRangeAbs(coordinateSystem, handle.axis),
+    element
+  };
+  activeOperationCoordinateAxisResizeHandleId.value = handle.id;
+  coordinateSystemDragSession = null;
+  coreNavigationController?.resetPointers();
+  element.setPointerCapture?.(event.pointerId);
+  window.addEventListener('pointermove', handleOperationCoordinateAxisResizeMove);
+  window.addEventListener('pointerup', handleOperationCoordinateAxisResizeUp);
+  window.addEventListener('pointercancel', handleOperationCoordinateAxisResizeUp);
+  document.body.classList.add('operation-coordinate-axis-resize-active');
+  debugOperationCoordinateAxisResize('pointerdown', {
+    pointerId: event.pointerId,
+    coordinateSystemId: handle.coordinateSystemId,
+    axis: handle.axis,
+    startRangeAbs: operationCoordinateAxisResizeDragSession.startRangeAbs
+  });
+  applyOperationCoordinateAxisResizeDrag(event);
+  suppressOperationCoordinateAxisResizeEvent(event);
+};
+
+const handleOperationCoordinateAxisResizeMove = (event: PointerEvent) => {
+  if (operationCoordinateAxisResizeDragSession?.pointerId !== event.pointerId) return;
+  applyOperationCoordinateAxisResizeDrag(event);
+  suppressOperationCoordinateAxisResizeEvent(event);
+};
+
+const handleOperationCoordinateAxisResizeUp = (event: PointerEvent) => {
+  if (operationCoordinateAxisResizeDragSession?.pointerId !== event.pointerId) return;
+  applyOperationCoordinateAxisResizeDrag(event);
+  clearOperationCoordinateAxisResizeDragSession();
+  suppressOperationCoordinateAxisResizeEvent(event);
+};
+
+const applyOperationCoordinateAxisResizeDrag = (event: PointerEvent) => {
+  const session = operationCoordinateAxisResizeDragSession;
+  if (!session) return;
+  const point = getCoreLocalPoint(event);
+  const coordinateSystem = readStoredOperationCoordinateSystem(session.coordinateSystemId);
+  if (!point || !coordinateSystem) return;
+  const worldPoint = getWorldPointForCanvasPoint(point);
+  const unitScale = Number.isFinite(coordinateSystem.unitScale) && coordinateSystem.unitScale > 0
+    ? coordinateSystem.unitScale
+    : 1;
+  const deltaWorld = session.axis === 'x'
+    ? worldPoint.x - session.startWorldPoint.x
+    : worldPoint.y - session.startWorldPoint.y;
+  const nextRangeAbs = session.startRangeAbs + Math.round(deltaWorld / unitScale);
+  const updatedCount = setOperationCoordinateSystemAxisRangeAbs(
+    store.commands,
+    session.coordinateSystemId,
+    session.axis,
+    nextRangeAbs,
+    {
+      minAbs: OPERATION_COORDINATE_AXIS_RESIZE_MIN_ABS,
+      maxAbs: OPERATION_COORDINATE_AXIS_RESIZE_MAX_ABS
+    }
+  );
+  if (updatedCount <= 0) return;
+
+  refreshOperationCoordinateSystemSessionState(session.coordinateSystemId);
+  syncAllToEngine({ keepSelection: session.coordinateSystemId });
+  debugOperationCoordinateAxisResize('drag applied', {
+    pointerId: event.pointerId,
+    coordinateSystemId: session.coordinateSystemId,
+    axis: session.axis,
+    nextRangeAbs,
+    updatedCount
+  });
+};
+
+const refreshOperationCoordinateSystemSessionState = (coordinateSystemId: string) => {
+  const coordinateSystem = readStoredOperationCoordinateSystem(coordinateSystemId);
+  if (!coordinateSystem) return;
+  if (operationShapeEditSession.value?.coordinateSystemId === coordinateSystemId) {
+    operationShapeEditSession.value = {
+      ...operationShapeEditSession.value,
+      coordinateSystem
+    };
+    refreshOperationShapeEditProjection();
+  }
+  if (operationAuxiliaryConstructionSession.value?.coordinateSystemId === coordinateSystemId) {
+    operationAuxiliaryConstructionSession.value = {
+      ...operationAuxiliaryConstructionSession.value,
+      coordinateSystem
+    };
+  }
+  operationCoordinateAxisResizeProjectionRevision.value += 1;
+};
+
+const clearOperationCoordinateAxisResizeDragSession = () => {
+  if (operationCoordinateAxisResizeDragSession) {
+    try {
+      operationCoordinateAxisResizeDragSession.element.releasePointerCapture?.(operationCoordinateAxisResizeDragSession.pointerId);
+    } catch {
+      // Pointer capture can already be released by the browser when the drag ends.
+    }
+  }
+  operationCoordinateAxisResizeDragSession = null;
+  activeOperationCoordinateAxisResizeHandleId.value = '';
+  window.removeEventListener('pointermove', handleOperationCoordinateAxisResizeMove);
+  window.removeEventListener('pointerup', handleOperationCoordinateAxisResizeUp);
+  window.removeEventListener('pointercancel', handleOperationCoordinateAxisResizeUp);
+  document.body.classList.remove('operation-coordinate-axis-resize-active');
+};
+
+const suppressOperationCoordinateAxisResizeEvent = (event: PointerEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+};
+
 const isRuntimeDraggableNode = (node: GraphObjectNode | null | undefined): boolean => (
   isGraphDraggableNode(node)
 );
@@ -1872,6 +2130,7 @@ const applyOperationCoordinateSystemDragDelta = (
 
   const updatedCount = updateOperationCoordinateSystemOrigin(store.commands, session.objectId, nextOrigin);
   if (updatedCount <= 0) return false;
+  refreshOperationCoordinateSystemSessionState(session.objectId);
   syncAllToEngine({ keepSelection: session.objectId });
   return true;
 };
@@ -1896,13 +2155,15 @@ const normalizeOperationCoordinateSystem = (
     ? value.unitScale
     : 1;
   if (typeof value.id !== 'string' || !origin || !xRange || !yRange) return null;
+  const tickPolicy = readOperationCoordinateTickPolicy(value.tickPolicy);
   return {
     id: value.id,
     origin,
     unitScale,
     xRange,
     yRange,
-    snapToGrid: value.snapToGrid
+    snapToGrid: value.snapToGrid,
+    ...(tickPolicy ? { tickPolicy } : {})
   };
 };
 
@@ -1989,6 +2250,57 @@ const readRangeRecord = (value: unknown): { min: number; max: number } | null =>
     ? { min: record.min, max: record.max }
     : null;
 };
+
+const readOperationCoordinateTickPolicy = (
+  value: unknown
+): OperationCoordinateSystemRuntimeOptions['tickPolicy'] | null => {
+  const record = readPlainRecord(value);
+  if (!record) return null;
+  const x = readOperationCoordinateTickStrategy(record.x);
+  const y = readOperationCoordinateTickStrategy(record.y);
+  if (!x && !y) return null;
+  return {
+    ...(x ? { x } : {}),
+    ...(y ? { y } : {})
+  };
+};
+
+const readOperationCoordinateTickStrategy = (
+  value: unknown
+): StandardCoordinateAxisTickStrategy | null => {
+  const record = readPlainRecord(value);
+  if (!record) return null;
+  const kind = record.kind;
+  if (kind !== 'integer' && kind !== 'step' && kind !== 'pi' && kind !== 'custom') return null;
+  const step = readFiniteRecordNumber(record.step);
+  const origin = readFiniteRecordNumber(record.origin);
+  const piMultiple = readFiniteRecordNumber(record.piMultiple);
+  return {
+    kind,
+    ...(step !== null ? { step } : {}),
+    ...(origin !== null ? { origin } : {}),
+    ...(piMultiple !== null ? { piMultiple } : {}),
+    ...(Array.isArray(record.labels) ? { labels: readOperationCoordinateCustomTicks(record.labels) } : {})
+  };
+};
+
+const readOperationCoordinateCustomTicks = (
+  values: readonly unknown[]
+): StandardCoordinateAxisTickStrategy['labels'] => values
+  .map((entry) => {
+    const record = readPlainRecord(entry);
+    const value = readFiniteRecordNumber(record?.value);
+    if (value === null) return null;
+    return {
+      value,
+      ...(typeof record?.label === 'string' ? { label: record.label } : {})
+    };
+  })
+  .filter((entry): entry is { value: number; label?: string } => entry !== null);
+
+const readFiniteRecordNumber = (value: unknown): number | null => (
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+);
 
 const readCoordinateSystemNodeOrigin = (node: GraphObjectNode | null | undefined): { x: number; y: number } | null => {
   if (!node) return null;
@@ -2280,6 +2592,7 @@ watch(
 const destroyPrimaryRenderer = () => {
   coreNavigationController = null;
   coordinateSystemDragSession = null;
+  clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditDragSession();
   clearOperationAuxiliaryConstructionDragSession();
   stopViewportChangeSubscription();
@@ -2498,6 +2811,7 @@ onUnmounted(() => {
 
 const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolean } = {}) => {
   if (store.activeMode === mode) return;
+  clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
   store.activeMode = mode;
@@ -2543,23 +2857,28 @@ const handleCreateOperationCommands = (
   options: { origin?: MathPoint2D; scopeToCoordinateSystem?: boolean } = {}
 ) => {
   if (commands.length === 0) return;
+  clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
   activeDemo.value = -1;
   const bounds = getOperationVisiblePlacementBounds();
   const origin = options.origin ?? getWorldPointForOperationDrop(dropPoint);
   const scopeToCoordinateSystem = options.scopeToCoordinateSystem ?? true;
-  const nextCommands = store.activeMode === 'operation' && scopeToCoordinateSystem
+  const shouldCreateCoordinateSystem = store.activeMode === 'operation' && scopeToCoordinateSystem;
+  const coordinateSystemId = shouldCreateCoordinateSystem ? `coord_${nextOperationCoordinateSystemSequence++}` : '';
+  const nextCommands = shouldCreateCoordinateSystem
     ? createOperationScopedCommands(
       commands,
       origin,
-      `coord_${nextOperationCoordinateSystemSequence++}`,
+      coordinateSystemId,
       bounds
     )
     : commands;
   store.appendCommands(nextCommands);
   nextTick(() => {
-    syncAllToEngine();
+    syncAllToEngine({
+      keepSelection: shouldCreateCoordinateSystem ? coordinateSystemId : undefined
+    });
   });
 };
 
@@ -2605,6 +2924,7 @@ const removeLine = (id: string) => {
 };
 
 const clearAll = () => {
+  clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
   store.clearCommands();
@@ -2678,6 +2998,7 @@ const applyCoreRuntimeSelection = (
 const loadSelectedDemo = (idx: number) => {
   const demo = currentDemos.value[idx];
   if (!demo) return;
+  clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
   activeDemo.value = idx;
@@ -2716,6 +3037,7 @@ const handleExportScene = () => {
 
 const handleImportScene = async () => {
   showScenePanel.value = true;
+  clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
   activeDemo.value = -1;
@@ -2805,6 +3127,58 @@ body.sidebar-resize-active {
 #vuegraphx-mount.operation-auxiliary-draw-surface:active,
 body.operation-auxiliary-construction-drag-active {
   cursor: crosshair;
+}
+
+.operation-coordinate-axis-resize-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  background: rgba(128, 128, 255, 0.18);
+  color: #8080ff;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 255, 0.22);
+  touch-action: none;
+  transition: background-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.operation-coordinate-axis-resize-handle-x {
+  transform: translate(8px, -50%);
+  cursor: ew-resize;
+}
+
+.operation-coordinate-axis-resize-handle-y {
+  transform: translate(-50%, -28px);
+  cursor: ns-resize;
+}
+
+.operation-coordinate-axis-resize-handle:hover,
+.operation-coordinate-axis-resize-handle:focus-visible,
+.operation-coordinate-axis-resize-handle-active {
+  outline: none;
+  background: rgba(128, 128, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 255, 0.45), 0 6px 16px rgba(79, 70, 229, 0.18);
+}
+
+.operation-coordinate-axis-resize-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.operation-coordinate-axis-resize-icon-y {
+  transform: rotate(90deg);
+}
+
+body.operation-coordinate-axis-resize-active {
+  user-select: none;
 }
 
 .operation-shape-edit-handle {
