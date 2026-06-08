@@ -111,6 +111,8 @@ const geometryOverlayConfig: SubjectOverlayConfig = {
     includeKinds: ['altitude', 'median', 'angle-bisector', 'free'],
     defaultVisibleKinds: ['altitude', 'median', 'free'],
     allowFreeDraw: true,
+    retentionRule: 'boundary-contact',
+    preserveDraftSpan: true,
     maxCandidates: 9,
     labels: {
       altitude: '高',
@@ -123,6 +125,8 @@ const geometryOverlayConfig: SubjectOverlayConfig = {
       auxiliaryLines: {
         includeKinds: ['altitude', 'median', 'angle-bisector', 'free'],
         allowFreeDraw: true,
+        retentionRule: 'boundary-contact',
+        preserveDraftSpan: true,
         maxCandidates: 9
       }
     }

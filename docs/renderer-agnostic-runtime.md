@@ -58,7 +58,48 @@ Plane-geometry editing stays UI-free:
 
 - `createSubjectShapeEditModel()` turns a dragged handle and destination point into a proposed geometry, handle descriptors, snap/bounds diagnostics, and preview lines.
 - `createSubjectAuxiliaryLineConstructionModel()` turns a free-draw draft line into a clipped helper candidate, contact points, overlap/single-contact diagnostics, or a no-contact rejection.
+- `createSubjectAuxiliaryLineModel()` and `applySubjectAuxiliaryLineAction()` provide the business-facing auxiliary-line workflow surface: generated helper candidates, free-draw drafts, confirmed lines, function/equation reference helpers, selection state, diagnostics, and helper-intersection annotations.
+- Free-draw retention is configurable with `retentionRule: 'any-contact' | 'boundary-contact' | (context) => boolean`; put it under `freeDraw`, `config.auxiliaryLines`, or a shape-specific `config.shapes[shapeKind].auxiliaryLines`.
+- Set `preserveDraftSpan: true` when the retained free-draw helper should keep the user's full drawn segment instead of clipping to the target boundary.
+- `createSubjectAuxiliaryLineWorkflow(target, options)` carries live options for short UI flows; persist `workflow.model.state` when serializing, then rebuild with `createSubjectAuxiliaryLineModel(target, { state, config })`.
 - Business UI owns panels, controls, animations, and commit/cancel state. The library only returns serializable geometry facts and descriptors.
+
+Example:
+
+```ts
+import { createSubjectAuxiliaryLineWorkflow, point2D } from '@vuegraphx/math';
+
+const workflow = createSubjectAuxiliaryLineWorkflow(triangleTarget, {
+  config: {
+    auxiliaryLines: {
+      includeKinds: ['altitude', 'median', 'free'],
+      retentionRule: 'boundary-contact',
+      preserveDraftSpan: true
+    },
+    annotations: { includeKinds: ['helper-intersection'] }
+  }
+});
+
+const selected = workflow.apply({
+  kind: 'toggle-line',
+  lineId: workflow.model.generatedLines[0].id
+});
+
+const drawing = workflow.apply({
+  kind: 'begin-free-draw',
+  point: point2D(-1, 1),
+  source: 'drag'
+});
+
+const committed = workflow.apply({
+  kind: 'commit-free-draw',
+  point: point2D(5, 1)
+});
+
+renderAuxiliaryLines(committed.lines);
+renderAuxiliaryAnnotations(committed.intersectionAnnotations);
+showAuxiliaryDiagnostics(committed.diagnostics);
+```
 
 ## Existing JSXGraph mainline integration
 

@@ -225,7 +225,7 @@ describe('updateOperationCoordinateSystemOrigin', () => {
 
     const constructionExpressions = constructionTool!.commands.map((command) => command.expr);
     expect(constructionExpressions.filter((expr) => expr.includes('Polygon('))).toHaveLength(1);
-    expect(constructionExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(1);
+    expect(constructionExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(0);
     expect(constructionExpressions.some((expr) => expr.includes('自由辅助线构造'))).toBe(true);
 
     const commands = createOperationScopedCommands(constructionTool!.commands, { x: 0, y: 0 }, 'coord_construct');
@@ -331,15 +331,58 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     const expressions = draftCommands.map((command) => command.expr);
 
     expect(expressions).toEqual(expect.arrayContaining([
-      expect.stringContaining('自由辅助线构造: contacts=2 / applied=true')
+      expect.stringContaining('自由辅助线构造: 等待终点 / contacts=0 / applied=false')
     ]));
     expect(expressions.some((expr) => expr.startsWith('aux_1_draft = Segment('))).toBe(false);
-    expect(expressions.filter((expr) => expr.includes('Segment('))).toHaveLength(1);
+    expect(expressions.filter((expr) => expr.includes('Segment('))).toHaveLength(0);
     expect(expressions).toEqual(expect.arrayContaining([
-      'aux_1_anchor_start = Point(-4.4, 0.75)',
-      'aux_1_anchor_end = Point(3.2, 0.75)'
+      'aux_1_anchor_start = Point(-4.4, 0.75)'
     ]));
-    expect(expressions.filter((expr) => expr.includes('Point('))).toHaveLength(4);
+    expect(expressions).not.toContain('aux_1_anchor_end = Point(3.2, 0.75)');
+    expect(expressions.filter((expr) => expr.includes('Point('))).toHaveLength(1);
+
+    const committedCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, {
+      start: { x: -4.4, y: 0.75 },
+      end: { x: 3.2, y: 0.75 }
+    }, null, [
+      { role: 'start', point: { x: -4.4, y: 0.75 }, fixed: true },
+      { role: 'end', point: { x: 3.2, y: 0.75 }, fixed: true }
+    ]);
+    const committedExpressions = committedCommands.map((command) => command.expr);
+    expect(committedExpressions).toEqual(expect.arrayContaining([
+      'Segment((-4.4, 0.75), (3.2, 0.75))'
+    ]));
+    expect(committedCommands.find((command) => command.expr === 'Segment((-4.4, 0.75), (3.2, 0.75))')?.options).toMatchObject({
+      lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
+      strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
+      selectionStrokeScale: false,
+      operationAuxiliaryLine: true
+    });
+    const contactPointExpressions = committedExpressions
+      .filter((expr) => expr.startsWith('aux_1_contact_') && expr.includes('Point('))
+      .map((expr) => expr.replace(/^aux_1_contact_\d+ = /, ''));
+    expect(new Set(contactPointExpressions)).toEqual(new Set([
+      'Point(0.85, 0.75)',
+      'Point(-1.85, 0.75)'
+    ]));
+    expect(committedExpressions.some((expr) => expr.startsWith('aux_1_anchor_'))).toBe(false);
+
+    const endpointAnchoredCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, {
+      start: { x: -1, y: 1 },
+      end: { x: 3.2, y: 1 }
+    }, null, [
+      { role: 'start', point: { x: -1, y: 1 }, fixed: true },
+      { role: 'end', point: { x: 3.2, y: 1 }, fixed: true }
+    ]);
+    const endpointAnchoredExpressions = endpointAnchoredCommands.map((command) => command.expr);
+    expect(endpointAnchoredExpressions).toEqual(expect.arrayContaining([
+      'Segment((-1, 1), (3.2, 1))',
+      'aux_1_contact_1 = Point(0.7, 1)',
+      expect.stringContaining('自由辅助线构造: contacts=1 / applied=true')
+    ]));
+    expect(endpointAnchoredExpressions).not.toContain('aux_1_contact_1 = Point(-1, 1)');
+    expect(endpointAnchoredExpressions.some((expr) => expr.includes('inside-endpoint'))).toBe(false);
+    expect(endpointAnchoredExpressions.some((expr) => expr.startsWith('aux_1_anchor_'))).toBe(false);
 
     const internalCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, {
       start: { x: -1, y: 1 },
@@ -347,10 +390,25 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     });
     const internalExpressions = internalCommands.map((command) => command.expr);
     expect(internalExpressions).toEqual(expect.arrayContaining([
-      'Segment((-1, 1), (-0.5, 1))',
-      expect.stringContaining('自由辅助线构造: contacts=2 / applied=true')
+      'aux_1_anchor_start = Point(-1, 1)',
+      expect.stringContaining('自由辅助线构造: 等待终点 / contacts=0 / applied=false')
     ]));
-    expect(internalExpressions.some((expr) => expr.startsWith('aux_1_draft = Segment('))).toBe(false);
-    expect(internalExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(1);
+    expect(internalExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(0);
+
+    const internalCommittedCommands = createOperationAuxiliaryConstructionCommands('aux_1', target, {
+      start: { x: -1, y: 1 },
+      end: { x: -0.5, y: 1 }
+    }, null, [
+      { role: 'start', point: { x: -1, y: 1 }, fixed: true },
+      { role: 'end', point: { x: -0.5, y: 1 }, fixed: true }
+    ]);
+    const internalCommittedExpressions = internalCommittedCommands.map((command) => command.expr);
+    expect(internalCommittedExpressions).toEqual(expect.arrayContaining([
+      expect.stringContaining('自由辅助线构造: contacts=0 / applied=false')
+    ]));
+    expect(internalCommittedExpressions.some((expr) => expr.startsWith('aux_1_draft = Segment('))).toBe(false);
+    expect(internalCommittedExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(0);
+    expect(internalCommittedExpressions.filter((expr) => expr.includes('_contact_'))).toHaveLength(0);
+    expect(internalCommittedExpressions.some((expr) => expr.startsWith('aux_1_anchor_'))).toBe(false);
   });
 });

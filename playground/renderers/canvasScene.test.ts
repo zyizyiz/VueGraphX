@@ -196,6 +196,51 @@ describe('buildPlaygroundCanvasScene', () => {
     });
   });
 
+  it('adds contact-style endpoint handles only for selected operation auxiliary lines', () => {
+    const command = {
+      expr: 'helper = Segment(Point(-2, 0), Point(2, 0))',
+      options: {
+        operationAuxiliaryLine: true,
+        strokeWidth: 1,
+        selectionStrokeScale: false,
+        lineDash: [4, 8]
+      }
+    };
+    const unselected = buildPlaygroundCanvasScene(toCommands([command]));
+    const selected = buildPlaygroundCanvasScene(toCommands([command]), { selectedObjectId: 'helper' });
+
+    expect(unselected.nodes.map((node) => node.id)).toEqual(['helper']);
+    expect(selected.nodes.find((node) => node.id === 'helper')?.meta).toMatchObject({
+      operationAuxiliaryLine: true,
+      selected: true
+    });
+    expect(selected.nodes.find((node) => node.id === 'helper')?.renderHints).toMatchObject({
+      strokeWidth: 1,
+      selectionStrokeScale: false,
+      lineDash: [4, 8]
+    });
+    expect(selected.nodes.find((node) => node.id === 'helper:auxiliary-start-handle')).toMatchObject({
+      type: 'point',
+      payload: { point: { x: -2, y: 0 } },
+      meta: { selectable: false, selectionDisabled: true },
+      renderHints: {
+        strokeColor: '#B45309',
+        pointFillColor: '#FFFFFF',
+        pointStrokeColor: '#B45309',
+        pointStrokeWidth: 1.5,
+        radius: 4
+      }
+    });
+    expect(selected.nodes.find((node) => node.id === 'helper:auxiliary-end-handle')).toMatchObject({
+      type: 'point',
+      payload: { point: { x: 2, y: 0 } },
+      renderHints: {
+        strokeColor: '#B45309',
+        pointStrokeColor: '#B45309'
+      }
+    });
+  });
+
   it('uses standard annotation defaults for playground text', () => {
     const result = buildPlaygroundCanvasScene([
       {

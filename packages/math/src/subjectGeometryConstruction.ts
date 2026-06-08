@@ -12,14 +12,17 @@ import {
   type MathIntersection2D,
   type MathLine2D,
   type MathPoint2D,
-  type MathSegment2D
+  type MathSegment2D,
+  type MathVector2D
 } from './geometry';
 import type {
   SubjectAuxiliaryLineDescriptor,
+  SubjectAngleOverlayTarget,
   SubjectCircleOverlayTarget,
   SubjectLineOverlayTarget,
   SubjectOverlayState,
   SubjectOverlayStyle,
+  SubjectParallelLinesOverlayTarget,
   SubjectPolygonOverlayTarget,
   SubjectRayOverlayTarget,
   SubjectSegmentOverlayTarget
@@ -31,7 +34,9 @@ export type SubjectAuxiliaryLineConstructionTarget =
   | SubjectCircleOverlayTarget
   | SubjectSegmentOverlayTarget
   | SubjectLineOverlayTarget
-  | SubjectRayOverlayTarget;
+  | SubjectRayOverlayTarget
+  | SubjectParallelLinesOverlayTarget
+  | SubjectAngleOverlayTarget;
 
 export interface SubjectAuxiliaryLineDraft {
   start: MathPoint2D;
@@ -50,10 +55,24 @@ export interface SubjectAuxiliaryLineConstructionContact {
   point?: MathPoint2D;
   start?: MathPoint2D;
   end?: MathPoint2D;
-  targetPart?: 'polygon-edge' | 'circle' | 'segment' | 'line' | 'ray';
+  targetPart?: 'polygon-edge' | 'circle' | 'segment' | 'line' | 'ray' | 'parallel-line-segment' | 'angle-arm';
   edgeIndex?: number;
   meta?: Record<string, unknown>;
 }
+
+export type SubjectAuxiliaryLineRetentionPreset = 'any-contact' | 'boundary-contact';
+
+export interface SubjectAuxiliaryLineRetentionContext {
+  target: SubjectAuxiliaryLineConstructionTarget;
+  draft: MathSegment2D;
+  candidate: SubjectAuxiliaryLineDescriptor;
+  contacts: readonly SubjectAuxiliaryLineConstructionContact[];
+  diagnostics: readonly SubjectAuxiliaryLineConstructionDiagnostic[];
+}
+
+export type SubjectAuxiliaryLineRetentionRule =
+  | SubjectAuxiliaryLineRetentionPreset
+  | ((context: SubjectAuxiliaryLineRetentionContext) => boolean);
 
 export interface SubjectAuxiliaryLineConstructionDiagnostic {
   code:
@@ -62,7 +81,9 @@ export interface SubjectAuxiliaryLineConstructionDiagnostic {
     | 'subject-construction.clipped'
     | 'subject-construction.single-contact'
     | 'subject-construction.overlap-detected'
-    | 'subject-construction.no-contact';
+    | 'subject-construction.no-contact'
+    | 'subject-construction.retention-rejected'
+    | 'subject-construction.retention-rule-error';
   severity: 'info' | 'warning' | 'error';
   message: string;
   targetId?: string;
@@ -77,6 +98,8 @@ export interface SubjectAuxiliaryLineConstructionOptions {
   selectable?: boolean;
   allowSingleContact?: boolean;
   allowSingleIntersection?: boolean;
+  retentionRule?: SubjectAuxiliaryLineRetentionRule;
+  preserveDraftSpan?: boolean;
   snapDistance?: number;
   meta?: Record<string, unknown>;
 }
@@ -142,17 +165,22 @@ export const createSubjectAuxiliaryLineConstructionModel = (
   }
 
   const result = constructAuxiliaryLine(target, normalizedDraft, baseLine, options, diagnostics);
+  const candidate = applyRetentionRule(target, normalizedDraft, result.candidate, result.contacts, options, diagnostics);
   return {
     targetId: target.id,
     draft: normalizedDraft,
-    candidate: result.candidate,
-    previewLine: result.candidate ? { ...result.candidate, id: `${result.candidate.id}:preview`, state: 'preview', selectable: false } : previewLine,
+    candidate,
+    previewLine: candidate ? { ...candidate, id: `${candidate.id}:preview`, state: 'preview', selectable: false } : previewLine,
     contacts: result.contacts,
-    applied: result.candidate !== null,
+    applied: candidate !== null,
     diagnostics,
     meta: options.meta
   };
 };
+
+export const hasSubjectAuxiliaryLineBoundaryContact = (
+  contacts: readonly SubjectAuxiliaryLineConstructionContact[]
+): boolean => contacts.some(isBoundaryContact);
 
 const constructAuxiliaryLine = (
   target: SubjectAuxiliaryLineConstructionTarget,
@@ -165,7 +193,9 @@ const constructAuxiliaryLine = (
   if (target.kind === 'circle') return constructCircleAuxiliaryLine(target, draft, line, options, diagnostics);
   if (target.kind === 'segment') return constructSegmentAuxiliaryLine(target, draft, line, options, diagnostics);
   if (target.kind === 'line') return constructLineAuxiliaryLine(target, draft, line, options, diagnostics);
-  return constructRayAuxiliaryLine(target, draft, line, options, diagnostics);
+  if (target.kind === 'ray') return constructRayAuxiliaryLine(target, draft, line, options, diagnostics);
+  if (target.kind === 'parallel-lines') return constructParallelLinesAuxiliaryLine(target, draft, line, options, diagnostics);
+  return constructAngleAuxiliaryLine(target, draft, line, options, diagnostics);
 };
 
 const constructPolygonAuxiliaryLine = (
@@ -182,28 +212,12 @@ const constructPolygonAuxiliaryLine = (
     .filter((endpoint) => pointInPolygonInclusive(endpoint, target.vertices, endpointTolerance))
     .map((point) => ({ kind: 'inside-endpoint', point: clonePoint(point), targetPart: 'polygon-edge' }));
 
-  if (draftEndpointContacts.length === 1 && (options.allowSingleContact ?? options.allowSingleIntersection ?? true) === false) {
-    return noContact(target, diagnostics, draftEndpointContacts);
-  }
-
-  if (draftEndpointContacts.length > 0) {
-    return {
-      candidate: createDescriptor(target, draft, {
-        ...options,
-        meta: {
-          ...options.meta,
-          internalDraft: draftEndpointContacts.length === 2,
-          endpointAnchoredDraft: draftEndpointContacts.length === 1
-        }
-      }),
-      contacts: draftEndpointContacts
-    };
-  }
-
   for (const edge of polygonEdges(target.vertices)) {
     const edgeLine = lineFromPoints(edge.start, edge.end);
     const intersection = intersectLines2D(line, edgeLine);
     if (intersection.kind === 'coincident') {
+      const overlap = overlappingSegment(draft, segmentFromPoints(edge.start, edge.end));
+      if (!overlap) continue;
       diagnostics.push({
         code: 'subject-construction.overlap-detected',
         severity: 'info',
@@ -211,26 +225,25 @@ const constructPolygonAuxiliaryLine = (
         targetId: target.id,
         data: { edgeIndex: edge.index }
       });
-      contacts.push({ kind: 'overlap', start: clonePoint(edge.start), end: clonePoint(edge.end), targetPart: 'polygon-edge', edgeIndex: edge.index });
-      return { candidate: createDescriptor(target, segmentFromPoints(edge.start, edge.end), { ...options, meta: { ...options.meta, overlapEdgeIndex: edge.index } }), contacts };
+      contacts.push({ kind: 'overlap', start: clonePoint(overlap.start), end: clonePoint(overlap.end), targetPart: 'polygon-edge', edgeIndex: edge.index });
+      return { candidate: createDescriptor(target, draft, { ...options, meta: { ...options.meta, overlapEdgeIndex: edge.index } }), contacts };
     }
-    if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, edge)) {
+    if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, edge) && pointOnSegment2D(intersection.point, draft)) {
       points.push(intersection.point);
       contacts.push({ kind: 'intersection', point: clonePoint(intersection.point), targetPart: 'polygon-edge', edgeIndex: edge.index });
     }
   }
 
-  for (const endpoint of [draft.start, draft.end]) {
-    if (pointInPolygonInclusive(endpoint, target.vertices, endpointTolerance)) {
-      points.push(endpoint);
-      contacts.push({ kind: 'inside-endpoint', point: clonePoint(endpoint), targetPart: 'polygon-edge' });
-    }
+  for (const contact of draftEndpointContacts) {
+    if (contact.point) points.push(contact.point);
+    contacts.push(contact);
   }
 
   if (points.length < 2) {
     const snapDistance = options.snapDistance ?? 0.12;
     for (const [index, vertex] of target.vertices.entries()) {
       if (distancePointToLine(vertex, line) > snapDistance) continue;
+      if (distancePointToSegment(vertex, draft) > snapDistance) continue;
       points.push(vertex);
       contacts.push({
         kind: 'intersection',
@@ -240,6 +253,24 @@ const constructPolygonAuxiliaryLine = (
         meta: { snapped: true }
       });
     }
+  }
+
+  if (draftEndpointContacts.length > 0) {
+    const normalizedContacts = uniqueContacts(contacts);
+    if (normalizedContacts.length <= 1 && (options.allowSingleContact ?? options.allowSingleIntersection ?? true) === false) {
+      return noContact(target, diagnostics, normalizedContacts);
+    }
+    return {
+      candidate: createDescriptor(target, draft, {
+        ...options,
+        meta: {
+          ...options.meta,
+          internalDraft: draftEndpointContacts.length === 2,
+          endpointAnchoredDraft: draftEndpointContacts.length === 1
+        }
+      }),
+      contacts: normalizedContacts
+    };
   }
 
   const uniquePointsOnLine = uniquePoints(points);
@@ -253,7 +284,10 @@ const constructPolygonAuxiliaryLine = (
       data: { contactCount: uniquePointsOnLine.length }
     });
     return {
-      candidate: createDescriptor(target, segmentFromPoints(start, end), { ...options, meta: { ...options.meta, clipped: true } }),
+      candidate: createDescriptor(target, clippedCandidateSegment(draft, segmentFromPoints(start, end), options), {
+        ...options,
+        meta: { ...options.meta, clipped: true, ...(options.preserveDraftSpan ? { preservedDraftSpan: true } : {}) }
+      }),
       contacts: uniqueContacts(contacts)
     };
   }
@@ -268,27 +302,46 @@ const constructCircleAuxiliaryLine = (
   options: SubjectAuxiliaryLineConstructionOptions,
   diagnostics: SubjectAuxiliaryLineConstructionDiagnostic[]
 ): { candidate: SubjectAuxiliaryLineDescriptor | null; contacts: SubjectAuxiliaryLineConstructionContact[] } => {
-  const intersections = intersectionPoints(intersectLineCircle2D(line, { kind: 'circle', center: target.center, radius: target.radius }));
+  const intersections = intersectionPoints(intersectLineCircle2D(line, { kind: 'circle', center: target.center, radius: target.radius }))
+    .filter((point) => pointOnSegment2D(point, draft));
+  const insideEndpoints = [draft.start, draft.end].filter((point) => pointInCircleInclusive(point, target));
+  const lineIsTangent = Math.abs(distancePointToLine(target.center, line) - target.radius) <= 1e-6;
   const contacts = intersections.map<SubjectAuxiliaryLineConstructionContact>((point) => ({
-    kind: intersections.length === 1 ? 'tangent' : 'intersection',
+    kind: lineIsTangent ? 'tangent' : 'intersection',
     point: clonePoint(point),
     targetPart: 'circle'
-  }));
-  if (intersections.length >= 2) {
-    const [start, end] = extremesAlongLine(intersections, line);
+  })).concat(insideEndpoints.map<SubjectAuxiliaryLineConstructionContact>((point) => ({
+    kind: 'inside-endpoint',
+    point: clonePoint(point),
+    targetPart: 'circle'
+  })));
+  const clippedPoints = uniquePoints([...intersections, ...insideEndpoints]);
+
+  if (insideEndpoints.length === 2 && intersections.length === 0) {
+    return {
+      candidate: createDescriptor(target, draft, { ...options, meta: { ...options.meta, internalDraft: true } }),
+      contacts: uniqueContacts(contacts)
+    };
+  }
+
+  if (clippedPoints.length >= 2) {
+    const [start, end] = extremesAlongLine(clippedPoints, line);
     diagnostics.push({
       code: 'subject-construction.clipped',
       severity: 'info',
       message: 'Auxiliary line draft was clipped to the circle boundary.',
       targetId: target.id,
-      data: { contactCount: intersections.length }
+      data: { contactCount: clippedPoints.length }
     });
     return {
-      candidate: createDescriptor(target, segmentFromPoints(start, end), { ...options, meta: { ...options.meta, clipped: true } }),
-      contacts
+      candidate: createDescriptor(target, clippedCandidateSegment(draft, segmentFromPoints(start, end), options), {
+        ...options,
+        meta: { ...options.meta, clipped: true, ...(options.preserveDraftSpan ? { preservedDraftSpan: true } : {}) }
+      }),
+      contacts: uniqueContacts(contacts)
     };
   }
-  return singleContactOrEmpty(target, draft, options, diagnostics, contacts);
+  return singleContactOrEmpty(target, draft, options, diagnostics, uniqueContacts(contacts));
 };
 
 const constructSegmentAuxiliaryLine = (
@@ -301,6 +354,8 @@ const constructSegmentAuxiliaryLine = (
   const targetSegment = segmentFromPoints(target.start, target.end);
   const intersection = intersectLines2D(line, lineFromPoints(targetSegment.start, targetSegment.end));
   if (intersection.kind === 'coincident') {
+    const overlap = overlappingSegment(draft, targetSegment);
+    if (!overlap) return noContact(target, diagnostics);
     diagnostics.push({
       code: 'subject-construction.overlap-detected',
       severity: 'info',
@@ -308,11 +363,11 @@ const constructSegmentAuxiliaryLine = (
       targetId: target.id
     });
     return {
-      candidate: createDescriptor(target, targetSegment, { ...options, meta: { ...options.meta, overlapSegment: true } }),
-      contacts: [{ kind: 'overlap', start: clonePoint(target.start), end: clonePoint(target.end), targetPart: 'segment' }]
+      candidate: createDescriptor(target, draft, { ...options, meta: { ...options.meta, overlapSegment: true } }),
+      contacts: [{ kind: 'overlap', start: clonePoint(overlap.start), end: clonePoint(overlap.end), targetPart: 'segment' }]
     };
   }
-  if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, targetSegment)) {
+  if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, targetSegment) && pointOnSegment2D(intersection.point, draft)) {
     return singleContactOrEmpty(target, draft, options, diagnostics, [{
       kind: 'intersection',
       point: clonePoint(intersection.point),
@@ -343,7 +398,7 @@ const constructLineAuxiliaryLine = (
       contacts: [{ kind: 'overlap', start: clonePoint(draft.start), end: clonePoint(draft.end), targetPart: 'line' }]
     };
   }
-  if (intersection.kind === 'point') {
+  if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, draft)) {
     return singleContactOrEmpty(target, draft, options, diagnostics, [{
       kind: 'intersection',
       point: clonePoint(intersection.point),
@@ -363,6 +418,8 @@ const constructRayAuxiliaryLine = (
   const targetLine: MathLine2D = { kind: 'line', point: target.origin, direction: target.direction };
   const intersection = intersectLines2D(line, targetLine);
   if (intersection.kind === 'coincident') {
+    const overlap = overlappingRaySegment(target.origin, target.direction, draft);
+    if (!overlap) return noContact(target, diagnostics);
     diagnostics.push({
       code: 'subject-construction.overlap-detected',
       severity: 'info',
@@ -371,10 +428,10 @@ const constructRayAuxiliaryLine = (
     });
     return {
       candidate: createDescriptor(target, draft, { ...options, meta: { ...options.meta, overlapRay: true } }),
-      contacts: [{ kind: 'overlap', start: clonePoint(draft.start), end: clonePoint(draft.end), targetPart: 'ray' }]
+      contacts: [{ kind: 'overlap', start: clonePoint(overlap.start), end: clonePoint(overlap.end), targetPart: 'ray' }]
     };
   }
-  if (intersection.kind === 'point' && pointOnRay2D(intersection.point, target.origin, target.direction)) {
+  if (intersection.kind === 'point' && pointOnRay2D(intersection.point, target.origin, target.direction) && pointOnSegment2D(intersection.point, draft)) {
     return singleContactOrEmpty(target, draft, options, diagnostics, [{
       kind: 'intersection',
       point: clonePoint(intersection.point),
@@ -382,6 +439,127 @@ const constructRayAuxiliaryLine = (
     }]);
   }
   return noContact(target, diagnostics);
+};
+
+const constructParallelLinesAuxiliaryLine = (
+  target: SubjectParallelLinesOverlayTarget,
+  draft: MathSegment2D,
+  line: MathLine2D,
+  options: SubjectAuxiliaryLineConstructionOptions,
+  diagnostics: SubjectAuxiliaryLineConstructionDiagnostic[]
+): { candidate: SubjectAuxiliaryLineDescriptor | null; contacts: SubjectAuxiliaryLineConstructionContact[] } => (
+  constructSegmentPartsAuxiliaryLine(
+    target,
+    draft,
+    line,
+    target.segments.map((segment, index) => ({
+      segment,
+      targetPart: 'parallel-line-segment',
+      meta: { segmentIndex: index }
+    })),
+    options,
+    diagnostics
+  )
+);
+
+const constructAngleAuxiliaryLine = (
+  target: SubjectAngleOverlayTarget,
+  draft: MathSegment2D,
+  line: MathLine2D,
+  options: SubjectAuxiliaryLineConstructionOptions,
+  diagnostics: SubjectAuxiliaryLineConstructionDiagnostic[]
+): { candidate: SubjectAuxiliaryLineDescriptor | null; contacts: SubjectAuxiliaryLineConstructionContact[] } => (
+  constructSegmentPartsAuxiliaryLine(
+    target,
+    draft,
+    line,
+    [
+      {
+        segment: segmentFromPoints(target.vertex, target.first),
+        targetPart: 'angle-arm',
+        meta: { arm: 'first' }
+      },
+      {
+        segment: segmentFromPoints(target.vertex, target.second),
+        targetPart: 'angle-arm',
+        meta: { arm: 'second' }
+      }
+    ],
+    options,
+    diagnostics
+  )
+);
+
+const constructSegmentPartsAuxiliaryLine = (
+  target: SubjectAuxiliaryLineConstructionTarget,
+  draft: MathSegment2D,
+  line: MathLine2D,
+  parts: ReadonlyArray<{
+    segment: MathSegment2D;
+    targetPart: NonNullable<SubjectAuxiliaryLineConstructionContact['targetPart']>;
+    meta?: Record<string, unknown>;
+  }>,
+  options: SubjectAuxiliaryLineConstructionOptions,
+  diagnostics: SubjectAuxiliaryLineConstructionDiagnostic[]
+): { candidate: SubjectAuxiliaryLineDescriptor | null; contacts: SubjectAuxiliaryLineConstructionContact[] } => {
+  const points: MathPoint2D[] = [];
+  const contacts: SubjectAuxiliaryLineConstructionContact[] = [];
+
+  for (const part of parts) {
+    const partLine = lineFromPoints(part.segment.start, part.segment.end);
+    const intersection = intersectLines2D(line, partLine);
+    if (intersection.kind === 'coincident') {
+      const overlap = overlappingSegment(draft, part.segment);
+      if (!overlap) continue;
+      diagnostics.push({
+        code: 'subject-construction.overlap-detected',
+        severity: 'info',
+        message: 'Auxiliary line draft overlaps a target segment.',
+        targetId: target.id,
+        data: part.meta
+      });
+      return {
+        candidate: createDescriptor(target, draft, { ...options, meta: { ...options.meta, overlapSegment: true, ...part.meta } }),
+        contacts: [{
+          kind: 'overlap',
+          start: clonePoint(overlap.start),
+          end: clonePoint(overlap.end),
+          targetPart: part.targetPart,
+          meta: part.meta
+        }]
+      };
+    }
+    if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, part.segment) && pointOnSegment2D(intersection.point, draft)) {
+      points.push(intersection.point);
+      contacts.push({
+        kind: 'intersection',
+        point: clonePoint(intersection.point),
+        targetPart: part.targetPart,
+        meta: part.meta
+      });
+    }
+  }
+
+  const uniquePointsOnLine = uniquePoints(points);
+  if (uniquePointsOnLine.length >= 2) {
+    const [start, end] = extremesAlongLine(uniquePointsOnLine, line);
+    diagnostics.push({
+      code: 'subject-construction.clipped',
+      severity: 'info',
+      message: 'Auxiliary line draft was clipped to target segments.',
+      targetId: target.id,
+      data: { contactCount: uniquePointsOnLine.length }
+    });
+    return {
+      candidate: createDescriptor(target, clippedCandidateSegment(draft, segmentFromPoints(start, end), options), {
+        ...options,
+        meta: { ...options.meta, clipped: true, ...(options.preserveDraftSpan ? { preservedDraftSpan: true } : {}) }
+      }),
+      contacts: uniqueContacts(contacts)
+    };
+  }
+
+  return singleContactOrEmpty(target, draft, options, diagnostics, uniqueContacts(contacts));
 };
 
 const singleContactOrEmpty = (
@@ -420,6 +598,66 @@ const noContact = (
   });
   return { candidate: null, contacts };
 };
+
+const clippedCandidateSegment = (
+  draft: MathSegment2D,
+  clipped: MathSegment2D,
+  options: SubjectAuxiliaryLineConstructionOptions
+): MathSegment2D => options.preserveDraftSpan ? draft : clipped;
+
+const applyRetentionRule = (
+  target: SubjectAuxiliaryLineConstructionTarget,
+  draft: MathSegment2D,
+  candidate: SubjectAuxiliaryLineDescriptor | null,
+  contacts: readonly SubjectAuxiliaryLineConstructionContact[],
+  options: SubjectAuxiliaryLineConstructionOptions,
+  diagnostics: SubjectAuxiliaryLineConstructionDiagnostic[]
+): SubjectAuxiliaryLineDescriptor | null => {
+  if (!candidate) return null;
+  const rule = options.retentionRule ?? 'any-contact';
+  let retained = false;
+  try {
+    retained = typeof rule === 'function'
+      ? rule({ target, draft, candidate, contacts, diagnostics: [...diagnostics] })
+      : evaluateRetentionPreset(rule, contacts);
+  } catch (error) {
+    diagnostics.push({
+      code: 'subject-construction.retention-rule-error',
+      severity: 'error',
+      message: `Auxiliary line retention rule failed for target ${target.id}.`,
+      targetId: target.id,
+      data: { message: error instanceof Error ? error.message : String(error) }
+    });
+    return null;
+  }
+
+  if (retained) return candidate;
+  diagnostics.push({
+    code: 'subject-construction.retention-rejected',
+    severity: 'warning',
+    message: `Auxiliary line candidate was rejected by the retention rule for target ${target.id}.`,
+    targetId: target.id,
+    data: {
+      rule: typeof rule === 'string' ? rule : 'custom',
+      contactKinds: contacts.map((contact) => contact.kind)
+    }
+  });
+  return null;
+};
+
+const evaluateRetentionPreset = (
+  rule: SubjectAuxiliaryLineRetentionPreset,
+  contacts: readonly SubjectAuxiliaryLineConstructionContact[]
+): boolean => {
+  if (rule === 'boundary-contact') return hasSubjectAuxiliaryLineBoundaryContact(contacts);
+  return contacts.length > 0;
+};
+
+const isBoundaryContact = (contact: SubjectAuxiliaryLineConstructionContact): boolean => (
+  contact.kind === 'intersection'
+  || contact.kind === 'tangent'
+  || contact.kind === 'overlap'
+);
 
 const createDescriptor = (
   target: SubjectAuxiliaryLineConstructionTarget,
@@ -462,7 +700,15 @@ const isValidConstructionTarget = (target: SubjectAuxiliaryLineConstructionTarge
   if (target.kind === 'circle') return isFinitePoint(target.center) && Number.isFinite(target.radius) && target.radius > GRAPH_MATH_EPSILON;
   if (target.kind === 'segment') return isFinitePoint(target.start) && isFinitePoint(target.end) && distance2D(target.start, target.end) > GRAPH_MATH_EPSILON;
   if (target.kind === 'line') return isFinitePoint(target.point) && isFinitePoint(target.direction) && length2D(target.direction) > GRAPH_MATH_EPSILON;
-  return isFinitePoint(target.origin) && isFinitePoint(target.direction) && length2D(target.direction) > GRAPH_MATH_EPSILON;
+  if (target.kind === 'ray') return isFinitePoint(target.origin) && isFinitePoint(target.direction) && length2D(target.direction) > GRAPH_MATH_EPSILON;
+  if (target.kind === 'parallel-lines') {
+    return target.segments.length === 2 && target.segments.every((segment) => (
+      isFinitePoint(segment.start) && isFinitePoint(segment.end) && distance2D(segment.start, segment.end) > GRAPH_MATH_EPSILON
+    ));
+  }
+  return [target.vertex, target.first, target.second].every(isFinitePoint)
+    && distance2D(target.vertex, target.first) > GRAPH_MATH_EPSILON
+    && distance2D(target.vertex, target.second) > GRAPH_MATH_EPSILON;
 };
 
 const polygonEdges = (vertices: readonly MathPoint2D[]): Array<{ index: number; start: MathPoint2D; end: MathPoint2D }> => (
@@ -484,6 +730,35 @@ const extremesAlongLine = (
 const parameterOnLine = (point: MathPoint2D, line: MathLine2D): number => (
   dot2D(subtract2D(point, line.point), line.direction) / Math.max(GRAPH_MATH_EPSILON, dot2D(line.direction, line.direction))
 );
+
+const overlappingSegment = (
+  draft: MathSegment2D,
+  target: MathSegment2D
+): MathSegment2D | null => {
+  const points = uniquePoints([
+    ...[draft.start, draft.end].filter((point) => pointOnSegment2D(point, target)),
+    ...[target.start, target.end].filter((point) => pointOnSegment2D(point, draft))
+  ]);
+  if (points.length === 0) return null;
+  if (points.length === 1) return segmentFromPoints(points[0], points[0]);
+  const [start, end] = extremesAlongLine(points, lineFromPoints(draft.start, draft.end));
+  return segmentFromPoints(start, end);
+};
+
+const overlappingRaySegment = (
+  origin: MathPoint2D,
+  direction: MathVector2D,
+  draft: MathSegment2D
+): MathSegment2D | null => {
+  const points = uniquePoints([
+    ...[draft.start, draft.end].filter((point) => pointOnRay2D(point, origin, direction)),
+    ...(pointOnSegment2D(origin, draft) ? [origin] : [])
+  ]);
+  if (points.length === 0) return null;
+  if (points.length === 1) return segmentFromPoints(points[0], points[0]);
+  const [start, end] = extremesAlongLine(points, { kind: 'line', point: origin, direction });
+  return segmentFromPoints(start, end);
+};
 
 const intersectionPoints = (intersection: MathIntersection2D): MathPoint2D[] => {
   if (intersection.kind === 'point') return [intersection.point];
@@ -531,6 +806,12 @@ const pointInPolygonInclusive = (
   }
   return inside;
 };
+
+const pointInCircleInclusive = (
+  point: MathPoint2D,
+  circle: SubjectCircleOverlayTarget,
+  epsilon = 1e-7
+): boolean => distance2D(point, circle.center) <= circle.radius + epsilon;
 
 const pointOnSegment2D = (
   point: MathPoint2D,

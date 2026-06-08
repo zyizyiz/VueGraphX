@@ -19,9 +19,6 @@ import {
   createSubjectShapeEditModel,
   createTangentSubjectFunction,
   point2D,
-  SUBJECT_OVERLAY_DASH_PATTERN,
-  SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
-  SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
   type MathPoint2D,
   type SubjectAuxiliaryLineConstructionTarget,
   type SubjectGeometryGridSnapOptions,
@@ -364,26 +361,26 @@ export const createOperationAuxiliaryConstructionCommands = (
   const model = createSubjectAuxiliaryLineConstructionModel(target, draft, {
     id: `${prefix}_candidate`,
     label: '构造候选线',
-    state: 'confirmed'
+    state: 'confirmed',
+    retentionRule: 'boundary-contact',
+    preserveDraftSpan: true
   });
-
-  if (model.candidate) {
-    commands.push(...operationOverlayLineCommands([model.candidate], { labels: false }));
-  } else {
-    commands.push({
-      expr: `${prefix}_draft = Segment(${operationPointTuple(model.draft.start)}, ${operationPointTuple(model.draft.end)})`,
-      options: {
-        strokeColor: SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
-        lineDash: SUBJECT_OVERLAY_DASH_PATTERN,
-        strokeWidth: SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
-        selectionStrokeScale: false
-      }
-    });
+  const isActiveDraft = isActiveOperationAuxiliaryConstructionDraft(anchors);
+  if (!isActiveDraft) {
+    if (model.candidate) {
+      commands.push(...operationOverlayLineCommands([model.candidate], { labels: false }));
+    }
   }
-  commands.push(...operationAuxiliaryAnchorCommands(anchors, { prefix: `${prefix}_anchor` }));
-  commands.push(...operationConstructionContactCommands(model.contacts, { prefix: `${prefix}_contact`, limit: 4 }));
+  if (isActiveDraft) {
+    commands.push(...operationAuxiliaryAnchorCommands(anchors, { prefix: `${prefix}_anchor` }));
+  }
+  const visibleContacts = !isActiveDraft && model.applied
+    ? model.contacts.filter(isOperationConstructionVisibleContact)
+    : [];
+  commands.push(...operationConstructionContactCommands(visibleContacts, { prefix: `${prefix}_contact`, limit: 4 }));
+  const contactCount = visibleContacts.length;
   commands.push({
-    expr: `Text(-4.8, 3.6, "自由辅助线构造: contacts=${model.contacts.length} / applied=${model.applied}")`,
+    expr: `Text(-4.8, 3.6, "自由辅助线构造: ${isActiveDraft ? '等待终点 / contacts=0 / applied=false' : `contacts=${contactCount} / applied=${model.applied}`}")`,
     options: { strokeColor: '#475569' }
   });
   return commands;
@@ -521,6 +518,8 @@ const operationGeometryOverlayConfig: SubjectOverlayConfig = {
     includeKinds: ['altitude', 'median', 'free'],
     defaultVisibleKinds: ['altitude', 'median', 'free'],
     allowFreeDraw: true,
+    retentionRule: 'boundary-contact',
+    preserveDraftSpan: true,
     maxCandidates: 6,
     labels: {
       altitude: '高',
@@ -872,7 +871,7 @@ function operationConstructionContactCommands(
   options: { prefix: string; limit?: number }
 ): OperationCommandSpec[] {
   return contacts
-    .filter((contact) => !!contact.point)
+    .filter((contact) => isOperationConstructionVisibleContact(contact) && !!contact.point)
     .slice(0, options.limit ?? Infinity)
     .flatMap((contact, index) => {
       const point = contact.point!;
@@ -889,6 +888,10 @@ function operationConstructionContactCommands(
     });
 }
 
+function isOperationConstructionVisibleContact(contact: SubjectAuxiliaryLineConstructionContact): boolean {
+  return contact.kind === 'intersection' || contact.kind === 'tangent';
+}
+
 function createOperationAuxiliaryConstructionAnchorsFromDraft(
   draft: OperationAuxiliaryConstructionDraft,
   options: { preview?: boolean } = {}
@@ -899,12 +902,18 @@ function createOperationAuxiliaryConstructionAnchorsFromDraft(
   ];
 }
 
+function isActiveOperationAuxiliaryConstructionDraft(
+  anchors: readonly OperationAuxiliaryConstructionAnchor[]
+): boolean {
+  return anchors.some((anchor) => anchor.role === 'end' && anchor.fixed === false);
+}
+
 function operationAuxiliaryAnchorCommands(
   anchors: readonly OperationAuxiliaryConstructionAnchor[],
   options: { prefix: string }
 ): OperationCommandSpec[] {
   return anchors
-    .filter((anchor) => anchor.visible !== false)
+    .filter((anchor) => anchor.visible !== false && !(anchor.role === 'end' && anchor.fixed === false))
     .map((anchor) => ({
       expr: `${options.prefix}_${operationAuxiliaryAnchorRoleId(anchor.role)} = Point(${operationPointText(anchor.point)})`,
       options: operationPointStyleOptions(operationAuxiliaryAnchorColor(anchor), {
@@ -940,7 +949,10 @@ function operationOverlayLineCommands(
     .flatMap((line) => {
       const commands: OperationCommandSpec[] = [{
         expr: `Segment(${operationPointTuple(line.start)}, ${operationPointTuple(line.end)})`,
-        options: operationOverlayStyleOptions(line.style, '#64748B')
+        options: {
+          ...operationOverlayStyleOptions(line.style, '#64748B'),
+          operationAuxiliaryLine: true
+        }
       }];
       if (options.labels !== false) {
         commands.push({

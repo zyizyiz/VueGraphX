@@ -48,7 +48,7 @@ export interface PlaygroundLayered3DSceneResult {
 }
 
 type PlaygroundSceneBackendId = CurriculumBackendId | 'babylon';
-type PlaygroundSceneBuildContext = { backendId: PlaygroundSceneBackendId; renderMode: '2d' | '3d' };
+type PlaygroundSceneBuildContext = { backendId: PlaygroundSceneBackendId; renderMode: '2d' | '3d'; selectedObjectId?: string };
 
 interface OperationCoordinateSystemRuntimeOptions {
   id: string;
@@ -133,10 +133,14 @@ const TEXT_RENDER_HINT_OPTION_KEYS = [
 export interface PlaygroundSceneBuildOptions {
   backendId?: PlaygroundSceneBackendId;
   renderMode?: '2d' | '3d';
+  selectedObjectId?: string;
 }
 
-export const buildPlaygroundCanvasScene = (commands: readonly PlaygroundCanvasCommand[]): PlaygroundCanvasSceneResult => (
-  buildPlaygroundCoreScene(commands, { backendId: 'canvas2d', renderMode: '2d' })
+export const buildPlaygroundCanvasScene = (
+  commands: readonly PlaygroundCanvasCommand[],
+  options: Pick<PlaygroundSceneBuildOptions, 'selectedObjectId'> = {}
+): PlaygroundCanvasSceneResult => (
+  buildPlaygroundCoreScene(commands, { backendId: 'canvas2d', renderMode: '2d', selectedObjectId: options.selectedObjectId })
 );
 
 export const buildPlaygroundBabylonScene = (
@@ -221,7 +225,10 @@ const buildPlaygroundCoreScene = (
     diagnostics.push({ commandId: command.id, message: mathNodes.ok ? `${backendLabel(options.backendId)} 暂不支持该指令。` : mathNodes.message });
   }
 
-  return { nodes: withTextAvoidance(withStableRenderOrder(nodes)), diagnostics };
+  return {
+    nodes: withTextAvoidance(withStableRenderOrder(withSelectedOperationAuxiliaryLineHandles(nodes, options.selectedObjectId))),
+    diagnostics
+  };
 };
 
 export const createPlaygroundParitySnapshot = (
@@ -249,6 +256,9 @@ const withRenderHints = (node: GraphObjectNode, command: PlaygroundCanvasCommand
     lineDash: readLineDashPattern(options.lineDash) ?? readLineDashPattern(existingHints.lineDash),
     radius: readNumber(options.size, readNumber(options.radius, readNumber(existingHints.radius, STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx)))
   };
+  const meta = options.operationAuxiliaryLine === true
+    ? { ...(node.meta ?? {}), operationAuxiliaryLine: true }
+    : node.meta;
 
   if (node.type === 'point') {
     hints.pointFillColor = readString(options.pointFillColor, readString(existingHints.pointFillColor, STANDARD_GEOMETRY_MARKER_UI.pointFillColor));
@@ -268,7 +278,7 @@ const withRenderHints = (node: GraphObjectNode, command: PlaygroundCanvasCommand
     copyExplicitRenderHintOptions(hints, options, TEXT_RENDER_HINT_OPTION_KEYS);
   }
 
-  return { ...node, renderHints: hints };
+  return { ...node, meta, renderHints: hints };
 };
 
 const withStableRenderOrder = (nodes: readonly GraphObjectNode[]): GraphObjectNode[] => (
@@ -280,6 +290,75 @@ const withStableRenderOrder = (nodes: readonly GraphObjectNode[]): GraphObjectNo
     }
   }))
 );
+
+const OPERATION_AUXILIARY_SELECTION_MARKER_COLOR = '#B45309';
+
+const withSelectedOperationAuxiliaryLineHandles = (
+  nodes: readonly GraphObjectNode[],
+  selectedObjectId?: string
+): GraphObjectNode[] => {
+  if (!selectedObjectId) return [...nodes];
+  const selected = nodes.find((node) => node.id === selectedObjectId);
+  if (!selected?.meta?.operationAuxiliaryLine) {
+    return nodes.map((node) => (
+      node.id === selectedObjectId
+        ? { ...node, meta: { ...(node.meta ?? {}), selected: true } }
+        : node
+    ));
+  }
+  const selectedNodes = nodes.map((node) => (
+    node.id === selectedObjectId
+      ? { ...node, meta: { ...(node.meta ?? {}), selected: true } }
+      : node
+  ));
+  const endpoints = readOperationAuxiliaryLineEndpoints(selected);
+  return endpoints ? [
+    ...selectedNodes,
+    createOperationAuxiliaryLineHandleNode(selected, 'start', endpoints.start),
+    createOperationAuxiliaryLineHandleNode(selected, 'end', endpoints.end)
+  ] : selectedNodes;
+};
+
+const readOperationAuxiliaryLineEndpoints = (
+  node: GraphObjectNode
+): { start: { x: number; y: number }; end: { x: number; y: number } } | null => {
+  const payload = asRecord(node.payload);
+  const geometry = asRecord(payload?.geometry);
+  const start = readPoint(geometry?.start) ?? readPoint(payload?.start);
+  const end = readPoint(geometry?.end) ?? readPoint(payload?.end);
+  return start && end ? { start, end } : null;
+};
+
+const createOperationAuxiliaryLineHandleNode = (
+  line: GraphObjectNode,
+  role: 'start' | 'end',
+  point: { x: number; y: number }
+): GraphObjectNode => ({
+  id: `${line.id}:auxiliary-${role}-handle`,
+  kind: 'shape',
+  type: 'point',
+  payload: {
+    objectType: 'point',
+    point: { ...point },
+    position: { dimension: '2d', ...point }
+  },
+  layerId: line.layerId,
+  meta: {
+    auxiliaryLineHandleFor: line.id,
+    auxiliaryLineHandleRole: role,
+    selectable: false,
+    selectionDisabled: true,
+    dragDisabled: true
+  },
+  renderHints: {
+    strokeColor: OPERATION_AUXILIARY_SELECTION_MARKER_COLOR,
+    pointFillColor: STANDARD_GEOMETRY_MARKER_UI.pointFillColor,
+    pointStrokeColor: OPERATION_AUXILIARY_SELECTION_MARKER_COLOR,
+    pointStrokeWidth: STANDARD_GEOMETRY_MARKER_UI.pointStrokeWidthPx,
+    radius: STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx,
+    zIndex: 10000
+  }
+});
 
 interface TextAvoidanceBox {
   left: number;

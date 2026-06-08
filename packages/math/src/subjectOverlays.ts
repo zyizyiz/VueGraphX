@@ -29,7 +29,10 @@ import {
   type SubjectFunctionFamilyDescriptor,
   type SubjectFunctionProperty
 } from './subjectFunctions';
-import { createSubjectAuxiliaryLineConstructionModel } from './subjectGeometryConstruction';
+import {
+  createSubjectAuxiliaryLineConstructionModel,
+  type SubjectAuxiliaryLineRetentionRule
+} from './subjectGeometryConstruction';
 import { createSubjectAuxiliaryLineStyle } from './subjectAuxiliaryLineStyle';
 
 export {
@@ -136,6 +139,8 @@ export interface SubjectOverlayFeatureConfig<Kind extends string = string> {
 
 export interface SubjectAuxiliaryLineFeatureConfig extends SubjectOverlayFeatureConfig<SubjectAuxiliaryLineKind> {
   allowFreeDraw?: boolean;
+  retentionRule?: SubjectAuxiliaryLineRetentionRule;
+  preserveDraftSpan?: boolean;
   maxCandidates?: number;
 }
 
@@ -509,7 +514,12 @@ export const createFreeSubjectAuxiliaryLine = (
     id?: string;
     label?: string;
     style?: SubjectOverlayStyle;
+    state?: SubjectOverlayState;
+    selectable?: boolean;
+    allowSingleContact?: boolean;
     allowSingleIntersection?: boolean;
+    retentionRule?: SubjectAuxiliaryLineRetentionRule;
+    preserveDraftSpan?: boolean;
     snapDistance?: number;
     config?: SubjectOverlayConfig;
   } = {}
@@ -517,6 +527,12 @@ export const createFreeSubjectAuxiliaryLine = (
   const context = createSubjectOverlayComputationContext(target, options.config ?? {});
   const shapeRule = context.config.shapes?.[context.shapeKind];
   const freeDrawEnabled = shapeRule?.allowFreeDraw ?? shapeRule?.auxiliaryLines?.allowFreeDraw ?? context.config.auxiliaryLines?.allowFreeDraw ?? true;
+  const retentionRule = options.retentionRule
+    ?? shapeRule?.auxiliaryLines?.retentionRule
+    ?? context.config.auxiliaryLines?.retentionRule;
+  const preserveDraftSpan = options.preserveDraftSpan
+    ?? shapeRule?.auxiliaryLines?.preserveDraftSpan
+    ?? context.config.auxiliaryLines?.preserveDraftSpan;
   if (!freeDrawEnabled || !context.auxiliaryLineEnabled('free')) return null;
 
   const line = lineFromPoints(start, end);
@@ -528,8 +544,8 @@ export const createFreeSubjectAuxiliaryLine = (
     label: options.label ?? readLineLabel('free', context),
     targetId: target.id,
     visible: true,
-    state: 'confirmed',
-    selectable: true,
+    state: options.state ?? 'confirmed',
+    selectable: options.selectable ?? true,
     style: options.style ?? dashedStyle(target.strokeColor, 'free'),
     meta: { freeDraw: true }
   };
@@ -542,7 +558,10 @@ export const createFreeSubjectAuxiliaryLine = (
       style: base.style,
       state: base.state,
       selectable: base.selectable,
+      allowSingleContact: options.allowSingleContact,
       allowSingleIntersection,
+      retentionRule,
+      preserveDraftSpan,
       snapDistance: options.snapDistance,
       meta: base.meta
     });
@@ -569,17 +588,45 @@ export const createSubjectAuxiliaryLineIntersectionAnnotations = (
   const context = createSubjectOverlayComputationContext(target, config);
   if (!context.annotationEnabled('helper-intersection')) return [];
   const points: Array<{ point: MathPoint2D; lineId: string }> = [];
+  const targetSegments = createIntersectionTargetSegments(target);
 
   for (const auxiliaryLine of auxiliaryLines) {
     const line = lineFromPoints(auxiliaryLine.start, auxiliaryLine.end);
     if (length2D(line.direction) <= GRAPH_MATH_EPSILON) continue;
 
-    if (target.kind === 'polygon') {
-      for (const edge of polygonEdges(target.vertices)) {
-        const intersection = intersectLines2D(line, lineFromPoints(edge.start, edge.end));
-        if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, edge) && pointOnSegment2D(intersection.point, segmentFromPoints(auxiliaryLine.start, auxiliaryLine.end))) {
-          points.push({ point: intersection.point, lineId: auxiliaryLine.id });
+    for (const segment of targetSegments) {
+      const intersection = intersectLines2D(line, lineFromPoints(segment.start, segment.end));
+      if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, segment) && pointOnSegment2D(intersection.point, segmentFromPoints(auxiliaryLine.start, auxiliaryLine.end))) {
+        points.push({ point: intersection.point, lineId: auxiliaryLine.id });
+      }
+      if (intersection.kind === 'coincident') {
+        for (const point of overlapSegmentPoints(segmentFromPoints(auxiliaryLine.start, auxiliaryLine.end), segment)) {
+          points.push({ point, lineId: auxiliaryLine.id });
         }
+      }
+    }
+
+    if (target.kind === 'line') {
+      const intersection = intersectLines2D(line, { kind: 'line', point: target.point, direction: target.direction });
+      if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, segmentFromPoints(auxiliaryLine.start, auxiliaryLine.end))) {
+        points.push({ point: intersection.point, lineId: auxiliaryLine.id });
+      }
+      if (intersection.kind === 'coincident') {
+        points.push({ point: auxiliaryLine.start, lineId: auxiliaryLine.id });
+        points.push({ point: auxiliaryLine.end, lineId: auxiliaryLine.id });
+      }
+    }
+
+    if (target.kind === 'ray') {
+      const intersection = intersectLines2D(line, { kind: 'line', point: target.origin, direction: target.direction });
+      if (intersection.kind === 'point' && pointOnSegment2D(intersection.point, segmentFromPoints(auxiliaryLine.start, auxiliaryLine.end)) && pointOnRay2D(intersection.point, target.origin, target.direction)) {
+        points.push({ point: intersection.point, lineId: auxiliaryLine.id });
+      }
+      if (intersection.kind === 'coincident') {
+        for (const point of [auxiliaryLine.start, auxiliaryLine.end]) {
+          if (pointOnRay2D(point, target.origin, target.direction)) points.push({ point, lineId: auxiliaryLine.id });
+        }
+        if (pointOnSegment2D(target.origin, segmentFromPoints(auxiliaryLine.start, auxiliaryLine.end))) points.push({ point: target.origin, lineId: auxiliaryLine.id });
       }
     }
 
@@ -605,14 +652,31 @@ export const createSubjectAuxiliaryLineIntersectionAnnotations = (
   }, context));
 };
 
+const createIntersectionTargetSegments = (
+  target: Exclude<SubjectOverlayTarget, SubjectFunctionOverlayTarget>
+): MathSegment2D[] => {
+  if (target.kind === 'polygon') return polygonEdges(target.vertices).map((edge) => segmentFromPoints(edge.start, edge.end));
+  if (target.kind === 'segment') return [segmentFromPoints(target.start, target.end)];
+  if (target.kind === 'parallel-lines') return target.segments.map((segment) => segmentFromPoints(segment.start, segment.end));
+  if (target.kind === 'angle') {
+    return [
+      segmentFromPoints(target.vertex, target.first),
+      segmentFromPoints(target.vertex, target.second)
+    ];
+  }
+  return [];
+};
+
 const isAuxiliaryConstructionTarget = (
   target: Exclude<SubjectOverlayTarget, SubjectFunctionOverlayTarget>
-): target is SubjectPolygonOverlayTarget | SubjectCircleOverlayTarget | SubjectSegmentOverlayTarget | SubjectLineOverlayTarget | SubjectRayOverlayTarget => (
+): target is SubjectPolygonOverlayTarget | SubjectCircleOverlayTarget | SubjectSegmentOverlayTarget | SubjectLineOverlayTarget | SubjectRayOverlayTarget | SubjectParallelLinesOverlayTarget | SubjectAngleOverlayTarget => (
   target.kind === 'polygon'
     || target.kind === 'circle'
     || target.kind === 'segment'
     || target.kind === 'line'
     || target.kind === 'ray'
+    || target.kind === 'parallel-lines'
+    || target.kind === 'angle'
 );
 
 const legacyFreeLineMeta = (
@@ -1462,6 +1526,24 @@ const pointOnSegment2D = (
   const projection = dot2D(pointVector, segmentVector);
   return projection >= -epsilon && projection <= dot2D(segmentVector, segmentVector) + epsilon;
 };
+
+const pointOnRay2D = (
+  point: MathPoint2D,
+  origin: MathPoint2D,
+  direction: MathVector2D,
+  epsilon = 1e-7
+): boolean => (
+  Math.abs(cross2D(direction, subtract2D(point, origin))) <= epsilon * Math.max(1, length2D(direction))
+    && dot2D(subtract2D(point, origin), direction) >= -epsilon
+);
+
+const overlapSegmentPoints = (
+  left: MathSegment2D,
+  right: MathSegment2D
+): MathPoint2D[] => uniquePoints([
+  ...[left.start, left.end].filter((point) => pointOnSegment2D(point, right)),
+  ...[right.start, right.end].filter((point) => pointOnSegment2D(point, left))
+], (point) => point);
 
 const projectPointToLine = (point: MathPoint2D, line: MathLine2D): MathPoint2D => {
   const denominator = dot2D(line.direction, line.direction);

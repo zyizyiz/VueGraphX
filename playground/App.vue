@@ -1238,8 +1238,7 @@ const updateOperationAuxiliaryConstructionDraft = (
   const scopedCommands = createOperationScopedCommands(
     createOperationAuxiliaryConstructionCommands(session.commandPrefix, session.target, draft, pendingStart, anchors),
     coordinateSystem.origin,
-    session.coordinateSystemId,
-    getOperationVisiblePlacementBounds()
+    session.coordinateSystemId
   );
   const commandIds = store.replaceCommandsByIds(session.commandIds, scopedCommands);
   operationAuxiliaryConstructionSession.value = {
@@ -1377,7 +1376,7 @@ const applyOperationAuxiliaryConstructionInteractionEvent = (
     updateOperationAuxiliaryConstructionDraft(
       draft,
       null,
-      toOperationAuxiliaryConstructionAnchors(interactionEvent.anchors)
+      []
     );
     debugOperationAuxiliaryConstruction('auxiliary draft applied', { draft, anchors: interactionEvent.anchors });
   }
@@ -2049,6 +2048,7 @@ const selectCoreObject = (objectId: string, pick?: GraphPickResult) => {
     return;
   }
   pushCoreInteractionDiagnostic(`selected ${objectId}${pick?.backendId ? ` via ${pick.backendId}` : ''}`);
+  if (isCanvasRendererActive.value) syncAllToEngine({ keepSelection: objectId });
 };
 
 const clearCoreSelection = (reason = 'selection cleared') => {
@@ -2064,6 +2064,7 @@ const clearCoreSelection = (reason = 'selection cleared') => {
   if (hadSelection) {
     pushCoreInteractionDiagnostic(reason);
   }
+  if (isCanvasRendererActive.value) syncAllToEngine({ keepSelection: '' });
 };
 
 const handleCoreRendererWheel = (event: WheelEvent) => {
@@ -2620,12 +2621,12 @@ const syncAllToEngine = (options: { keepSelection?: string } = {}) => {
     const runtime = canvasRuntimeRef.value;
     if (!canvasBackendRef.value || !runtime) return;
     const selectedObjectId = options.keepSelection ?? coreSelectedObjectId.value;
-    const result = buildPlaygroundCanvasScene(store.commands);
+    const result = buildPlaygroundCanvasScene(store.commands, { selectedObjectId });
     store.commands.forEach((command) => {
       const diagnostic = result.diagnostics.find((item) => item.commandId === command.id);
       store.setCommandError(command.id, diagnostic?.message ?? '');
     });
-    const synced = runtime.syncObjects(applyCoreRuntimeSelection(result.nodes, selectedObjectId));
+    const synced = runtime.syncObjects(result.nodes);
     if (!synced.ok) pushCoreDiagnostics(synced.diagnostics);
     return;
   }
