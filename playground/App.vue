@@ -392,6 +392,57 @@
               </svg>
             </button>
           </div>
+          <div
+            v-if="operationDynamicPointUiState"
+            class="operation-dynamic-point-panel absolute left-4 bottom-4 z-[14]"
+          >
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="operation-dynamic-point-primary"
+                :aria-label="operationDynamicPointUiState.playing ? '暂停动点' : '播放动点'"
+                :title="operationDynamicPointUiState.playing ? '暂停' : '播放'"
+                @click="toggleOperationDynamicPointPlayback"
+              >
+                {{ operationDynamicPointUiState.playing ? '暂停' : '播放' }}
+              </button>
+              <button
+                type="button"
+                class="operation-dynamic-point-secondary"
+                aria-label="重置动点"
+                title="重置"
+                @click="resetOperationDynamicPoint"
+              >
+                重置
+              </button>
+              <span class="operation-dynamic-point-readout">{{ operationDynamicPointUiState.pointText }}</span>
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+              <span class="operation-dynamic-point-bound">{{ formatOperationNumberForUi(operationDynamicPointUiState.min) }}</span>
+              <input
+                type="range"
+                class="operation-dynamic-point-slider"
+                :min="operationDynamicPointUiState.min"
+                :max="operationDynamicPointUiState.max"
+                :step="0.01"
+                :value="operationDynamicPointUiState.parameter"
+                @input="handleOperationDynamicPointParameterInput"
+              />
+              <span class="operation-dynamic-point-bound">{{ formatOperationNumberForUi(operationDynamicPointUiState.max) }}</span>
+            </div>
+            <div class="mt-2 flex items-center gap-1">
+              <button
+                v-for="speed in OPERATION_DYNAMIC_POINT_SPEEDS"
+                :key="speed"
+                type="button"
+                class="operation-dynamic-point-speed"
+                :class="{ 'operation-dynamic-point-speed-active': operationDynamicPointUiState.playbackRate === speed }"
+                @click="setOperationDynamicPointPlaybackRate(speed)"
+              >
+                {{ speed }}x
+              </button>
+            </div>
+          </div>
           <div class="pointer-events-none absolute inset-0 z-[12]">
             <div
               v-if="businessOverlayPosition"
@@ -459,9 +510,12 @@ import {
   type StandardCoordinateAxisTickStrategy
 } from '@vuegraphx/core';
 import {
+  createSubjectDynamicPointModel,
   createSubjectShapeEditHandles,
   createSubjectShapeEditModel,
+  updateSubjectDynamicPointModel,
   type MathPoint2D,
+  type SubjectDynamicPointModel,
   type SubjectGeometryDragPhase,
   type SubjectGeometryGridSnapMetric,
   type SubjectGeometryGridSnapOptions,
@@ -497,12 +551,17 @@ import {
   clampOperationCoordinateSystemOrigin,
   createOperationAuxiliaryConstructionCommands,
   createOperationAuxiliaryConstructionTarget,
+  createOperationDynamicPointCommands,
+  createOperationDynamicPointDescriptor,
+  createOperationDynamicPointFunctionCommand,
+  createOperationDynamicPointPointCommand,
   createOperationShapeEditCommands,
   createOperationShapeEditTarget,
   createOperationShapeEditVertexCommand,
   createOperationScopedCommands,
   createOperationToolCommands,
   getOperationCoordinateSystemAxisRangeAbs,
+  OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION,
   findOperationToolById,
   isOperationPointInsideCoordinateSystem,
   resolveOperationCommandOrigin,
@@ -536,12 +595,15 @@ import {
 let nextOperationCoordinateSystemSequence = 1;
 let nextOperationShapeEditSequence = 1;
 let nextOperationAuxiliaryConstructionSequence = 1;
+let nextOperationDynamicPointSequence = 1;
 
 const OPERATION_SHAPE_EDIT_LOG_PREFIX = '[VueGraphX operation shape edit]';
 const OPERATION_AUXILIARY_CONSTRUCTION_LOG_PREFIX = '[VueGraphX operation auxiliary construction]';
 const OPERATION_COORDINATE_AXIS_RESIZE_LOG_PREFIX = '[VueGraphX operation coordinate axis resize]';
+const OPERATION_DYNAMIC_POINT_LOG_PREFIX = '[VueGraphX operation dynamic point]';
 const OPERATION_COORDINATE_AXIS_RESIZE_MIN_ABS = 1;
 const OPERATION_COORDINATE_AXIS_RESIZE_MAX_ABS = 24;
+const OPERATION_DYNAMIC_POINT_SPEEDS = [0.5, 1, 2, 4] as const;
 
 const debugOperationShapeEdit = (message: string, data?: Record<string, unknown>) => {
   console.info(OPERATION_SHAPE_EDIT_LOG_PREFIX, message, data ?? {});
@@ -553,6 +615,10 @@ const debugOperationAuxiliaryConstruction = (message: string, data?: Record<stri
 
 const debugOperationCoordinateAxisResize = (message: string, data?: Record<string, unknown>) => {
   console.info(OPERATION_COORDINATE_AXIS_RESIZE_LOG_PREFIX, message, data ?? {});
+};
+
+const debugOperationDynamicPoint = (message: string, data?: Record<string, unknown>) => {
+  console.info(OPERATION_DYNAMIC_POINT_LOG_PREFIX, message, data ?? {});
 };
 
 const readOperationToolFromDrop = (event: DragEvent): OperationTool | null => {
@@ -647,6 +713,7 @@ const coreInteractionDiagnostics = ref<string[]>([]);
 const businessOverlayRefreshKey = ref(0);
 const operationShapeEditSession = ref<OperationShapeEditSession | null>(null);
 const operationAuxiliaryConstructionSession = ref<OperationAuxiliaryConstructionSession | null>(null);
+const operationDynamicPointSession = ref<OperationDynamicPointSession | null>(null);
 const activeOperationShapeEditDragHandleId = ref('');
 const activeOperationCoordinateAxisResizeHandleId = ref('');
 const operationShapeEditProjectionRevision = ref(0);
@@ -710,6 +777,19 @@ interface OperationAuxiliaryConstructionSession {
   interactionController: GraphAuxiliaryLineInteractionController;
 }
 
+interface OperationDynamicPointSession {
+  toolId: string;
+  coordinateSystemId: string;
+  commandPrefix: string;
+  coordinateSystem: OperationCoordinateSystemRuntimeOptions;
+  model: SubjectDynamicPointModel;
+  commandIds: readonly string[];
+  functionCommandId: string;
+  pointCommandId: string;
+  animationFrameId: number | null;
+  lastFrameTime: number | null;
+}
+
 interface OperationShapeEditHandleProjection extends SubjectShapeEditHandleDescriptor {
   x: number;
   y: number;
@@ -762,8 +842,23 @@ const isCoreRendererActive = computed(() => isCanvasRendererActive.value || isBa
 const activeOperationToolId = computed(() => (
   operationShapeEditSession.value?.toolId
   ?? operationAuxiliaryConstructionSession.value?.toolId
+  ?? operationDynamicPointSession.value?.toolId
   ?? ''
 ));
+const operationDynamicPointUiState = computed(() => {
+  const session = operationDynamicPointSession.value;
+  if (!session || store.activeMode !== 'operation') return null;
+  const dynamicPoint = session.model.dynamicPoint;
+  const point = dynamicPoint.point;
+  return {
+    playing: dynamicPoint.playing,
+    parameter: dynamicPoint.parameter,
+    min: dynamicPoint.range[0],
+    max: dynamicPoint.range[1],
+    playbackRate: dynamicPoint.playbackRate,
+    pointText: point ? `P(${formatOperationNumberForUi(point.x)}, ${formatOperationNumberForUi(point.y)})` : 'P(-, -)'
+  };
+});
 const operationShapeEditHandleProjections = computed<OperationShapeEditHandleProjection[]>(() => {
   operationShapeEditProjectionRevision.value;
   void coreViewportBounds.value;
@@ -1109,6 +1204,8 @@ const resolveActiveOperationCoordinateSystemId = (): string => {
   if (shapeCoordinateSystemId && readStoredOperationCoordinateSystem(shapeCoordinateSystemId)) return shapeCoordinateSystemId;
   const auxiliaryCoordinateSystemId = operationAuxiliaryConstructionSession.value?.coordinateSystemId;
   if (auxiliaryCoordinateSystemId && readStoredOperationCoordinateSystem(auxiliaryCoordinateSystemId)) return auxiliaryCoordinateSystemId;
+  const dynamicPointCoordinateSystemId = operationDynamicPointSession.value?.coordinateSystemId;
+  if (dynamicPointCoordinateSystemId && readStoredOperationCoordinateSystem(dynamicPointCoordinateSystemId)) return dynamicPointCoordinateSystemId;
   return '';
 };
 
@@ -1133,6 +1230,12 @@ const clampNumber = (value: number, min: number, max: number) => {
   return Math.max(min, Math.min(max, value));
 };
 
+const formatOperationNumberForUi = (value: number): string => {
+  if (!Number.isFinite(value)) return '-';
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+};
+
 const handleActivateOperationTool = (tool: OperationTool, dropPoint: GraphClientPoint | null = null) => {
   debugOperationShapeEdit('activate tool', {
     toolId: tool.id,
@@ -1145,6 +1248,10 @@ const handleActivateOperationTool = (tool: OperationTool, dropPoint: GraphClient
   }
   if (tool.interaction?.kind === 'geometry-auxiliary-construction') {
     createOperationAuxiliaryConstructionSession(tool, dropPoint);
+    return;
+  }
+  if (tool.interaction?.kind === 'function-dynamic-point') {
+    createOperationDynamicPointSession(tool, dropPoint);
     return;
   }
   handleCreateOperationToolCommands(tool, dropPoint);
@@ -1162,6 +1269,7 @@ const createOperationShapeEditSession = (tool: OperationTool, dropPoint: GraphCl
   if (store.activeMode !== 'operation') return;
   clearOperationAuxiliaryConstructionSession();
   clearOperationShapeEditSession();
+  clearOperationDynamicPointSession();
   activeDemo.value = -1;
 
   const coordinateSystemId = `coord_${nextOperationCoordinateSystemSequence++}`;
@@ -1227,6 +1335,7 @@ const createOperationAuxiliaryConstructionSession = (tool: OperationTool, dropPo
   if (store.activeMode !== 'operation') return;
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
+  clearOperationDynamicPointSession();
   activeDemo.value = -1;
 
   const coordinateSystemId = `coord_${nextOperationCoordinateSystemSequence++}`;
@@ -1277,6 +1386,215 @@ const createOperationAuxiliaryConstructionSession = (tool: OperationTool, dropPo
   nextTick(() => {
     syncAllToEngine({ keepSelection: coordinateSystemId });
   });
+};
+
+const createOperationDynamicPointSession = (tool: OperationTool, dropPoint: GraphClientPoint | null = null) => {
+  if (store.activeMode !== 'operation') return;
+  clearOperationShapeEditSession();
+  clearOperationAuxiliaryConstructionSession();
+  clearOperationDynamicPointSession();
+  activeDemo.value = -1;
+
+  const coordinateSystemId = `coord_${nextOperationCoordinateSystemSequence++}`;
+  const commandPrefix = `dyn_${nextOperationDynamicPointSequence++}`;
+  const bounds = getOperationVisiblePlacementBounds();
+  const origin = getWorldPointForOperationDrop(dropPoint);
+  const descriptor = createOperationDynamicPointDescriptor(commandPrefix, [-6, 6]);
+  const model = createSubjectDynamicPointModel(descriptor, {
+    parameter: descriptor.domain.intervals[0]?.min ?? -6,
+    range: [-6, 6],
+    speed: 1,
+    playbackRate: 1
+  });
+  const dynamicPointCommands = createOperationDynamicPointCommands(commandPrefix, model, { includePointPlaceholder: true });
+  const scopedCommands = createOperationScopedCommands(
+    dynamicPointCommands,
+    origin,
+    coordinateSystemId,
+    bounds
+  );
+  const coordinateSystem = (scopedCommands[0]?.options as { coordinateSystem?: OperationCoordinateSystemRuntimeOptions } | undefined)?.coordinateSystem;
+  if (!coordinateSystem) {
+    pushCoreInteractionDiagnostic('dynamic point failed: coordinate system was not created');
+    return;
+  }
+
+  const coordinateRange: readonly [number, number] = [coordinateSystem.xRange.min, coordinateSystem.xRange.max];
+  const rangedDescriptor = createOperationDynamicPointDescriptor(commandPrefix, coordinateRange);
+  const rangedModel = updateSubjectDynamicPointModel(model, { type: 'set-range', range: coordinateRange, descriptor: rangedDescriptor });
+  setOperationCoordinateSystemRuntimeOptions(scopedCommands, coordinateSystem);
+  const previousCommandCount = store.commands.length;
+  store.appendCommands(scopedCommands);
+  const insertedCommands = store.commands.slice(previousCommandCount, previousCommandCount + scopedCommands.length);
+  const functionCommandId = insertedCommands[1]?.id ?? '';
+  const pointCommandId = insertedCommands[2]?.id ?? '';
+  if (!functionCommandId || !pointCommandId) {
+    pushCoreInteractionDiagnostic('dynamic point failed: command ids were not found');
+    return;
+  }
+
+  operationDynamicPointSession.value = {
+    toolId: tool.id,
+    coordinateSystemId,
+    commandPrefix,
+    coordinateSystem,
+    model: rangedModel,
+    commandIds: insertedCommands.map((command) => command.id),
+    functionCommandId,
+    pointCommandId,
+    animationFrameId: null,
+    lastFrameTime: null
+  };
+  updateOperationDynamicPointCommands();
+  debugOperationDynamicPoint('session created', {
+    toolId: tool.id,
+    coordinateSystemId,
+    commandPrefix,
+    origin,
+    coordinateSystem
+  });
+  nextTick(() => {
+    syncAllToEngine({ keepSelection: coordinateSystemId });
+  });
+};
+
+const updateOperationDynamicPointCommands = () => {
+  const session = operationDynamicPointSession.value;
+  if (!session) return;
+  store.updateCommand(
+    session.functionCommandId,
+    createOperationDynamicPointFunctionCommand(session.commandPrefix, session.model.dynamicPoint.range, OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION)
+  );
+  const pointCommand = createOperationDynamicPointPointCommand(session.commandPrefix, session.model);
+  store.updateCommand(
+    session.pointCommandId,
+    pointCommand?.expr ?? ''
+  );
+};
+
+const setOperationDynamicPointSessionState = (
+  nextModel: SubjectDynamicPointModel,
+  options: { sync?: boolean; keepSelection?: string } = {}
+) => {
+  const session = operationDynamicPointSession.value;
+  if (!session) return;
+  operationDynamicPointSession.value = {
+    ...session,
+    model: nextModel
+  };
+  updateOperationDynamicPointCommands();
+  if (options.sync !== false) {
+    syncAllToEngine({ keepSelection: options.keepSelection ?? session.coordinateSystemId });
+  }
+};
+
+const startOperationDynamicPointAnimationLoop = () => {
+  const session = operationDynamicPointSession.value;
+  if (!session || session.animationFrameId !== null) return;
+  operationDynamicPointSession.value = {
+    ...session,
+    lastFrameTime: null,
+    animationFrameId: requestAnimationFrame(stepOperationDynamicPointAnimation)
+  };
+};
+
+const stepOperationDynamicPointAnimation = (time: number) => {
+  const session = operationDynamicPointSession.value;
+  if (!session) return;
+  if (!session.model.dynamicPoint.playing) {
+    operationDynamicPointSession.value = { ...session, animationFrameId: null, lastFrameTime: null };
+    return;
+  }
+  const lastFrameTime = session.lastFrameTime ?? time;
+  const deltaSeconds = Math.min(0.08, Math.max(0, (time - lastFrameTime) / 1000));
+  const nextModel = updateSubjectDynamicPointModel(session.model, { type: 'tick', deltaSeconds });
+  operationDynamicPointSession.value = {
+    ...session,
+    model: nextModel,
+    lastFrameTime: time,
+    animationFrameId: requestAnimationFrame(stepOperationDynamicPointAnimation)
+  };
+  updateOperationDynamicPointCommands();
+  syncAllToEngine({ keepSelection: session.coordinateSystemId });
+};
+
+const stopOperationDynamicPointAnimationLoop = () => {
+  const session = operationDynamicPointSession.value;
+  if (!session) return;
+  if (session.animationFrameId !== null) cancelAnimationFrame(session.animationFrameId);
+  operationDynamicPointSession.value = {
+    ...session,
+    animationFrameId: null,
+    lastFrameTime: null
+  };
+};
+
+const toggleOperationDynamicPointPlayback = () => {
+  const session = operationDynamicPointSession.value;
+  if (!session) return;
+  const nextModel = updateSubjectDynamicPointModel(session.model, { type: 'toggle' });
+  setOperationDynamicPointSessionState(nextModel);
+  if (nextModel.dynamicPoint.playing) startOperationDynamicPointAnimationLoop();
+  else stopOperationDynamicPointAnimationLoop();
+};
+
+const resetOperationDynamicPoint = () => {
+  const session = operationDynamicPointSession.value;
+  if (!session) return;
+  stopOperationDynamicPointAnimationLoop();
+  setOperationDynamicPointSessionState(updateSubjectDynamicPointModel(session.model, { type: 'reset' }));
+};
+
+const setOperationDynamicPointParameter = (parameter: number) => {
+  const session = operationDynamicPointSession.value;
+  if (!session || !Number.isFinite(parameter)) return;
+  setOperationDynamicPointSessionState(updateSubjectDynamicPointModel(session.model, { type: 'set-parameter', parameter }));
+};
+
+const handleOperationDynamicPointParameterInput = (event: Event) => {
+  const input = event.target instanceof HTMLInputElement ? event.target : null;
+  if (!input) return;
+  setOperationDynamicPointParameter(input.valueAsNumber);
+};
+
+const setOperationDynamicPointPlaybackRate = (playbackRate: number) => {
+  const session = operationDynamicPointSession.value;
+  if (!session) return;
+  setOperationDynamicPointSessionState(updateSubjectDynamicPointModel(session.model, { type: 'set-playback-rate', playbackRate }));
+};
+
+const syncOperationDynamicPointCoordinateSystem = (coordinateSystem: OperationCoordinateSystemRuntimeOptions) => {
+  const session = operationDynamicPointSession.value;
+  if (!session || session.coordinateSystemId !== coordinateSystem.id) return;
+  const range: readonly [number, number] = [coordinateSystem.xRange.min, coordinateSystem.xRange.max];
+  const descriptor = createOperationDynamicPointDescriptor(session.commandPrefix, range);
+  const model = updateSubjectDynamicPointModel(session.model, { type: 'set-range', range, descriptor });
+  operationDynamicPointSession.value = {
+    ...session,
+    coordinateSystem,
+    model
+  };
+  updateOperationDynamicPointCommands();
+};
+
+const shouldClearOperationDynamicPointSessionForCommand = (commandId: string): boolean => {
+  const session = operationDynamicPointSession.value;
+  if (!session) return false;
+  return session.commandIds.includes(commandId)
+    || store.commands.find((command) => command.id === commandId)?.expression.startsWith(`${session.coordinateSystemId} =`) === true
+    || store.commands.find((command) => command.id === commandId)?.expression.startsWith(`${session.commandPrefix}_`) === true;
+};
+
+const clearOperationDynamicPointSession = () => {
+  stopOperationDynamicPointAnimationLoop();
+  const session = operationDynamicPointSession.value;
+  if (session) {
+    debugOperationDynamicPoint('session cleared', {
+      coordinateSystemId: session.coordinateSystemId,
+      commandPrefix: session.commandPrefix
+    });
+  }
+  operationDynamicPointSession.value = null;
 };
 
 const startOperationAuxiliaryConstructionDraw = (event: PointerEvent): boolean => {
@@ -1913,6 +2231,9 @@ const refreshOperationCoordinateSystemSessionState = (coordinateSystemId: string
       ...operationAuxiliaryConstructionSession.value,
       coordinateSystem
     };
+  }
+  if (operationDynamicPointSession.value?.coordinateSystemId === coordinateSystemId) {
+    syncOperationDynamicPointCoordinateSystem(coordinateSystem);
   }
   operationCoordinateAxisResizeProjectionRevision.value += 1;
 };
@@ -2806,6 +3127,7 @@ onUnmounted(() => {
   stopResizeObserver();
   stopSidebarResizeObserver();
   stopSidebarBottomResize();
+  clearOperationDynamicPointSession();
   destroyPrimaryRenderer();
 });
 
@@ -2814,6 +3136,7 @@ const switchMode = async (mode: PlaygroundMode, options: { syncCommands?: boolea
   clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
+  clearOperationDynamicPointSession();
   store.activeMode = mode;
   activeDemo.value = -1;
   if (!isRendererBackendSupported(activeRendererBackend.value)) {
@@ -2860,6 +3183,7 @@ const handleCreateOperationCommands = (
   clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
+  clearOperationDynamicPointSession();
   activeDemo.value = -1;
   const bounds = getOperationVisiblePlacementBounds();
   const origin = options.origin ?? getWorldPointForOperationDrop(dropPoint);
@@ -2915,6 +3239,9 @@ const removeLine = (id: string) => {
   if (shouldClearOperationAuxiliaryConstructionSessionForCommand(id)) {
     clearOperationAuxiliaryConstructionSession();
   }
+  if (shouldClearOperationDynamicPointSessionForCommand(id)) {
+    clearOperationDynamicPointSession();
+  }
   store.removeCommand(id);
   if (isCoreRendererActive.value) {
     syncAllToEngine();
@@ -2927,6 +3254,7 @@ const clearAll = () => {
   clearOperationCoordinateAxisResizeDragSession();
   clearOperationShapeEditSession();
   clearOperationAuxiliaryConstructionSession();
+  clearOperationDynamicPointSession();
   store.clearCommands();
   activeDemo.value = -1;
   resetCoreRuntimeSelection();
@@ -3179,6 +3507,91 @@ body.operation-auxiliary-construction-drag-active {
 
 body.operation-coordinate-axis-resize-active {
   user-select: none;
+}
+
+.operation-dynamic-point-panel {
+  width: min(340px, calc(100% - 2rem));
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 10px;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.operation-dynamic-point-primary,
+.operation-dynamic-point-secondary,
+.operation-dynamic-point-speed {
+  height: 28px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.operation-dynamic-point-primary {
+  min-width: 52px;
+  border: 1px solid #dc2626;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.operation-dynamic-point-primary:hover,
+.operation-dynamic-point-primary:focus-visible {
+  outline: none;
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.operation-dynamic-point-secondary,
+.operation-dynamic-point-speed {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+.operation-dynamic-point-secondary {
+  min-width: 48px;
+}
+
+.operation-dynamic-point-secondary:hover,
+.operation-dynamic-point-secondary:focus-visible,
+.operation-dynamic-point-speed:hover,
+.operation-dynamic-point-speed:focus-visible,
+.operation-dynamic-point-speed-active {
+  outline: none;
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.operation-dynamic-point-readout {
+  min-width: 96px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.operation-dynamic-point-bound {
+  width: 28px;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.operation-dynamic-point-slider {
+  min-width: 0;
+  flex: 1;
+  accent-color: #dc2626;
+}
+
+.operation-dynamic-point-speed {
+  min-width: 42px;
+  padding: 0 8px;
 }
 
 .operation-shape-edit-handle {

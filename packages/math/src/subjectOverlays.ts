@@ -24,6 +24,7 @@ import {
 } from './geometry';
 import {
   computeSubjectFunctionProperties,
+  createSubjectDynamicPointStyle,
   formatSubjectFunctionExpression,
   type SubjectDynamicPointState,
   type SubjectFunctionFamilyDescriptor,
@@ -1004,6 +1005,7 @@ const createFunctionAnnotations = (context: SubjectOverlayComputationContext): S
   }
 
   if (target.dynamicPoint?.point && context.annotationEnabled('dynamic-point')) {
+    const dynamicPointStyle = createSubjectDynamicPointStyle(target.dynamicPoint.style);
     annotations.push({
       id: `${target.id}:dynamic-point:${target.dynamicPoint.id}`,
       kind: 'dynamic-point',
@@ -1013,7 +1015,16 @@ const createFunctionAnnotations = (context: SubjectOverlayComputationContext): S
       targetId: target.id,
       visible: context.annotationVisible('dynamic-point'),
       state: 'confirmed',
-      meta: { dynamicPointId: target.dynamicPoint.id, parameter: target.dynamicPoint.parameter }
+      style: {
+        strokeColor: dynamicPointStyle.strokeColor,
+        fillColor: dynamicPointStyle.fillColor,
+        strokeWidth: dynamicPointStyle.strokeWidthPx
+      },
+      meta: {
+        dynamicPointId: target.dynamicPoint.id,
+        parameter: target.dynamicPoint.parameter,
+        style: dynamicPointStyle
+      }
     });
   }
 

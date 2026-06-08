@@ -4,10 +4,12 @@ import {
   createDefaultSubjectOverlayRegistry,
   createFreeSubjectAuxiliaryLine,
   createQuadraticSubjectFunction,
+  createSubjectDynamicPoint,
   createSubjectAuxiliaryLineIntersectionAnnotations,
   createSubjectOverlayCache,
   createSubjectOverlayModel,
   point2D,
+  SUBJECT_DYNAMIC_POINT_DEFAULT_RADIUS_PX,
   SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS,
   SUBJECT_OVERLAY_DASH_PATTERN,
   SUBJECT_OVERLAY_DASH_STROKE_WIDTH,
@@ -216,6 +218,42 @@ describe('subject overlay model', () => {
     expect(configuredModel.annotations.find((annotation) => annotation.kind === 'intercept')?.style).toMatchObject({
       strokeColor: SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS.intercept,
       textColor: '#0F766E'
+    });
+  });
+
+  it('exposes dynamic point annotations with normalized style and parameter metadata', () => {
+    const quadratic = createQuadraticSubjectFunction({ id: 'q-dynamic', a: 1, b: 0, c: -1, domain: [-4, 4] });
+    const dynamicPoint = createSubjectDynamicPoint(quadratic, {
+      parameter: 2,
+      style: { color: '#FF3333' }
+    });
+    const model = createSubjectOverlayModel({
+      id: 'q-dynamic-target',
+      kind: 'function',
+      descriptor: quadratic,
+      dynamicPoint
+    }, {
+      annotations: { includeKinds: ['dynamic-point'] },
+      coordinates: { enabled: true, showForKinds: ['dynamic-point'], precision: 1 }
+    });
+
+    const annotation = model.annotations.find((entry) => entry.kind === 'dynamic-point');
+    expect(annotation).toMatchObject({
+      label: 'P',
+      text: 'P (2, 3)',
+      anchor: { x: 2, y: 3 },
+      style: {
+        strokeColor: '#FF3333',
+        fillColor: '#FF3333',
+        strokeWidth: 0
+      },
+      meta: {
+        dynamicPointId: 'q-dynamic:P',
+        parameter: 2,
+        style: {
+          radiusPx: SUBJECT_DYNAMIC_POINT_DEFAULT_RADIUS_PX
+        }
+      }
     });
   });
 

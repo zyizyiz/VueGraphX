@@ -117,16 +117,62 @@ export interface SubjectFunctionSampleOptions {
   yMax?: number;
 }
 
+export interface SubjectDynamicPointStyle {
+  color: string;
+  fillColor: string;
+  strokeColor: string;
+  strokeWidthPx: number;
+  radiusPx: number;
+  diameterPx: number;
+}
+
+export type SubjectDynamicPointStyleOptions = Partial<SubjectDynamicPointStyle>;
+
 export interface SubjectDynamicPointState {
   id: string;
   descriptorId: string;
   parameter: number;
   range: readonly [number, number];
   speed: number;
+  playbackRate: number;
   direction: 1 | -1;
   playing: boolean;
+  style: SubjectDynamicPointStyle;
   point: SceneSamplePoint2D | null;
 }
+
+export interface CreateSubjectDynamicPointOptions extends Partial<Omit<SubjectDynamicPointState, 'descriptorId' | 'point' | 'style'>> {
+  style?: SubjectDynamicPointStyleOptions;
+}
+
+export type CreateSubjectDynamicPointModelOptions = CreateSubjectDynamicPointOptions;
+
+export interface SubjectDynamicPointMarker {
+  id: string;
+  descriptorId: string;
+  point: SceneSamplePoint2D;
+  style: SubjectDynamicPointStyle;
+}
+
+export interface SubjectDynamicPointModel {
+  descriptor: SubjectFunctionFamilyDescriptor;
+  dynamicPoint: SubjectDynamicPointState;
+  marker: SubjectDynamicPointMarker | null;
+}
+
+export type SubjectDynamicPointModelAction =
+  | { type: 'play' }
+  | { type: 'pause' }
+  | { type: 'toggle' }
+  | { type: 'reset' }
+  | { type: 'reverse' }
+  | { type: 'tick'; deltaSeconds: number }
+  | { type: 'set-parameter'; parameter: number }
+  | { type: 'set-playback-rate'; playbackRate: number }
+  | { type: 'set-speed'; speed: number }
+  | { type: 'set-range'; range: readonly [number, number]; descriptor?: SubjectFunctionFamilyDescriptor }
+  | { type: 'set-style'; style: SubjectDynamicPointStyleOptions }
+  | { type: 'set-descriptor'; descriptor: SubjectFunctionFamilyDescriptor };
 
 export interface CreateSubjectDomainIntervalOptions {
   minClosed?: boolean;
@@ -153,6 +199,27 @@ const DEFAULT_SAMPLE_WINDOW: Required<Pick<SubjectFunctionSampleOptions, 'min' |
   steps: 120,
   yMin: -10,
   yMax: 10
+};
+
+export const SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR = '#FF3333';
+export const SUBJECT_DYNAMIC_POINT_DEFAULT_DIAMETER_PX = 8;
+export const SUBJECT_DYNAMIC_POINT_DEFAULT_RADIUS_PX = SUBJECT_DYNAMIC_POINT_DEFAULT_DIAMETER_PX / 2;
+export const SUBJECT_DYNAMIC_POINT_DEFAULT_STROKE_WIDTH_PX = 0;
+
+export const createSubjectDynamicPointStyle = (
+  options: SubjectDynamicPointStyleOptions = {}
+): SubjectDynamicPointStyle => {
+  const radiusPx = Math.max(0, finiteNumber(options.radiusPx, finiteNumber(options.diameterPx, SUBJECT_DYNAMIC_POINT_DEFAULT_DIAMETER_PX) / 2));
+  const diameterPx = radiusPx * 2;
+  const color = normalizeColor(options.color, SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR);
+  return {
+    color,
+    fillColor: normalizeColor(options.fillColor, color),
+    strokeColor: normalizeColor(options.strokeColor, color),
+    strokeWidthPx: Math.max(0, finiteNumber(options.strokeWidthPx, SUBJECT_DYNAMIC_POINT_DEFAULT_STROKE_WIDTH_PX)),
+    radiusPx,
+    diameterPx
+  };
 };
 
 export const createSubjectDomainInterval = (
@@ -705,9 +772,9 @@ export const createSubjectFunctionAnnotations = (
 
 export const createSubjectDynamicPoint = (
   descriptor: SubjectFunctionFamilyDescriptor,
-  options: Partial<Omit<SubjectDynamicPointState, 'descriptorId' | 'point'>> = {}
+  options: CreateSubjectDynamicPointOptions = {}
 ): SubjectDynamicPointState => {
-  const range = options.range ?? finiteDynamicRange(descriptor);
+  const range = normalizeDynamicPointRange(options.range ?? finiteDynamicRange(descriptor));
   const start = clampNumber(options.parameter ?? range[0], range[0], range[1]);
   const state: SubjectDynamicPointState = {
     id: options.id ?? `${descriptor.id}:P`,
@@ -715,8 +782,10 @@ export const createSubjectDynamicPoint = (
     parameter: start,
     range,
     speed: Math.max(0, finiteNumber(options.speed, 1)),
-    direction: options.direction ?? 1,
+    playbackRate: Math.max(0, finiteNumber(options.playbackRate, 1)),
+    direction: options.direction === -1 ? -1 : 1,
     playing: options.playing ?? false,
+    style: createSubjectDynamicPointStyle(options.style),
     point: null
   };
   return evaluateSubjectDynamicPoint(descriptor, state);
@@ -735,25 +804,163 @@ export const tickSubjectDynamicPoint = (
   state: SubjectDynamicPointState,
   deltaSeconds: number
 ): SubjectDynamicPointState => {
-  if (!state.playing || state.speed === 0 || !Number.isFinite(deltaSeconds)) return evaluateSubjectDynamicPoint(descriptor, state);
-  const [min, max] = state.range;
+  const next = normalizeSubjectDynamicPointState(state);
+  const speed = Math.max(0, finiteNumber(next.speed, 0));
+  const playbackRate = Math.max(0, finiteNumber(next.playbackRate, 1));
+  if (!next.playing || speed === 0 || playbackRate === 0 || !Number.isFinite(deltaSeconds)) return evaluateSubjectDynamicPoint(descriptor, next);
+  const [min, max] = next.range;
   const span = max - min;
-  if (span <= 1e-9) return evaluateSubjectDynamicPoint(descriptor, { ...state, parameter: min });
-  let parameter = state.parameter + state.direction * state.speed * Math.max(0, deltaSeconds);
+  if (span <= 1e-9) return evaluateSubjectDynamicPoint(descriptor, { ...next, range: [min, max], parameter: min });
+  let parameter = next.parameter + next.direction * speed * playbackRate * Math.max(0, deltaSeconds);
   while (parameter > max) parameter -= span;
   while (parameter < min) parameter += span;
-  return evaluateSubjectDynamicPoint(descriptor, { ...state, parameter });
+  return evaluateSubjectDynamicPoint(descriptor, { ...next, speed, playbackRate, parameter });
 };
 
 export const resetSubjectDynamicPoint = (
   descriptor: SubjectFunctionFamilyDescriptor,
   state: SubjectDynamicPointState
-): SubjectDynamicPointState => evaluateSubjectDynamicPoint(descriptor, { ...state, parameter: state.direction === 1 ? state.range[0] : state.range[1], playing: false });
+): SubjectDynamicPointState => {
+  const next = normalizeSubjectDynamicPointState(state);
+  return evaluateSubjectDynamicPoint(descriptor, { ...next, parameter: next.direction === 1 ? next.range[0] : next.range[1], playing: false });
+};
+
+export const playSubjectDynamicPoint = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  state: SubjectDynamicPointState
+): SubjectDynamicPointState => evaluateSubjectDynamicPoint(descriptor, { ...normalizeSubjectDynamicPointState(state), playing: true });
+
+export const pauseSubjectDynamicPoint = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  state: SubjectDynamicPointState
+): SubjectDynamicPointState => evaluateSubjectDynamicPoint(descriptor, { ...normalizeSubjectDynamicPointState(state), playing: false });
 
 export const reverseSubjectDynamicPoint = (state: SubjectDynamicPointState): SubjectDynamicPointState => ({
-  ...state,
+  ...normalizeSubjectDynamicPointState(state),
   direction: state.direction === 1 ? -1 : 1
 });
+
+export const setSubjectDynamicPointParameter = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  state: SubjectDynamicPointState,
+  parameter: number
+): SubjectDynamicPointState => {
+  const next = normalizeSubjectDynamicPointState(state);
+  const clampedParameter = clampNumber(parameter, next.range[0], next.range[1]);
+  return evaluateSubjectDynamicPoint(descriptor, { ...next, parameter: clampedParameter });
+};
+
+export const setSubjectDynamicPointPlaybackRate = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  state: SubjectDynamicPointState,
+  playbackRate: number
+): SubjectDynamicPointState => evaluateSubjectDynamicPoint(descriptor, {
+  ...normalizeSubjectDynamicPointState(state),
+  playbackRate: Math.max(0, finiteNumber(playbackRate, 1))
+});
+
+export const setSubjectDynamicPointSpeed = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  state: SubjectDynamicPointState,
+  speed: number
+): SubjectDynamicPointState => evaluateSubjectDynamicPoint(descriptor, {
+  ...normalizeSubjectDynamicPointState(state),
+  speed: Math.max(0, finiteNumber(speed, 1))
+});
+
+export const setSubjectDynamicPointRange = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  state: SubjectDynamicPointState,
+  range: readonly [number, number]
+): SubjectDynamicPointState => {
+  const next = normalizeSubjectDynamicPointState(state);
+  const normalizedRange = normalizeDynamicPointRange(range);
+  return evaluateSubjectDynamicPoint(descriptor, {
+    ...next,
+    range: normalizedRange,
+    parameter: clampNumber(next.parameter, normalizedRange[0], normalizedRange[1])
+  });
+};
+
+export const setSubjectDynamicPointStyle = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  state: SubjectDynamicPointState,
+  style: SubjectDynamicPointStyleOptions
+): SubjectDynamicPointState => {
+  const next = normalizeSubjectDynamicPointState(state);
+  return evaluateSubjectDynamicPoint(descriptor, {
+    ...next,
+    style: createSubjectDynamicPointStyle({ ...next.style, ...style })
+  });
+};
+
+export const createSubjectDynamicPointModel = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  options: CreateSubjectDynamicPointModelOptions = {}
+): SubjectDynamicPointModel => {
+  const nextDescriptor = createDescriptor(descriptor);
+  return evaluateSubjectDynamicPointModel(nextDescriptor, createSubjectDynamicPoint(nextDescriptor, options));
+};
+
+export const evaluateSubjectDynamicPointModel = (
+  descriptor: SubjectFunctionFamilyDescriptor,
+  state: SubjectDynamicPointState
+): SubjectDynamicPointModel => {
+  const nextDescriptor = createDescriptor(descriptor);
+  const dynamicPoint = evaluateSubjectDynamicPoint(nextDescriptor, {
+    ...normalizeSubjectDynamicPointState(state),
+    descriptorId: nextDescriptor.id
+  });
+  return {
+    descriptor: nextDescriptor,
+    dynamicPoint,
+    marker: createSubjectDynamicPointMarker(dynamicPoint)
+  };
+};
+
+export const updateSubjectDynamicPointModel = (
+  model: SubjectDynamicPointModel,
+  action: SubjectDynamicPointModelAction
+): SubjectDynamicPointModel => {
+  if (action.type === 'play') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, playSubjectDynamicPoint(model.descriptor, model.dynamicPoint));
+  }
+  if (action.type === 'pause') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, pauseSubjectDynamicPoint(model.descriptor, model.dynamicPoint));
+  }
+  if (action.type === 'toggle') {
+    return updateSubjectDynamicPointModel(model, { type: model.dynamicPoint.playing ? 'pause' : 'play' });
+  }
+  if (action.type === 'reset') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, resetSubjectDynamicPoint(model.descriptor, model.dynamicPoint));
+  }
+  if (action.type === 'reverse') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, reverseSubjectDynamicPoint(model.dynamicPoint));
+  }
+  if (action.type === 'tick') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, tickSubjectDynamicPoint(model.descriptor, model.dynamicPoint, action.deltaSeconds));
+  }
+  if (action.type === 'set-parameter') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, setSubjectDynamicPointParameter(model.descriptor, model.dynamicPoint, action.parameter));
+  }
+  if (action.type === 'set-playback-rate') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, setSubjectDynamicPointPlaybackRate(model.descriptor, model.dynamicPoint, action.playbackRate));
+  }
+  if (action.type === 'set-speed') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, setSubjectDynamicPointSpeed(model.descriptor, model.dynamicPoint, action.speed));
+  }
+  if (action.type === 'set-range') {
+    const descriptor = action.descriptor ?? model.descriptor;
+    return evaluateSubjectDynamicPointModel(descriptor, setSubjectDynamicPointRange(descriptor, model.dynamicPoint, action.range));
+  }
+  if (action.type === 'set-style') {
+    return evaluateSubjectDynamicPointModel(model.descriptor, setSubjectDynamicPointStyle(model.descriptor, model.dynamicPoint, action.style));
+  }
+  if (action.type === 'set-descriptor') {
+    return evaluateSubjectDynamicPointModel(action.descriptor, model.dynamicPoint);
+  }
+  return model;
+};
 
 const createDescriptor = (descriptor: SubjectFunctionFamilyDescriptor): SubjectFunctionFamilyDescriptor => cloneDescriptor(descriptor);
 
@@ -989,6 +1196,10 @@ const sameEndpoint = (left: SubjectDomainEndpoint, right: SubjectDomainEndpoint)
 
 const finiteNumber = (value: unknown, fallback: number): number => (
   typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const normalizeColor = (value: unknown, fallback: string): string => (
+  typeof value === 'string' && value.trim() ? value.trim() : fallback
 );
 
 const evaluateExpression = (expression: string, variable: string, value: number, parameters: Record<string, number>): number => {
@@ -1234,6 +1445,36 @@ const sampleParabolaEquation = (
     else points.push({ x: h + t, y: k - (t ** 2) / (4 * p) });
   }
   return clipSegmentsToBounds2D([points], bounds);
+};
+
+const normalizeSubjectDynamicPointState = (state: SubjectDynamicPointState): SubjectDynamicPointState => {
+  const range = normalizeDynamicPointRange(state.range);
+  return {
+    ...state,
+    parameter: clampNumber(finiteNumber(state.parameter, range[0]), range[0], range[1]),
+    range,
+    speed: Math.max(0, finiteNumber(state.speed, 1)),
+    playbackRate: Math.max(0, finiteNumber(state.playbackRate, 1)),
+    direction: state.direction === -1 ? -1 : 1,
+    playing: state.playing === true,
+    style: createSubjectDynamicPointStyle(state.style)
+  };
+};
+
+const normalizeDynamicPointRange = (range: readonly [number, number]): readonly [number, number] => {
+  const first = finiteNumber(range[0], DEFAULT_SAMPLE_WINDOW.min);
+  const second = finiteNumber(range[1], DEFAULT_SAMPLE_WINDOW.max);
+  return first <= second ? [first, second] : [second, first];
+};
+
+const createSubjectDynamicPointMarker = (dynamicPoint: SubjectDynamicPointState): SubjectDynamicPointMarker | null => {
+  if (!dynamicPoint.point) return null;
+  return {
+    id: dynamicPoint.id,
+    descriptorId: dynamicPoint.descriptorId,
+    point: { ...dynamicPoint.point },
+    style: createSubjectDynamicPointStyle(dynamicPoint.style)
+  };
 };
 
 const finiteDynamicRange = (descriptor: SubjectFunctionFamilyDescriptor): readonly [number, number] => {

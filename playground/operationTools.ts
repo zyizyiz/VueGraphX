@@ -7,11 +7,13 @@ import {
 } from '@vuegraphx/core';
 import {
   createCosineSubjectFunction,
+  createCustomSubjectFunction,
   createFreeSubjectAuxiliaryLine,
   createHyperbolaEquationSubjectFunction,
   createParabolaEquationSubjectFunction,
   createQuadraticSubjectFunction,
   createSineSubjectFunction,
+  createSubjectDynamicPointModel,
   createSubjectAuxiliaryLineConstructionModel,
   createSubjectGeometryTransformModel,
   createSubjectAuxiliaryLineIntersectionAnnotations,
@@ -24,6 +26,9 @@ import {
   type SubjectGeometryGridSnapOptions,
   type SubjectAuxiliaryLineConstructionContact,
   type SubjectAuxiliaryLineDescriptor,
+  type SubjectDynamicPointModel,
+  type SubjectDynamicPointStyle,
+  type SubjectFunctionFamilyDescriptor,
   type SubjectGeometryTransformPreviewArc,
   type SubjectGeometryTransformTarget,
   type SubjectOverlayAnnotation,
@@ -85,7 +90,7 @@ export interface OperationCoordinateAxisRangeOptions {
   maxAbs?: number;
 }
 
-export type OperationInteractiveToolKind = 'geometry-shape-edit' | 'geometry-auxiliary-construction';
+export type OperationInteractiveToolKind = 'geometry-shape-edit' | 'geometry-auxiliary-construction' | 'function-dynamic-point';
 export type OperationToolPlacement = 'coordinate-system' | 'world';
 
 export interface OperationToolCommandContext {
@@ -101,9 +106,14 @@ export interface OperationAuxiliaryConstructionInteraction {
   kind: 'geometry-auxiliary-construction';
 }
 
+export interface OperationFunctionDynamicPointInteraction {
+  kind: 'function-dynamic-point';
+}
+
 export type OperationToolInteraction =
   | OperationGeometryShapeEditInteraction
-  | OperationAuxiliaryConstructionInteraction;
+  | OperationAuxiliaryConstructionInteraction
+  | OperationFunctionDynamicPointInteraction;
 
 export interface OperationTool {
   id: string;
@@ -142,6 +152,8 @@ const OPERATION_COORDINATE_RANGE = { min: -6, max: 6 } as const;
 const OPERATION_COORDINATE_SNAP = { enabled: true, phase: 'end' } as const;
 const OPERATION_COORDINATE_RANGE_MIN_ABS = 1;
 const OPERATION_COORDINATE_RANGE_MAX_ABS = 24;
+export const OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION = '0.2*x^2 - 2';
+export const OPERATION_DYNAMIC_POINT_FUNCTION_COLOR = '#2563EB';
 export const OPERATION_SHAPE_EDIT_DEFAULT_SNAP = {
   enabled: true,
   step: 0.5,
@@ -442,6 +454,49 @@ export const createOperationShapeEditVertexCommand = (
   index: number,
   point: MathPoint2D
 ): string => `${prefix}_E${index + 1} = ${formatOperationPointTuple(point)}`;
+
+export const createOperationDynamicPointCommands = (
+  prefix: string,
+  model: SubjectDynamicPointModel,
+  options: { expression?: string; includePointPlaceholder?: boolean } = {}
+): OperationCommandSpec[] => {
+  const pointCommand = createOperationDynamicPointPointCommand(prefix, model);
+  return [
+    {
+      expr: createOperationDynamicPointFunctionCommand(prefix, model.dynamicPoint.range, options.expression),
+      options: { strokeColor: OPERATION_DYNAMIC_POINT_FUNCTION_COLOR }
+    },
+    ...(pointCommand ? [pointCommand] : options.includePointPlaceholder ? [{
+      expr: '',
+      options: operationDynamicPointStyleOptions(model.dynamicPoint.style)
+    }] : [])
+  ];
+};
+
+export const createOperationDynamicPointDescriptor = (
+  id: string,
+  range: readonly [number, number]
+): SubjectFunctionFamilyDescriptor => createCustomSubjectFunction(OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION, {
+  id,
+  domain: range
+});
+
+export const createOperationDynamicPointFunctionCommand = (
+  prefix: string,
+  range: readonly [number, number],
+  expression = OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION
+): string => `${prefix}_function = Function("${escapeOperationText(expression)}", ${operationNumber(range[0])}, ${operationNumber(range[1])})`;
+
+export const createOperationDynamicPointPointCommand = (
+  prefix: string,
+  model: SubjectDynamicPointModel
+): OperationCommandSpec | null => {
+  if (!model.marker) return null;
+  return {
+    expr: `${prefix}_P = Point(${operationPointText(model.marker.point)})`,
+    options: operationDynamicPointStyleOptions(model.marker.style)
+  };
+};
 
 export const createOperationAuxiliaryConstructionTarget = (
   id = 'operation-auxiliary-construction-triangle'
@@ -790,6 +845,10 @@ const operationParabolaOverlay = createSubjectOverlayModel({
   }
 });
 
+const operationDynamicPointFunction = createOperationDynamicPointDescriptor('operation-dynamic-point', [-6, 6]);
+const operationDynamicPoint = createSubjectDynamicPointModel(operationDynamicPointFunction, { parameter: -6 });
+const operationDynamicPointCommands: readonly OperationCommandSpec[] = createOperationDynamicPointCommands('dynamic', operationDynamicPoint);
+
 const operationGeometryOverlayCommands: readonly OperationCommandSpec[] = [
   { expr: 'Point(-3.5, -2)', options: operationPointStyleOptions('#0F172A') },
   { expr: 'Point(2.5, -2)', options: operationPointStyleOptions('#0F172A') },
@@ -898,6 +957,15 @@ export const operationToolGroups: readonly OperationToolGroup[] = [
         icon: 'π',
         iconClass: 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200',
         commands: operationTrigonometryCommands
+      },
+      {
+        id: 'function-dynamic-point',
+        label: '函数动点 P',
+        description: '生成函数与动点，可拖动进度、播放暂停和切换倍速',
+        icon: 'P',
+        iconClass: 'bg-red-50 text-red-600 ring-1 ring-red-200',
+        commands: operationDynamicPointCommands,
+        interaction: { kind: 'function-dynamic-point' }
       }
     ]
   },
@@ -1195,6 +1263,17 @@ function operationPointStyleOptions(
     pointStrokeColor: overrides.pointStrokeColor ?? STANDARD_GEOMETRY_MARKER_UI.pointStrokeColor,
     pointStrokeWidth: STANDARD_GEOMETRY_MARKER_UI.pointStrokeWidthPx,
     size: STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx
+  };
+}
+
+function operationDynamicPointStyleOptions(style: SubjectDynamicPointStyle): Record<string, unknown> {
+  return {
+    strokeColor: style.strokeColor,
+    pointFillColor: style.fillColor,
+    pointStrokeColor: style.strokeColor,
+    pointStrokeWidth: style.strokeWidthPx,
+    size: style.radiusPx,
+    selectionStrokeScale: false
   };
 }
 

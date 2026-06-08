@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createSubjectDynamicPointModel,
+  SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR,
+  SUBJECT_DYNAMIC_POINT_DEFAULT_RADIUS_PX,
   SUBJECT_OVERLAY_DEFAULT_ANNOTATION_COLORS,
   SUBJECT_OVERLAY_DEFAULT_DASH_STROKE_COLOR,
   SUBJECT_OVERLAY_DASH_PATTERN,
@@ -13,6 +16,9 @@ import {
   alignOperationCoordinateSystemOriginToGrid,
   createOperationAuxiliaryConstructionCommands,
   createOperationAuxiliaryConstructionTarget,
+  createOperationDynamicPointCommands,
+  createOperationDynamicPointDescriptor,
+  createOperationDynamicPointFunctionCommand,
   clampOperationCoordinateSystemOrigin,
   getOperationCoordinateSystemAxisRangeAbs,
   createOperationIndependentTriangleCommands,
@@ -24,6 +30,8 @@ import {
   findOperationToolById,
   formatOperationPointTuple,
   isOperationPointInsideCoordinateSystem,
+  OPERATION_DYNAMIC_POINT_FUNCTION_COLOR,
+  OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION,
   OPERATION_SHAPE_EDIT_DEFAULT_SNAP,
   operationToolGroups,
   resolveOperationCommandOrigin,
@@ -288,6 +296,44 @@ describe('updateOperationCoordinateSystemOrigin', () => {
 
     const commands = createOperationScopedCommands(constructionTool!.commands, { x: 0, y: 0 }, 'coord_construct');
     expect(commands.every((command) => (command.options?.coordinateSystem as any)?.id === 'coord_construct')).toBe(true);
+  });
+
+  it('exposes a function dynamic-point operation tool with the expected 8px red marker', () => {
+    const tool = operationToolGroups
+      .flatMap((group) => group.tools)
+      .find((entry) => entry.id === 'function-dynamic-point');
+    expect(tool).toBeDefined();
+    expect(tool!.interaction).toEqual({ kind: 'function-dynamic-point' });
+    expect(tool!.commands.map((command) => command.expr)).toEqual([
+      `dynamic_function = Function("${OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION}", -6, 6)`,
+      'dynamic_P = Point(-6, 5.2)'
+    ]);
+    expect(tool!.commands[0].options).toMatchObject({
+      strokeColor: OPERATION_DYNAMIC_POINT_FUNCTION_COLOR
+    });
+    expect(tool!.commands[1].options).toMatchObject({
+      strokeColor: SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR,
+      pointFillColor: SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR,
+      pointStrokeColor: SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR,
+      pointStrokeWidth: 0,
+      size: SUBJECT_DYNAMIC_POINT_DEFAULT_RADIUS_PX,
+      selectionStrokeScale: false
+    });
+
+    const descriptor = createOperationDynamicPointDescriptor('manual-dynamic', [-2, 3]);
+    const model = createSubjectDynamicPointModel(descriptor, { parameter: 1 });
+    expect(createOperationDynamicPointCommands('manual', model).map((command) => command.expr)).toEqual([
+      `manual_function = Function("${OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION}", -2, 3)`,
+      'manual_P = Point(1, -1.8)'
+    ]);
+    expect(createOperationDynamicPointFunctionCommand('manual', [-7, 7])).toBe(`manual_function = Function("${OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION}", -7, 7)`);
+    expect(createOperationDynamicPointCommands('missing', { ...model, marker: null, dynamicPoint: { ...model.dynamicPoint, point: null } }).map((command) => command.expr)).toEqual([
+      `missing_function = Function("${OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION}", -2, 3)`
+    ]);
+    expect(createOperationDynamicPointCommands('missing', { ...model, marker: null, dynamicPoint: { ...model.dynamicPoint, point: null } }, { includePointPlaceholder: true }).map((command) => command.expr)).toEqual([
+      `missing_function = Function("${OPERATION_DYNAMIC_POINT_FUNCTION_EXPRESSION}", -2, 3)`,
+      ''
+    ]);
   });
 
   it('exposes an independent triangle tool without operation coordinate-system placement', () => {

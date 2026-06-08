@@ -198,6 +198,34 @@ describe('buildPlaygroundCanvasScene', () => {
     });
   });
 
+  it('preserves dynamic-point operation marker style as an 8px red circle', () => {
+    const result = buildPlaygroundCanvasScene([
+      {
+        id: 'p',
+        expression: 'P = Point(1, 1)',
+        color: '#0ea5e9',
+        options: {
+          strokeColor: '#FF3333',
+          pointFillColor: '#FF3333',
+          pointStrokeColor: '#FF3333',
+          pointStrokeWidth: 0,
+          size: 4,
+          selectionStrokeScale: false
+        }
+      }
+    ], { selectedObjectId: 'P' });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.nodes.find((node) => node.id === 'P')?.renderHints).toMatchObject({
+      strokeColor: '#FF3333',
+      radius: 4,
+      pointFillColor: '#FF3333',
+      pointStrokeColor: '#FF3333',
+      pointStrokeWidth: 0,
+      selectionStrokeScale: false
+    });
+  });
+
   it('adds contact-style endpoint handles only for selected operation auxiliary lines', () => {
     const command = {
       expr: 'helper = Segment(Point(-2, 0), Point(2, 0))',

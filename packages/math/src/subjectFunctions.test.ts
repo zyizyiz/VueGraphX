@@ -22,17 +22,30 @@ import {
   createSubjectDomain,
   createSubjectDomainInterval,
   createSubjectDynamicPoint,
+  createSubjectDynamicPointModel,
+  createSubjectDynamicPointStyle,
   createSubjectFunctionAnnotations,
   createSubjectOverlayModel,
   createTangentSubjectFunction,
   evaluateSubjectFunctionDescriptor,
   formatSubjectDomain,
   formatSubjectFunctionExpression,
+  pauseSubjectDynamicPoint,
+  playSubjectDynamicPoint,
   resetSubjectDynamicPoint,
   reverseSubjectDynamicPoint,
   sampleSubjectEquationDescriptor,
   sampleSubjectFunctionDescriptor,
+  setSubjectDynamicPointParameter,
+  setSubjectDynamicPointPlaybackRate,
+  setSubjectDynamicPointRange,
+  setSubjectDynamicPointSpeed,
+  setSubjectDynamicPointStyle,
+  SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR,
+  SUBJECT_DYNAMIC_POINT_DEFAULT_DIAMETER_PX,
+  SUBJECT_DYNAMIC_POINT_DEFAULT_RADIUS_PX,
   tickSubjectDynamicPoint,
+  updateSubjectDynamicPointModel,
   updateSubjectFunctionParameters
 } from './index';
 
@@ -230,9 +243,105 @@ describe('subject function families and domains', () => {
     const point = createSubjectDynamicPoint(fn, { parameter: 2, speed: 2, playing: true });
 
     expect(point.point).toEqual({ x: 2, y: 3 });
+    expect(point.style).toEqual({
+      color: SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR,
+      fillColor: SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR,
+      strokeColor: SUBJECT_DYNAMIC_POINT_DEFAULT_COLOR,
+      strokeWidthPx: 0,
+      radiusPx: SUBJECT_DYNAMIC_POINT_DEFAULT_RADIUS_PX,
+      diameterPx: SUBJECT_DYNAMIC_POINT_DEFAULT_DIAMETER_PX
+    });
     const ticked = tickSubjectDynamicPoint(fn, point, 1.5);
     expect(ticked).toMatchObject({ parameter: 5, point: { x: 5, y: 6 } });
     expect(reverseSubjectDynamicPoint(ticked).direction).toBe(-1);
     expect(resetSubjectDynamicPoint(fn, reverseSubjectDynamicPoint(ticked))).toMatchObject({ parameter: 10, playing: false, point: { x: 10, y: 11 } });
+  });
+
+  it('controls dynamic point playback, speed, range, parameter, and style', () => {
+    const fn = createLinearSubjectFunction({ id: 'moving-line', a: 2, b: -1, domain: [-4, 4] });
+    const initial = createSubjectDynamicPoint(fn, {
+      parameter: -2,
+      speed: 2,
+      playbackRate: 0.5,
+      style: { color: '#22C55E', diameterPx: 10 }
+    });
+
+    expect(initial).toMatchObject({
+      playing: false,
+      parameter: -2,
+      playbackRate: 0.5,
+      point: { x: -2, y: -5 },
+      style: {
+        color: '#22C55E',
+        fillColor: '#22C55E',
+        strokeColor: '#22C55E',
+        radiusPx: 5,
+        diameterPx: 10
+      }
+    });
+
+    const playing = playSubjectDynamicPoint(fn, initial);
+    expect(playing.playing).toBe(true);
+    expect(tickSubjectDynamicPoint(fn, playing, 2)).toMatchObject({ parameter: 0, point: { x: 0, y: -1 } });
+
+    const faster = setSubjectDynamicPointPlaybackRate(fn, playing, 2);
+    expect(tickSubjectDynamicPoint(fn, faster, 1)).toMatchObject({ parameter: 2, point: { x: 2, y: 3 } });
+
+    const moved = setSubjectDynamicPointParameter(fn, pauseSubjectDynamicPoint(fn, faster), 99);
+    expect(moved).toMatchObject({ playing: false, parameter: 4, point: { x: 4, y: 7 } });
+
+    const ranged = setSubjectDynamicPointRange(fn, moved, [3, -3]);
+    expect(ranged).toMatchObject({ range: [-3, 3], parameter: 3, point: { x: 3, y: 5 } });
+
+    expect(setSubjectDynamicPointSpeed(fn, ranged, -1).speed).toBe(0);
+    expect(setSubjectDynamicPointStyle(fn, ranged, { fillColor: '#000000', strokeWidthPx: 2 }).style).toMatchObject({
+      color: '#22C55E',
+      fillColor: '#000000',
+      strokeColor: '#22C55E',
+      strokeWidthPx: 2
+    });
+    expect(createSubjectDynamicPointStyle({ radiusPx: 6 })).toMatchObject({ radiusPx: 6, diameterPx: 12 });
+  });
+
+  it('packages dynamic point descriptor, state, marker, and actions as a reusable model', () => {
+    const fn = createLinearSubjectFunction({ id: 'model-line', a: 2, b: -1, domain: [0, 4] });
+    const model = createSubjectDynamicPointModel(fn, {
+      parameter: 1,
+      speed: 1,
+      playing: true,
+      style: { diameterPx: 8 }
+    });
+
+    expect(model.descriptor.id).toBe('model-line');
+    expect(model.dynamicPoint).toMatchObject({
+      descriptorId: 'model-line',
+      parameter: 1,
+      point: { x: 1, y: 1 }
+    });
+    expect(model.marker).toMatchObject({
+      id: 'model-line:P',
+      descriptorId: 'model-line',
+      point: { x: 1, y: 1 },
+      style: { diameterPx: 8, radiusPx: 4 }
+    });
+
+    const ticked = updateSubjectDynamicPointModel(model, { type: 'tick', deltaSeconds: 2 });
+    expect(ticked.dynamicPoint).toMatchObject({ parameter: 3, point: { x: 3, y: 5 } });
+
+    const paused = updateSubjectDynamicPointModel(ticked, { type: 'toggle' });
+    expect(paused.dynamicPoint.playing).toBe(false);
+
+    const nextDescriptor = createLinearSubjectFunction({ id: 'model-line', a: 3, b: 0, domain: [-2, 2] });
+    const ranged = updateSubjectDynamicPointModel(paused, { type: 'set-range', range: [-2, 2], descriptor: nextDescriptor });
+    expect(ranged.dynamicPoint).toMatchObject({
+      descriptorId: 'model-line',
+      range: [-2, 2],
+      parameter: 2,
+      point: { x: 2, y: 6 }
+    });
+
+    const invalid = createSubjectDynamicPointModel(createLogarithmicSubjectFunction({ id: 'log-model' }), { parameter: -1, range: [-2, 2] });
+    expect(invalid.dynamicPoint.point).toBeNull();
+    expect(invalid.marker).toBeNull();
   });
 });
