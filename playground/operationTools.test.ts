@@ -25,6 +25,8 @@ import {
   createOperationShapeEditCommands,
   createOperationShapeEditTarget,
   createOperationShapeEditVertexCommand,
+  createOperationShapeSplitCommands,
+  createOperationShapeSplitTarget,
   createOperationToolCommands,
   createOperationScopedCommands,
   findOperationToolById,
@@ -266,15 +268,18 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     expect(commands.every((command) => (command.options?.coordinateSystem as any)?.id === 'coord_transform')).toBe(true);
   });
 
-  it('exposes geometry editing and auxiliary construction commands in the operation tools panel', () => {
+  it('exposes geometry editing, auxiliary construction, and shape split commands in the operation tools panel', () => {
     const tools = operationToolGroups.flatMap((group) => group.tools);
     const editTool = tools.find((entry) => entry.id === 'geometry-shape-edit-preview');
     const constructionTool = tools.find((entry) => entry.id === 'auxiliary-construction-preview');
+    const splitTool = tools.find((entry) => entry.id === 'geometry-shape-split-preview');
 
     expect(editTool).toBeDefined();
     expect(constructionTool).toBeDefined();
+    expect(splitTool).toBeDefined();
     expect(editTool!.interaction).toEqual({ kind: 'geometry-shape-edit' });
     expect(constructionTool!.interaction).toEqual({ kind: 'geometry-auxiliary-construction' });
+    expect(splitTool!.interaction).toEqual({ kind: 'geometry-shape-split' });
     expect(OPERATION_SHAPE_EDIT_DEFAULT_SNAP).toEqual({
       enabled: true,
       step: 0.5,
@@ -296,6 +301,15 @@ describe('updateOperationCoordinateSystemOrigin', () => {
 
     const commands = createOperationScopedCommands(constructionTool!.commands, { x: 0, y: 0 }, 'coord_construct');
     expect(commands.every((command) => (command.options?.coordinateSystem as any)?.id === 'coord_construct')).toBe(true);
+
+    const splitExpressions = splitTool!.commands.map((command) => command.expr);
+    expect(splitExpressions.filter((expr) => expr.includes('Polygon('))).toHaveLength(1);
+    expect(splitExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(1);
+    expect(splitExpressions).toEqual(expect.arrayContaining([
+      expect.stringContaining('✂️'),
+      expect.stringContaining('几何分割')
+    ]));
+    expect(findOperationToolById('geometry-shape-split-preview')).toBe(splitTool);
   });
 
   it('exposes a function dynamic-point operation tool with the expected 8px red marker', () => {
@@ -514,5 +528,71 @@ describe('updateOperationCoordinateSystemOrigin', () => {
     expect(internalCommittedExpressions.filter((expr) => expr.includes('Segment('))).toHaveLength(0);
     expect(internalCommittedExpressions.filter((expr) => expr.includes('_contact_'))).toHaveLength(0);
     expect(internalCommittedExpressions.some((expr) => expr.startsWith('aux_1_anchor_'))).toBe(false);
+  });
+
+  it('creates prefixed commands for interactive shape splitting', () => {
+    const target = createOperationShapeSplitTarget('interactive-split');
+    const initialCommands = createOperationShapeSplitCommands('split_1', target, null);
+
+    expect(target.vertices).toEqual([
+      { x: -3.5, y: -2 },
+      { x: 3, y: -2 },
+      { x: 2.4, y: 2 },
+      { x: -2.8, y: 2.4 }
+    ]);
+    expect(initialCommands.map((command) => command.expr)).toEqual([
+      'split_1_source = Polygon((-3.5, -2), (3, -2), (2.4, 2), (-2.8, 2.4))',
+      'Text(-4.8, 3.6, "几何分割: contacts=0 / ready=false")'
+    ]);
+
+    const pendingCommands = createOperationShapeSplitCommands('split_1', target, null, { x: -1, y: 1 });
+    expect(pendingCommands.map((command) => command.expr)).toEqual([
+      'split_1_source = Polygon((-3.5, -2), (3, -2), (2.4, 2), (-2.8, 2.4))',
+      'split_1_anchor_pending_start = Point(-1, 1)',
+      'Text(-4.8, 3.6, "几何分割: 等待终点 / contacts=0 / ready=false")'
+    ]);
+
+    const previewCommands = createOperationShapeSplitCommands('split_1', target, {
+      start: { x: -4.2, y: 0.2 },
+      end: { x: 3.4, y: 0.2 }
+    });
+    const previewExpressions = previewCommands.map((command) => command.expr);
+    expect(previewExpressions).toEqual(expect.arrayContaining([
+      'Segment((-3.15, 0.2), (2.67, 0.2))',
+      'Text(-0.24, 0.2, "✂️")',
+      'split_1_contact_1 = Point(-3.15, 0.2)',
+      'split_1_contact_2 = Point(2.67, 0.2)',
+      expect.stringContaining('几何分割: 等待终点 / contacts=2 / ready=true')
+    ]));
+    expect(previewCommands.find((command) => command.expr === 'Segment((-3.15, 0.2), (2.67, 0.2))')?.options).toMatchObject({
+      strokeColor: '#DC2626',
+      strokeWidth: 2,
+      selectionStrokeScale: false
+    });
+
+    const committedCommands = createOperationShapeSplitCommands('split_1', target, {
+      start: { x: -4.2, y: 0.2 },
+      end: { x: 3.4, y: 0.2 }
+    }, null, [
+      { role: 'start', point: { x: -4.2, y: 0.2 }, fixed: true },
+      { role: 'end', point: { x: 3.4, y: 0.2 }, fixed: true }
+    ], { committed: true });
+    const committedExpressions = committedCommands.map((command) => command.expr);
+    expect(committedExpressions).toEqual([
+      'split_1_piece_1 = Polygon((-3.15, 0.2), (-3.5, -2), (3, -2), (2.67, 0.2))',
+      'split_1_piece_2 = Polygon((2.67, 0.2), (2.4, 2), (-2.8, 2.4), (-3.15, 0.2))',
+      'Text(-4.8, 3.6, "几何分割: pieces=2 / ready=true")'
+    ]);
+
+    const internalCommands = createOperationShapeSplitCommands('split_1', target, {
+      start: { x: -1, y: 0 },
+      end: { x: 1, y: 0 }
+    });
+    const internalExpressions = internalCommands.map((command) => command.expr);
+    expect(internalExpressions).toEqual(expect.arrayContaining([
+      'Segment((-1, 0), (1, 0))',
+      expect.stringContaining('几何分割: 等待终点 / contacts=0 / ready=false')
+    ]));
+    expect(internalExpressions.some((expr) => expr.startsWith('split_1_piece_'))).toBe(false);
   });
 });

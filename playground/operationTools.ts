@@ -16,6 +16,7 @@ import {
   createSubjectDynamicPointModel,
   createSubjectAuxiliaryLineConstructionModel,
   createSubjectGeometryTransformModel,
+  createSubjectShapeSplitModel,
   createSubjectAuxiliaryLineIntersectionAnnotations,
   createSubjectOverlayModel,
   createSubjectShapeEditModel,
@@ -37,7 +38,10 @@ import {
   type SubjectOverlayStyle,
   type SubjectOverlayTarget,
   type SubjectShapeEditHandleDescriptor,
-  type SubjectShapeEditTarget
+  type SubjectShapeEditTarget,
+  type SubjectShapeSplitContact,
+  type SubjectShapeSplitDraft,
+  type SubjectShapeSplitTarget
 } from '@vuegraphx/math';
 
 export const OPERATION_COMMANDS_MIME = 'application/x-vuegraphx-operation-commands';
@@ -90,7 +94,7 @@ export interface OperationCoordinateAxisRangeOptions {
   maxAbs?: number;
 }
 
-export type OperationInteractiveToolKind = 'geometry-shape-edit' | 'geometry-auxiliary-construction' | 'function-dynamic-point';
+export type OperationInteractiveToolKind = 'geometry-shape-edit' | 'geometry-auxiliary-construction' | 'geometry-shape-split' | 'function-dynamic-point';
 export type OperationToolPlacement = 'coordinate-system' | 'world';
 
 export interface OperationToolCommandContext {
@@ -106,6 +110,10 @@ export interface OperationAuxiliaryConstructionInteraction {
   kind: 'geometry-auxiliary-construction';
 }
 
+export interface OperationShapeSplitInteraction {
+  kind: 'geometry-shape-split';
+}
+
 export interface OperationFunctionDynamicPointInteraction {
   kind: 'function-dynamic-point';
 }
@@ -113,6 +121,7 @@ export interface OperationFunctionDynamicPointInteraction {
 export type OperationToolInteraction =
   | OperationGeometryShapeEditInteraction
   | OperationAuxiliaryConstructionInteraction
+  | OperationShapeSplitInteraction
   | OperationFunctionDynamicPointInteraction;
 
 export interface OperationTool {
@@ -134,18 +143,32 @@ export interface OperationToolGroup {
 
 export type OperationShapeEditPolygonTarget = Extract<SubjectShapeEditTarget, { kind: 'polygon' }>;
 export type OperationAuxiliaryConstructionTarget = Extract<SubjectAuxiliaryLineConstructionTarget, { kind: 'polygon' }>;
+export type OperationShapeSplitPolygonTarget = SubjectShapeSplitTarget;
 export interface OperationAuxiliaryConstructionDraft {
   start: MathPoint2D;
   end: MathPoint2D;
 }
+export type OperationShapeSplitDraft = SubjectShapeSplitDraft;
 
 export type OperationAuxiliaryConstructionAnchorRole = 'start' | 'end' | 'pending-start';
+export type OperationShapeSplitAnchorRole = OperationAuxiliaryConstructionAnchorRole;
 
 export interface OperationAuxiliaryConstructionAnchor {
   role: OperationAuxiliaryConstructionAnchorRole;
   point: MathPoint2D;
   fixed: boolean;
   visible?: boolean;
+}
+
+export interface OperationShapeSplitAnchor {
+  role: OperationShapeSplitAnchorRole;
+  point: MathPoint2D;
+  fixed: boolean;
+  visible?: boolean;
+}
+
+export interface OperationShapeSplitCommandOptions {
+  committed?: boolean;
 }
 
 const OPERATION_COORDINATE_RANGE = { min: -6, max: 6 } as const;
@@ -508,9 +531,24 @@ export const createOperationAuxiliaryConstructionTarget = (
   strokeColor: '#2563EB'
 });
 
+export const createOperationShapeSplitTarget = (
+  id = 'operation-shape-split-polygon'
+): OperationShapeSplitPolygonTarget => ({
+  id,
+  kind: 'polygon',
+  shapeKind: 'quadrilateral',
+  vertices: [point2D(-3.5, -2), point2D(3, -2), point2D(2.4, 2), point2D(-2.8, 2.4)],
+  strokeColor: '#2563EB'
+});
+
 const OPERATION_AUXILIARY_CONSTRUCTION_DEFAULT_DRAFT: OperationAuxiliaryConstructionDraft = {
   start: point2D(-4.4, 0.75),
   end: point2D(3.2, 0.75)
+};
+
+const OPERATION_SHAPE_SPLIT_DEFAULT_DRAFT: OperationShapeSplitDraft = {
+  start: point2D(-4.2, 0.2),
+  end: point2D(3.4, 0.2)
 };
 
 export const createOperationAuxiliaryConstructionCommands = (
@@ -564,6 +602,64 @@ export const createOperationAuxiliaryConstructionCommands = (
   const contactCount = visibleContacts.length;
   commands.push({
     expr: `Text(-4.8, 3.6, "自由辅助线构造: ${isActiveDraft ? '等待终点 / contacts=0 / applied=false' : `contacts=${contactCount} / applied=${model.applied}`}")`,
+    options: { strokeColor: '#475569' }
+  });
+  return commands;
+};
+
+export const createOperationShapeSplitCommands = (
+  prefix: string,
+  target: OperationShapeSplitPolygonTarget = createOperationShapeSplitTarget(`${prefix}-target`),
+  draft: OperationShapeSplitDraft | null = OPERATION_SHAPE_SPLIT_DEFAULT_DRAFT,
+  pendingStart: MathPoint2D | null = null,
+  anchors: readonly OperationShapeSplitAnchor[] = draft
+    ? createOperationShapeSplitAnchorsFromDraft(draft, { preview: true })
+    : pendingStart
+      ? [{ role: 'pending-start', point: pendingStart, fixed: true }]
+      : [],
+  options: OperationShapeSplitCommandOptions = {}
+): OperationCommandSpec[] => {
+  const model = draft
+    ? createSubjectShapeSplitModel(target, draft, {
+      id: `${prefix}_split_line`,
+      label: '分割线',
+      state: options.committed ? 'confirmed' : 'preview'
+    })
+    : null;
+
+  if (options.committed && model?.applied) {
+    return [
+      ...model.pieces.map((piece, index) => ({
+        expr: `${prefix}_piece_${index + 1} = Polygon(${piece.vertices.map(operationPointTuple).join(', ')})`,
+        options: operationShapeSplitPieceStyleOptions(index)
+      })),
+      {
+        expr: `Text(-4.8, 3.6, "几何分割: pieces=2 / ready=true")`,
+        options: { strokeColor: '#475569' }
+      }
+    ];
+  }
+
+  const commands: OperationCommandSpec[] = [
+    {
+      expr: `${prefix}_source = Polygon(${target.vertices.map(operationPointTuple).join(', ')})`,
+      options: { strokeColor: '#2563EB', fillColor: '#DBEAFE', fillOpacity: 0.14, strokeWidth: 2 }
+    }
+  ];
+
+  if (draft && model?.previewLine) {
+    commands.push(...operationShapeSplitPreviewCommands(model.previewLine));
+  }
+
+  if (isActiveOperationShapeSplitDraft(anchors) || pendingStart) {
+    commands.push(...operationShapeSplitAnchorCommands(anchors, { prefix: `${prefix}_anchor` }));
+  }
+
+  const contactCount = model?.contacts.length ?? 0;
+  commands.push(...operationShapeSplitContactCommands(model?.contacts ?? [], { prefix: `${prefix}_contact`, limit: 2 }));
+  const splitStatus = isActiveOperationShapeSplitDraft(anchors) || pendingStart ? '等待终点 / ' : '';
+  commands.push({
+    expr: `Text(-4.8, 3.6, "几何分割: ${splitStatus}contacts=${contactCount} / ready=${model?.canConfirm === true}")`,
     options: { strokeColor: '#475569' }
   });
   return commands;
@@ -935,6 +1031,7 @@ const operationShapeEditCommands: readonly OperationCommandSpec[] = [
 ];
 
 const operationAuxiliaryConstructionCommands: readonly OperationCommandSpec[] = createOperationAuxiliaryConstructionCommands('construct');
+const operationShapeSplitCommands: readonly OperationCommandSpec[] = createOperationShapeSplitCommands('split');
 
 export const operationToolGroups: readonly OperationToolGroup[] = [
   {
@@ -1067,6 +1164,15 @@ export const operationToolGroups: readonly OperationToolGroup[] = [
         iconClass: 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
         commands: operationAuxiliaryConstructionCommands,
         interaction: { kind: 'geometry-auxiliary-construction' }
+      },
+      {
+        id: 'geometry-shape-split-preview',
+        label: '分割',
+        description: '实线分割预览，完成后生成两个共享边图形',
+        icon: '✂️',
+        iconClass: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
+        commands: operationShapeSplitCommands,
+        interaction: { kind: 'geometry-shape-split' }
       }
     ]
   }
@@ -1110,6 +1216,42 @@ function operationConstructionContactCommands(
     });
 }
 
+function operationShapeSplitPreviewCommands(line: SubjectAuxiliaryLineDescriptor): OperationCommandSpec[] {
+  const midpoint = operationLineMidpoint(line);
+  return [
+    {
+      expr: `Segment(${operationPointTuple(line.start)}, ${operationPointTuple(line.end)})`,
+      options: {
+        ...operationOverlayStyleOptions(line.style, '#DC2626'),
+        strokeWidth: line.style?.strokeWidth ?? 2,
+        selectionStrokeScale: false
+      }
+    },
+    {
+      expr: `Text(${operationPointText(midpoint)}, "✂️")`,
+      options: {
+        ...operationTextStyleOptions('#DC2626'),
+        fontSize: 18,
+        textOffsetX: 0,
+        textOffsetY: -10
+      }
+    }
+  ];
+}
+
+function operationShapeSplitContactCommands(
+  contacts: readonly SubjectShapeSplitContact[],
+  options: { prefix: string; limit?: number }
+): OperationCommandSpec[] {
+  return contacts.slice(0, options.limit ?? Infinity).map((contact, index) => ({
+    expr: `${options.prefix}_${index + 1} = Point(${operationPointText(contact.point)})`,
+    options: operationPointStyleOptions('#DC2626', {
+      pointFillColor: '#FFFFFF',
+      pointStrokeColor: '#DC2626'
+    })
+  }));
+}
+
 function isOperationConstructionVisibleContact(contact: SubjectAuxiliaryLineConstructionContact): boolean {
   return contact.kind === 'intersection' || contact.kind === 'tangent';
 }
@@ -1130,6 +1272,22 @@ function isActiveOperationAuxiliaryConstructionDraft(
   return anchors.some((anchor) => anchor.role === 'end' && anchor.fixed === false);
 }
 
+function createOperationShapeSplitAnchorsFromDraft(
+  draft: OperationShapeSplitDraft,
+  options: { preview?: boolean } = {}
+): readonly OperationShapeSplitAnchor[] {
+  return [
+    { role: 'start', point: { ...draft.start }, fixed: true },
+    { role: 'end', point: { ...draft.end }, fixed: options.preview !== true }
+  ];
+}
+
+function isActiveOperationShapeSplitDraft(
+  anchors: readonly OperationShapeSplitAnchor[]
+): boolean {
+  return anchors.some((anchor) => anchor.role === 'end' && anchor.fixed === false);
+}
+
 function operationAuxiliaryAnchorCommands(
   anchors: readonly OperationAuxiliaryConstructionAnchor[],
   options: { prefix: string }
@@ -1145,6 +1303,21 @@ function operationAuxiliaryAnchorCommands(
     }));
 }
 
+function operationShapeSplitAnchorCommands(
+  anchors: readonly OperationShapeSplitAnchor[],
+  options: { prefix: string }
+): OperationCommandSpec[] {
+  return anchors
+    .filter((anchor) => anchor.visible !== false && !(anchor.role === 'end' && anchor.fixed === false))
+    .map((anchor) => ({
+      expr: `${options.prefix}_${operationAuxiliaryAnchorRoleId(anchor.role)} = Point(${operationPointText(anchor.point)})`,
+      options: operationPointStyleOptions(operationShapeSplitAnchorColor(anchor), {
+        pointFillColor: '#FFFFFF',
+        pointStrokeColor: operationShapeSplitAnchorColor(anchor)
+      })
+    }));
+}
+
 function operationAuxiliaryAnchorRoleId(role: OperationAuxiliaryConstructionAnchorRole): string {
   return role.replace(/[^a-z-]/g, '').replace(/-/g, '_');
 }
@@ -1152,6 +1325,11 @@ function operationAuxiliaryAnchorRoleId(role: OperationAuxiliaryConstructionAnch
 function operationAuxiliaryAnchorColor(anchor: OperationAuxiliaryConstructionAnchor): string {
   if (anchor.role === 'end') return anchor.fixed ? '#2563EB' : '#64748B';
   return '#B45309';
+}
+
+function operationShapeSplitAnchorColor(anchor: OperationShapeSplitAnchor): string {
+  if (anchor.role === 'end') return anchor.fixed ? '#DC2626' : '#64748B';
+  return '#DC2626';
 }
 
 function operationOverlayLineCommands(
@@ -1264,6 +1442,12 @@ function operationPointStyleOptions(
     pointStrokeWidth: STANDARD_GEOMETRY_MARKER_UI.pointStrokeWidthPx,
     size: STANDARD_GEOMETRY_MARKER_UI.pointRadiusPx
   };
+}
+
+function operationShapeSplitPieceStyleOptions(index: number): Record<string, unknown> {
+  return index === 0
+    ? { strokeColor: '#0F766E', fillColor: '#CCFBF1', fillOpacity: 0.28, strokeWidth: 2 }
+    : { strokeColor: '#B45309', fillColor: '#FEF3C7', fillOpacity: 0.3, strokeWidth: 2 };
 }
 
 function operationDynamicPointStyleOptions(style: SubjectDynamicPointStyle): Record<string, unknown> {
